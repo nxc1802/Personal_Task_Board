@@ -1,0 +1,66 @@
+[
+  {
+    "task": {
+      "id": "task-unified-001",
+      "title": "Investigate deployment failure on staging",
+      "description": "Kiểm tra nguyên nhân deployment bị lỗi theo yêu cầu của Huy trên Teams và khớp với Jira OPS-88",
+      "status": "open",
+      "owner_canonical_id": "00000000-0000-0000-0000-000000000002",
+      "requester_canonical_id": "00000000-0000-0000-0000-000000000003",
+      "project_key": "OPS",
+      "customer_id": "client-internal",
+      "due_date": "2026-09-18T17:00:00Z",
+      "explicit_deadline": false,
+      "extraction_confidence": 0.96,
+      "review_status": "auto_approved",
+      "evidences": [
+        {
+          "id": "ev-001",
+          "task_id": "task-unified-001",
+          "raw_event_id": "raw-908-teams-fpt",
+          "evidence_type": "chat_commitment",
+          "source_type": "ms_teams",
+          "external_url": "https://teams.microsoft.com/l/message/19:channel-devops-alerts/msg-teams-1726567080",
+          "author_canonical_id": "00000000-0000-0000-0000-000000000002",
+          "timestamp": "2026-09-17T14:18:00Z",
+          "snippet": "Để em check nhé.",
+          "confidence": 0.96,
+          "extraction_version": "v1.0"
+        }
+      ]
+    },
+    "last_status_change_at": "2026-09-17T14:20:00Z",
+    "days_in_current_status": 1,
+    "has_completion_evidence": false,
+    "relations": [
+      {
+        "relation_type": "OWNS",
+        "target_entity_type": "Person",
+        "target_entity_id": "00000000-0000-0000-0000-000000000002",
+        "target_title_or_name": "Dam Quang Cuong",
+        "valid_since": "2026-09-17T14:18:00Z",
+        "confidence": 1.0
+      },
+      {
+        "relation_type": "REQUESTED",
+        "target_entity_type": "Person",
+        "target_entity_id": "00000000-0000-0000-0000-000000000003",
+        "target_title_or_name": "Nguyen Van Huy",
+        "valid_since": "2026-09-17T14:18:00Z",
+        "confidence": 0.96
+      },
+      {
+        "relation_type": "BELONGS_TO",
+        "target_entity_type": "Project",
+        "target_entity_id": "project-ops",
+        "target_title_or_name": "Operations Core",
+        "valid_since": "2026-09-17T14:18:00Z",
+        "confidence": 1.0
+      }
+    ],
+    "blocking_tasks": [],
+    "dependent_people": ["00000000-0000-0000-0000-000000000003"],
+    "related_decisions": ["dec-001-k8s-rollback-strategy"],
+    "past_lessons_learned": ["lesson-012-check-ingress-cert-renewal"]
+  }
+]

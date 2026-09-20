@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-09-18T08:00:00Z",
+  "user_id": "00000000-0000-0000-0000-000000000002",
+  "summary_headline": "Hôm nay có 2 việc cần ưu tiên, trong đó 1 lỗi deployment staging đang có người chờ.",
+  "top_tasks": [
+    {
+      "task_id": "task-unified-001",
+      "title": "Investigate deployment failure on staging",
+      "status": "open",
+      "project_key": "OPS",
+      "owner_name": "Dam Quang Cuong",
+      "requester_name": "Nguyen Van Huy",
+      "due_date": "2026-09-18T17:00:00Z",
+      "priority": {
+        "total_score": 92.5,
+        "deadline_score": 25.0,
+        "customer_impact_score": 20.0,
+        "production_impact_score": 20.0,
+        "commitment_weight": 15.0,
+        "waiting_penalty": 15.0,
+        "stale_age_score": 0.0,
+        "uncertainty_deduction": 2.5,
+        "llm_explanation": "Đến hạn hôm nay, ảnh hưởng hệ thống staging và Huy đang chờ phản hồi sau cam kết trên Teams."
+      },
+      "primary_evidence_snippet": "Để em check nhé.",
+      "deep_link": "https://teams.microsoft.com/l/message/19:channel-devops-alerts/msg-teams-1726567080",
+      "is_at_risk": false,
+      "risk_reason": null
+    }
+  ],
+  "waiting_on_others": [
+    {
+      "task_id": "task-unified-002",
+      "title": "Review API token rotation PR",
+      "waiting_for_person_name": "Tran Thi Mai",
+      "blocked_since": "2026-09-16T10:00:00Z",
+      "waiting_days": 2,
+      "reason": "Đang chờ approval trên Pull Request #142"
+    }
+  ],
+  "forgotten_commitments": [
+    {
+      "commitment_id": "comm-009",
+      "task_id": "task-unified-009",
+      "title": "Gửi tài liệu architecture cho An",
+      "promised_to_name": "Le Hoang An",
+      "promised_at": "2026-09-14T09:00:00Z",
+      "days_stale": 4,
+      "last_conversation_snippet": "Chiều nay anh gửi file nhé.",
+      "suggested_action": "Gửi tài liệu hoặc nhắn lại hẹn thời gian mới"
+    }
+  ],
+  "identified_risks": [
+    "Shortcut story 1204 sẽ đến hạn trong 48h tới nhưng chưa có commit mới"
+  ]
+}

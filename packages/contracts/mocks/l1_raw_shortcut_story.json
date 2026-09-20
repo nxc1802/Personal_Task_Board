@@ -1,0 +1,24 @@
+{
+  "id": "raw-1204-shortcut",
+  "tenant_id": "tenant-fpt-internal",
+  "source_type": "shortcut",
+  "external_id": "story-1204",
+  "parent_external_id": "epic-40",
+  "idempotency_key": "c59d15b309fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b111",
+  "event_timestamp": "2026-09-17T10:30:00Z",
+  "author_external_id": "product_lead",
+  "author_display_name": "Tran Thi Mai",
+  "conversation_or_project_id": "project-frontend-core",
+  "deep_link": "https://app.shortcut.com/workspace/story/1204",
+  "raw_payload": {
+    "id": 1204,
+    "name": "Refactor auth token refresh handler",
+    "completed": false,
+    "workflow_state_id": 500000001,
+    "owner_ids": ["cuong-shortcut-id"],
+    "deadline": "2026-09-20T17:00:00Z"
+  },
+  "processing_status": "pending",
+  "retry_count": 0,
+  "created_at": "2026-09-17T10:31:00Z"
+}

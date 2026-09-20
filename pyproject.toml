@@ -1,0 +1,17 @@
+[project]
+name = "personal-task-board"
+version = "0.1.0"
+description = "Personal Intelligence System for unified task management across Teams, Outlook, Jira, and Shortcut"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "services/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["packages", "services"]
+asyncio_mode = "auto"

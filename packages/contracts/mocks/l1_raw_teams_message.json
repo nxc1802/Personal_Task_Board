@@ -1,0 +1,28 @@
+{
+  "id": "raw-908-teams-fpt",
+  "tenant_id": "tenant-fpt-internal",
+  "source_type": "ms_teams",
+  "external_id": "msg-teams-1726567080",
+  "parent_external_id": "thread-deploy-001",
+  "idempotency_key": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "event_timestamp": "2026-09-17T14:18:00Z",
+  "author_external_id": "huy.nguyen@fpt.com",
+  "author_display_name": "Nguyen Van Huy",
+  "conversation_or_project_id": "channel-devops-alerts",
+  "deep_link": "https://teams.microsoft.com/l/message/19:channel-devops-alerts/msg-teams-1726567080",
+  "raw_payload": {
+    "body": {
+      "contentType": "html",
+      "content": "<div><blockquote itemscope='' itemtype='http://schema.skype.com/Reply' itemid='1726567000'><strong>Huy</strong>: Can you check why deployment failed?</blockquote><p>Để em check nhé.</p></div>"
+    },
+    "from": {
+      "user": {
+        "id": "cuong.dam@fpt.com",
+        "displayName": "Dam Quang Cuong"
+      }
+    }
+  },
+  "processing_status": "pending",
+  "retry_count": 0,
+  "created_at": "2026-09-17T14:18:05Z"
+}

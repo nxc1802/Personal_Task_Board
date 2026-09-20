@@ -1,0 +1,11 @@
+{
+  "name": "personal-task-board",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --filter \"./packages/*\" --filter \"./apps/*\" build",
+    "test": "pnpm --filter \"./packages/*\" --filter \"./apps/*\" test",
+    "lint": "pnpm --filter \"./packages/*\" --filter \"./apps/*\" lint"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

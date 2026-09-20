@@ -1,0 +1,44 @@
+[
+  {
+    "id": "task-unified-001",
+    "title": "Investigate deployment failure on staging",
+    "description": "Kiểm tra nguyên nhân deployment bị lỗi theo yêu cầu của Huy trên Teams và khớp với Jira OPS-88",
+    "status": "open",
+    "owner_canonical_id": "00000000-0000-0000-0000-000000000002",
+    "requester_canonical_id": "00000000-0000-0000-0000-000000000003",
+    "project_key": "OPS",
+    "customer_id": "client-internal",
+    "due_date": "2026-09-18T17:00:00Z",
+    "explicit_deadline": false,
+    "extraction_confidence": 0.96,
+    "review_status": "auto_approved",
+    "evidences": [
+      {
+        "id": "ev-001",
+        "task_id": "task-unified-001",
+        "raw_event_id": "raw-908-teams-fpt",
+        "evidence_type": "chat_commitment",
+        "source_type": "ms_teams",
+        "external_url": "https://teams.microsoft.com/l/message/19:channel-devops-alerts/msg-teams-1726567080",
+        "author_canonical_id": "00000000-0000-0000-0000-000000000002",
+        "timestamp": "2026-09-17T14:18:00Z",
+        "snippet": "Để em check nhé.",
+        "confidence": 0.96,
+        "extraction_version": "v1.0"
+      },
+      {
+        "id": "ev-002",
+        "task_id": "task-unified-001",
+        "raw_event_id": "raw-88-jira-ops",
+        "evidence_type": "jira_ticket",
+        "source_type": "jira",
+        "external_url": "https://fpt-corp.atlassian.net/browse/OPS-88",
+        "author_canonical_id": "00000000-0000-0000-0000-000000000003",
+        "timestamp": "2026-09-17T14:00:00Z",
+        "snippet": "Deployment failed on staging environment",
+        "confidence": 1.0,
+        "extraction_version": "v1.0"
+      }
+    ]
+  }
+]

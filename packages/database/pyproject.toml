@@ -1,0 +1,22 @@
+[project]
+name = "ptb-database"
+version = "0.1.0"
+description = "Supabase PostgreSQL migrations, Neo4j ontology, Tier 2 Validator, and Outbox worker for Personal Task Board"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ptb-contracts",
+    "pydantic>=2.7.0",
+    "asyncpg>=0.29.0",
+    "neo4j>=5.20.0",
+]
+
+[tool.uv.sources]
+ptb-contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
