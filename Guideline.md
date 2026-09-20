@@ -139,7 +139,8 @@ uv run python -m ptb_database.init_neo4j
   * Chạy tiếp file: `packages/database/supabase/seeds/001_dev_seed.sql` (nạp seed data).
 * **Neo4j AuraDB**:
   * Mở **Neo4j Aura Console → Open Query**.
-  * Chạy file: `packages/database/neo4j/constraints/001_constraints.cypher` (tạo 11 constraints & 4 indexes).
+  * Chạy file: `packages/database/neo4j/consolidated_schema.cypher` (tạo 11 constraints & 4 indexes).
+  * Chạy tiếp file: `packages/database/neo4j/seeds/001_dev_seed.cypher` (nạp seed nodes Person, Project, Identities).
 
 ---
 

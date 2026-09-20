@@ -98,7 +98,13 @@ async def setup_neo4j():
 
         print("  -> Đang áp dụng 11 constraints và 4 indexes...")
         executed = await client.execute_cypher_file()
-        print(f"  ✓ Đã thực thi thành công {len(executed)} câu lệnh Cypher.")
+        print(f"  ✓ Đã thực thi thành công {len(executed)} câu lệnh Cypher constraints.")
+
+        seed_path = Path(__file__).parent.parent.parent / "neo4j" / "seeds" / "001_dev_seed.cypher"
+        if seed_path.exists():
+            print("  -> Đang nạp dữ liệu seed ban đầu lên Neo4j (Person, Project, Identities)...")
+            await client.execute_cypher_file(seed_path)
+            print("  ✓ Đã nạp thành công seed data lên Neo4j!")
 
         constraints = await client.get_active_constraints()
         print(f"  -> Tổng số constraints đang hoạt động trên AuraDB: {len(constraints)}")
