@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Environments & secrets
+.env
+.env*.local
+
+# Logs
+*.log
