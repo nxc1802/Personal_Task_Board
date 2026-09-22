@@ -1,245 +1,157 @@
-# Layer 1: Data Acquisition (Thu Thập & Đồng Bộ Dữ Liệu)
+# Layer 1: Data Acquisition (Thu Thập & Trích Xuất Dữ Liệu Cục Bộ)
 
-## 1. Trách Nhiệm Cốt Lõi Của Layer 1
+## 1. Trách Nhiệm Cốt Lõi Của Layer 1 (Local-First Edition)
 
-Layer 1 chịu trách nhiệm kết nối, thu thập và lưu trữ toàn bộ dữ liệu thô từ các nền tảng giao tiếp và quản lý công việc vào hệ thống một cách bền bỉ (durable), không mất mát dữ liệu, có khả năng phục hồi sau lỗi và hỗ trợ mở rộng cho nhiều tenant.
+Trong kiến trúc Local-First, Layer 1 chịu trách nhiệm thu thập toàn bộ dữ liệu thô từ các công cụ giao tiếp và môi trường lập trình của kỹ sư **ngay trên máy tính cá nhân (User Host)** mà không cần thông qua các API Cloud phức tạp hay rào cản phân quyền doanh nghiệp:
 
-**Các nhiệm vụ chính:**
-1. **Quản lý kết nối đa nguồn (Multi-source Connectors)**: Microsoft Graph API (Teams chats/channels, Outlook emails), Jira REST API, Shortcut API, Confluence API.
-2. **Điều phối bền bỉ qua Temporal (Durable Orchestration)**:
-   - *Initial Sync Workflow*: Quét lùi lịch sử (Backfill) từ 30 đến 90 ngày cho các nguồn mới kết nối.
-   - *Incremental Sync Workflow*: Chạy định kỳ mỗi 5 đến 15 phút để lấy dữ liệu thay đổi (delta/new events).
-3. **Idempotency & Lưu trữ bất biến (Immutable Raw Storage)**: Đảm bảo không ghi trùng lặp dữ liệu và lưu nguyên vẹn payload gốc vào bảng `raw_events` trong Supabase.
-4. **Quản lý Checkpoint & Giới hạn tốc độ (Checkpointing & Rate Limiting)**: Lưu vị trí phân trang (paging token, delta token) sau từng trang dữ liệu; tự động retry với exponential backoff khi gặp HTTP 429.
+1. **Layer 1A: Browser Network Interception (Playwright)**:
+   - Thu thập tin nhắn, cuộc hội thoại từ **Teams Web** và **Outlook Web**.
+   - Cơ chế: Tái sử dụng session cookie của người dùng, dùng Playwright để "nghe lén" gói tin JSON nội bộ từ network responses (`page.on('response')`).
+   - **Lợi ích chí mạng**: Không cần đăng ký Azure AD App, không cần quyền Quản trị viên (Admin Consent) của công ty hay khách hàng.
+2. **Layer 1B: Local Coding Agent Session Watcher**:
+   - Thu thập lịch sử chat, các quyết định kiến trúc và bài học sửa lỗi từ các Coding Agent lưu tại local:
+     - **Cursor**: Quét file SQLite `state.vscdb`.
+     - **Claude Code**: Quét các file transcript JSONL trong `~/.claude/`.
+     - **Antigravity IDE**: Quét các file `transcript.jsonl` trong thư mục `brain/`.
+3. **Idempotency & Chuẩn Hóa C12**:
+   - Mọi sự kiện thu thập được đều được gán `idempotency_key` duy nhất để tránh xử lý trùng lặp và đóng gói thành `RawEventRecord` hoặc `RawAgentSessionRecord`.
 
 ---
 
 ## 2. Kiến Trúc Chi Tiết Layer 1
 
 ```mermaid
-flowchart TD
-    subgraph Schedulers ["Temporal Engine"]
-        TS_INIT["InitialSyncWorkflow<br/>(Backfill 30-90 days)"]
-        TS_INC["IncrementalSyncWorkflow<br/>(Schedule every 5-15 mins)"]
+flowchart TB
+    subgraph BrowserLayer ["Layer 1A: Playwright Network Interceptor"]
+        direction TB
+        PW_HEADLESS["Playwright Headless Process<br/>(Chromium Engine)"]
+        COOKIE_STORE[("Local Session Cookie<br/>(storage_state.json)")]
+        RESP_LISTENER["Network Response Listener<br/>(page.on 'response')"]
+        JSON_EXTRACT["Teams / Outlook JSON Extractor"]
+
+        COOKIE_STORE --> PW_HEADLESS --> RESP_LISTENER --> JSON_EXTRACT
     end
 
-    subgraph Connectors ["Connector Modules"]
-        BC["BaseConnector Interface"]
-        MSG_T["MSGraphTeamsConnector<br/>(Chats, Channels, Replies)"]
-        MSG_O["MSGraphOutlookConnector<br/>(Inbox, Sent, Threads)"]
-        JC["JiraConnector<br/>(Issues, Changelogs, Comments)"]
-        SC["ShortcutConnector<br/>(Stories, Tasks, Comments)"]
-        CC["ConfluenceConnector<br/>(Pages, Comments)"]
+    subgraph AgentLogLayer ["Layer 1B: Local Coding Agent Watcher"]
+        direction TB
+        DIR_WATCH["Local File System Watcher<br/>(watchfiles / inotify)"]
+        SQLITE_PARSER["Cursor SQLite Parser<br/>(state.vscdb / ItemTable)"]
+        TRANSCRIPT_PARSER["Claude & Antigravity Parser<br/>(JSONL Transcript Tailer)"]
 
-        BC --> MSG_T & MSG_O & JC & SC & CC
+        DIR_WATCH --> SQLITE_PARSER & TRANSCRIPT_PARSER
     end
 
-    subgraph Activities ["Temporal Activities"]
-        A_AUTH["RefreshCredentialsActivity<br/>(Decrypt OAuth token via pgcrypto)"]
-        A_FETCH["FetchPageActivity<br/>(HTTP Call with Retry & RateLimit)"]
-        A_CHECK["SaveCheckpointActivity<br/>(Update sync_checkpoints)"]
-        A_STORE["StoreRawEventsActivity<br/>(Batch Upsert to raw_events)"]
+    subgraph IngestionQueue ["Local Ingestion Boundary (Contract C12)"]
+        IDEMPOTENCY["Idempotency Hash Calculator<br/>SHA256(source + external_id + timestamp)"]
+        EVENT_QUEUE["Asyncio Ingestion Channel<br/>(Đẩy trực tiếp sang Layer 2)"]
     end
 
-    subgraph Store ["L3 Storage Boundary"]
-        DB_CONN[("source_connections")]
-        DB_CHK[("sync_checkpoints")]
-        DB_RAW[("raw_events<br/>(status: pending)")]
-    end
+    JSON_EXTRACT --> IDEMPOTENCY
+    SQLITE_PARSER --> IDEMPOTENCY
+    TRANSCRIPT_PARSER --> IDEMPOTENCY
+    IDEMPOTENCY --> EVENT_QUEUE
 
-    TS_INIT --> A_AUTH --> A_FETCH --> A_STORE --> A_CHECK
-    TS_INC --> A_AUTH --> A_FETCH --> A_STORE --> A_CHECK
-
-    A_AUTH <--> DB_CONN
-    A_CHECK <--> DB_CHK
-    A_STORE --> DB_RAW
-    A_FETCH <--> Connectors
-
-    style Schedulers fill:#F0FDF4,stroke:#16A34A
-    style Connectors fill:#EFF6FF,stroke:#2563EB
-    style Activities fill:#FFFBEB,stroke:#D97706
-    style Store fill:#FAF5FF,stroke:#9333EA
+    style BrowserLayer fill:#EFF6FF,stroke:#2563EB
+    style AgentLogLayer fill:#F0FDF4,stroke:#16A34A
+    style IngestionQueue fill:#FAF5FF,stroke:#9333EA
 ```
 
 ---
 
-## 3. Thiết Kế Connector (Connector Architecture)
+## 3. Layer 1A: Playwright Network Interceptor (Chi Tiết Kỹ Thuật)
 
-### 3.1 BaseConnector Interface
+### 3.1 Nguyên Lý Hoạt Động (Network Response Interception)
+Khi người dùng truy cập Teams Web hoặc Outlook Web, giao diện web liên tục gọi các API nội bộ trả về JSON dạng cấu trúc:
+- Teams: `/api/chats/.../messages`, `/api/v1/users/ME/conversations/...`
+- Outlook: `/owa/service.svc?action=GetConversationItems`
 
-Mọi connector đều kế thừa từ một interface chuẩn trong Python:
+Thay vì parse giao diện HTML dễ vỡ khi Teams đổi CSS, Playwright hook trực tiếp vào luồng phản hồi mạng:
 
 ```python
-from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Dict, Any, Optional
-from pydantic import BaseModel
+import json
+from playwright.async_api import async_playwright, Response
 
-class FetchBatchResult(BaseModel):
-    items: list[Dict[str, Any]]
-    next_page_token: Optional[str]
-    delta_token: Optional[str]
-    has_more: bool
+async def handle_teams_response(response: Response, queue):
+    url = response.url
+    # Bắt đúng endpoint chứa tin nhắn chat
+    if "api/chats" in url and "messages" in url and response.status == 200:
+        try:
+            payload = await response.json()
+            messages = payload.get("messages", [])
+            for msg in messages:
+                # Đóng gói thành RawEventRecord
+                raw_event = parse_teams_internal_json(msg)
+                await queue.put(raw_event)
+        except Exception as e:
+            logger.warning(f"Lỗi đọc payload Teams: {e}")
 
-class BaseConnector(ABC):
-    def __init__(self, connection_config: Dict[str, Any]):
-        self.config = connection_config
-
-    @abstractmethod
-    async def test_connection(self) -> bool:
-        """Kiểm tra quyền truy cập và tính hợp lệ của token."""
-        pass
-
-    @abstractmethod
-    async def fetch_backfill(
-        self, 
-        start_time: str, 
-        page_token: Optional[str] = None
-    ) -> FetchBatchResult:
-        """Lấy dữ liệu lịch sử trong khoảng thời gian xác định."""
-        pass
-
-    @abstractmethod
-    async def fetch_incremental(
-        self, 
-        checkpoint_token: Optional[str] = None
-    ) -> FetchBatchResult:
-        """Lấy dữ liệu phát sinh mới nhất kể từ checkpoint gần nhất."""
-        pass
+async def start_teams_interceptor(storage_state_path: str, queue):
+    async with async_playwright() as p:
+        # Khởi chạy trình duyệt với session cookie đã đăng nhập
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(storage_state=storage_state_path)
+        page = await context.new_page()
+        
+        # Đăng ký listener bắt phản hồi mạng
+        page.on("response", lambda resp: handle_teams_response(resp, queue))
+        await page.goto("https://teams.microsoft.com")
+        
+        # Giữ kết nối hoạt động ngầm
+        while True:
+            await asyncio.sleep(60)
 ```
 
-### 3.2 Microsoft Graph Connector (Đa Tenant)
-- **Teams Messages**:
-  - Endpoint: `GET /chats/{chat-id}/messages` hoặc `GET /teams/{team-id}/channels/{channel-id}/messages/delta`.
-  - Hỗ trợ phân rã HTML body: Tin nhắn có quote (`<blockquote>`), mention (`<at>`), và đính kèm attachment link.
-  - Phân tách tenant: Header request gắn token tương ứng với tenant ID (`fpt.com` vs tenant khách hàng).
-- **Outlook Emails**:
-  - Endpoint: `GET /me/mailFolders/inbox/messages/delta`.
-  - Chỉ lấy metadata, subject, body text, người gửi, CC, và danh sách người nhận.
-
-### 3.3 Jira & Shortcut Connectors
-- **Jira REST API v3**:
-  - Endpoint: `POST /rest/api/3/search` với JQL: `updated >= -15m` hoặc `assignee = currentUser() OR text ~ "cuong"`.
-  - Lấy đầy đủ fields: `summary`, `status`, `assignee`, `reporter`, `comment`, `duedate`.
-- **Shortcut API v3**:
-  - Endpoint: `GET /api/v3/stories/search` và `GET /api/v3/stories/{story-id}/comments`.
+### 3.2 Cơ Chế Lưu Trữ Phiên (Session Management)
+- Người dùng chạy lệnh `python -m services.acquisition.login` một lần duy nhất để mở trình duyệt có giao diện, hoàn tất đăng nhập (bao gồm 2FA/MFA).
+- Playwright lưu trạng thái cookie và token vào file mã hoá `storage_state.json` cục bộ.
+- Headless worker sử dụng file này để tự động kết nối lại mà không cần nhập mật khẩu.
 
 ---
 
-## 4. Thiết Kế Temporal Workflows
+## 4. Layer 1B: Local Coding Agent Log Watcher (Chi Tiết Kỹ Thuật)
 
-Temporal đóng vai trò đảm bảo quá trình đồng bộ không bao giờ bị đứt gãy giữa chừng:
+### 4.1 Thu Thập Từ Cursor AI (`state.vscdb`)
+- **Vị trí**:
+  - macOS: `~/Library/Application Support/Cursor/User/workspaceStorage/<workspace_id>/state.vscdb`
+  - Linux/Windows: Đường dẫn tương ứng trong AppData / config.
+- **Cơ chế**: Cursor lưu toàn bộ lịch sử Composer/Chat vào database SQLite.
+- **Truy vấn**:
+  ```python
+  import sqlite3
+  import json
 
-### 4.1 InitialSyncWorkflow (Backfill 30-90 Ngày)
-1. **Nhận input**: `connection_id`, `lookback_days` (mặc định 30 ngày, tối đa 90 ngày).
-2. **Khởi tạo Checkpoint**: Ghi nhận `status = 'in_progress'` trong `sync_checkpoints`.
-3. **Phân trang lặp (Pagination Loop)**:
-   - Gọi Activity `FetchPageActivity` với `page_token`.
-   - Với mỗi trang (ví dụ: 50 tin nhắn):
-     - Tính `idempotency_key` cho từng item.
-     - Gọi Activity `StoreRawEventsActivity` ghi vào `raw_events` với `processing_status = 'pending'`.
-     - Gọi Activity `SaveCheckpointActivity` lưu lại `next_page_token`.
-4. **Hoàn thành**: Cập nhật `sync_checkpoints` với `last_successful_sync_at = now()`, `status = 'healthy'`.
+  def extract_cursor_chats(db_path: str):
+      conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+      cursor = conn.cursor()
+      cursor.execute("SELECT value FROM ItemTable WHERE key = 'workbench.panel.aichat.chatdata'")
+      row = cursor.fetchone()
+      if row:
+          chat_data = json.loads(row[0])
+          return chat_data.get("tabs", [])
+  ```
 
-### 4.2 IncrementalSyncWorkflow (Chạy Định Kỳ)
-1. **Lịch trình**: Được cấu hình bằng Temporal Schedule (`*/10 * * * *` - 10 phút/lần).
-2. **Nạp Checkpoint**: Đọc `delta_token` hoặc `last_event_timestamp` từ database.
-3. **Gọi Delta API**: Lấy các item mới hoặc vừa cập nhật.
-4. **Ghi Raw Event**:
-   - Nếu event đã tồn tại cùng `idempotency_key` $\rightarrow$ Bỏ qua (Skip).
-   - Nếu event có nội dung sửa đổi $\rightarrow$ Tạo bản ghi raw event mới với version mới.
-5. **Cập nhật Checkpoint**: Ghi lại `delta_token` mới nhất.
-
----
-
-## 5. Schema & Idempotency trong Cơ Sở Dữ Liệu
-
-### 5.1 Thuật Toán Tính Idempotency Key
-Để tránh ghi trùng khi Temporal retry:
-```
-idempotency_key = SHA256(
-    tenant_id + ":" + 
-    source_type + ":" + 
-    external_id + ":" + 
-    sha256(raw_content_payload)
-)
-```
-
-### 5.2 Bảng `raw_events` (PostgreSQL DDL)
-
-```sql
-CREATE TABLE raw_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(100) NOT NULL,
-    source_type VARCHAR(50) NOT NULL,
-    external_id VARCHAR(255) NOT NULL,
-    parent_external_id VARCHAR(255),
-    idempotency_key VARCHAR(64) UNIQUE NOT NULL,
-    
-    event_timestamp TIMESTAMPTZ NOT NULL,
-    author_external_id VARCHAR(255) NOT NULL,
-    author_display_name VARCHAR(255),
-    conversation_or_project_id VARCHAR(255) NOT NULL,
-    deep_link TEXT,
-    
-    raw_payload JSONB NOT NULL,
-    
-    processing_status VARCHAR(30) DEFAULT 'pending' 
-        CHECK (processing_status IN ('pending', 'processing', 'processed', 'failed', 'skipped')),
-    retry_count INT DEFAULT 0,
-    last_error TEXT,
-    
-    created_at TIMESTAMPTZ DEFAULT clock_timestamp()
-);
-
--- Indexes tối ưu hóa việc truy vấn của Layer 2 Worker
-CREATE INDEX idx_raw_events_pending ON raw_events (created_at ASC) 
-WHERE processing_status = 'pending';
-
-CREATE INDEX idx_raw_events_lookup ON raw_events (tenant_id, source_type, external_id);
-```
-
-### 5.3 Quản Lý Token & Credentials (`source_connections`)
-Mã hóa bảo vệ OAuth token bằng `pgcrypto`:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-CREATE TABLE source_connections (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL,
-    tenant_id VARCHAR(100) NOT NULL,
-    source_type VARCHAR(50) NOT NULL,
-    auth_type VARCHAR(30) NOT NULL, -- 'oauth2', 'api_token'
-    
-    -- Lưu trữ access_token và refresh_token dưới dạng mã hóa
-    encrypted_credentials BYTEA NOT NULL,
-    token_expires_at TIMESTAMPTZ,
-    
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT clock_timestamp(),
-    updated_at TIMESTAMPTZ DEFAULT clock_timestamp(),
-    
-    UNIQUE(user_id, tenant_id, source_type)
-);
-```
+### 4.2 Thu Thập Từ Claude Code & Antigravity IDE
+- **Claude Code**: Đọc các file JSONL transcript trong thư mục `~/.claude/projects/`.
+- **Antigravity IDE**: Đọc file `transcript.jsonl` từ thư mục `<appDataDir>/brain/<conversation-id>/.system_generated/logs/`.
+- **Nội dung trích xuất**:
+  - Các turn mà User yêu cầu task kỹ thuật (e.g. `"Fix bug token refresh"`, `"Refactor schema"`).
+  - Các turn mà Agent đưa ra quyết định kiến trúc (e.g. `"Sử dụng Neo4j thay vì Postgres vì..."`).
+  - Các bài học sửa lỗi (Lessons Learned) sau khi chạy test thất bại và sửa thành công.
 
 ---
 
-## 6. Xử Lý Lỗi, Backpressure & Dead-Letter
+## 5. Cơ Chế Idempotency & Hàng Đợi (Queueing)
 
-1. **HTTP 429 (Rate Limited)**:
-   - Connector đọc header `Retry-After`.
-   - Temporal Activity ném `ApplicationError(retryable=True, backoff_seconds=...)`.
-2. **Token Expired (HTTP 401)**:
-   - Activity `RefreshCredentialsActivity` tự động dùng refresh_token để lấy access_token mới và cập nhật vào `source_connections`.
-3. **Dead-Letter / Poison Message**:
-   - Nếu một raw event bị lỗi cú pháp payload không thể parse sau 5 lần retry, Temporal đánh dấu `status = 'failed'` kèm `last_error` trong `raw_events` và bắn alert về Coverage Dashboard. Quá trình sync các items tiếp theo vẫn tiếp tục.
+Để đảm bảo không bị trùng lặp dữ liệu khi quét lại các file log hay bắt lại gói tin mạng:
+
+$$IdempotencyKey = \text{SHA256}(\text{source\_type} + \text{external\_id} + \text{content\_hash})$$
+
+- Tiến trình kiểm tra trong bộ đệm hoặc Neo4j: Nếu `idempotency_key` đã tồn tại $\rightarrow$ Bỏ qua.
+- Nếu mới $\rightarrow$ Chuyển qua kênh `asyncio.Queue` cho Layer 2 Ingestion Service xử lý ngay lập tức.
 
 ---
 
-## 7. Quy Trình Test Độc Lập Layer 1
+## 6. Kiểm Thử Độc Lập Layer 1
 
-Layer 1 có thể kiểm thử độc lập 100% không cần các layer khác:
-1. **Mock Source API Server**: Sử dụng `httpx_mock` hoặc `WireMock` giả lập API response của Microsoft Graph và Jira.
-2. **Temporal Test Environment**: Sử dụng `temporalio.testing.WorkflowEnvironment` trong Python để chạy test toàn bộ vòng đời của `InitialSyncWorkflow` và `IncrementalSyncWorkflow` cục bộ.
-3. **Database Assertion**: Kiểm tra dữ liệu được chèn vào bảng `raw_events` có đúng chuẩn `RawEventRecord` đã quy định trong `packages/contracts`.
+1. **Test Layer 1A**: Sử dụng file mock JSON của gói tin Teams (`packages/contracts/mocks/l1_raw_teams_message.json`) đưa trực tiếp vào hàm `handle_teams_response`.
+2. **Test Layer 1B**: Tạo file SQLite giả lập của Cursor và file JSONL mẫu để kiểm tra độ chính xác của bộ trích xuất log.

@@ -1,94 +1,92 @@
-# Kiến Trúc Tổng Thể Hệ Thống (System Architecture Overview)
+# Kiến Trúc Tổng Thể Hệ Thống (System Architecture Overview) - Lean Local-First Edition
 
 ## 1. Tầm Nhìn & Bản Chất Hệ Thống
 
-**Personal Task Board** không phải là một công cụ quản lý dự án (Project Management Tool) nhằm thay thế Jira, Shortcut hay Trello. Đây là một hệ thống **Personal Intelligence Layer** hoạt động ở tầng phía trên toàn bộ các công cụ giao tiếp và quản trị hiện tại của một kỹ sư/tech lead.
+**Personal Task Board** là một hệ thống **Personal Intelligence & Task Management** chạy cục bộ (**Local-First**) trên máy trạm của kỹ sư/tech lead. Hệ thống hoạt động ở tầng trên cùng, tổng hợp và giám sát toàn bộ các luồng công việc, cam kết phát sinh từ:
+- **Microsoft Teams & Outlook**: Các tin nhắn phân bổ ở nhiều tenant (nội bộ công ty và đối tác khách hàng).
+- **Lịch sử hội thoại Coding Agents**: Phiên làm việc với Cursor (`state.vscdb`), Claude Code (`transcripts`), Antigravity (`brain/logs`).
+- **Jira / Shortcut**: Các ticket, story chính thức.
+- **Cam kết ngầm (Implicit Commitments)**: Các câu hứa hẹn tự nhiên trong hội thoại (`"Để em check"`, `"Anh gửi em trước 5h nhé"`, `"On it"`).
 
-Hệ thống giải quyết bài toán:
-- **Phân mảnh không gian làm việc**: Thông tin nằm rải rác ở Microsoft Teams (nội bộ FPT và đối tác khách hàng), Outlook, Jira, Shortcut, Confluence.
-- **Cam kết ngầm (Implicit Commitments)**: Các cam kết trong hội thoại không bao giờ được tạo thành ticket (`"Để em check"`, `"Anh gửi em trước 5h nhé"`, `"On it"`).
-- **Rủi ro sai lệch quy gán (Attribution Drift)**: Gán nhầm việc người khác hứa thành việc mình phải làm hoặc ngược lại.
-- **Mục tiêu ưu tiên**: **Precision > Recall**. Thà chỉ trích xuất 5 cam kết chính xác 100% kèm đầy đủ bằng chứng (`evidence`), còn hơn gợi ý 20 việc phỏng đoán sai lệch làm xói mòn niềm tin người dùng.
+### Triết Lý Thiết Kế Cốt Lõi
+1. **Local-First & Bảo Mật Tuyệt Đối**: Dữ liệu hội thoại, mã nguồn và cam kết công việc không bao giờ rời khỏi máy tính cá nhân. Không phụ thuộc hạ tầng Cloud bên thứ ba.
+2. **Precision > Recall**: Thà chỉ trích xuất 5 cam kết chính xác 100% kèm đầy đủ bằng chứng (`evidence`), còn hơn gợi ý 20 việc phỏng đoán sai lệch làm mất niềm tin của người dùng.
+3. **Tối Giản & Trực Thực (Lean Architecture)**: Lược bỏ các framework cồng kềnh (Next.js, LangGraph, Supabase Cloud). Tận dụng tối đa sức mạnh của **OpenWebUI** cho giao diện, **Neo4j** cho lưu trữ đơn nhất (Single-Store), và **Python thuần** cho các tiến trình xử lý ngầm.
 
 ---
 
-## 2. Kiến Trúc 5 Layer & Dòng Dữ Liệu (End-to-End Data Flow)
-
-Hệ thống được thiết kế theo 5 Layer độc lập về logic, giao tiếp với nhau thông qua **Shared Data Contracts** và được tách rời bởi các ranh giới bền vững (Database / Outbox / Service Gateway):
+## 2. Kiến Trúc 5 Layer & Dòng Dữ Liệu Cục Bộ (End-to-End Data Flow)
 
 ```mermaid
 flowchart TB
-    subgraph Sources ["Nguồn Dữ Liệu Ngoại Vi"]
+    subgraph Sources ["Nguồn Dữ Liệu Ngoại Vi & Cục Bộ"]
         direction LR
-        MS_GRAPH["Microsoft Graph API<br/>(Teams, Outlook - Đa Tenant)"]
-        JIRA_API["Jira REST API"]
-        SC_API["Shortcut API"]
-        CONF_API["Confluence API"]
+        TEAMS_WEB["Teams Web<br/>(Đa Tenant)"]
+        OUTLOOK_WEB["Outlook Web"]
+        CURSOR_LOG["Cursor SQLite<br/>(state.vscdb)"]
+        CLAUDE_LOG["Claude Code<br/>(transcripts)"]
+        AGY_LOG["Antigravity Logs<br/>(brain/logs)"]
+        JIRA_SC["Jira / Shortcut"]
     end
 
-    subgraph L1 ["Layer 1: Data Acquisition"]
+    subgraph L1 ["Layer 1: Data Acquisition (Crawl & File Watcher)"]
         direction TB
-        TEMP_SYNC["Temporal Workflows<br/>(Initial Backfill 30-90d, Incremental 5-15m)"]
-        CONNECTORS["Python Source Connectors<br/>(Rate Limit, Pagination, Retry)"]
-        L1_RAW_STORE[("raw_events Table<br/>(Immutable, Idempotent, State: pending)")]
-        
-        TEMP_SYNC --> CONNECTORS
-        CONNECTORS --> L1_RAW_STORE
+        subgraph L1A ["1A: Browser Network Interceptor"]
+            PW_INT["Playwright Network Interception<br/>• Tái sử dụng Session Cookie<br/>• Bắt gói JSON nội bộ (page.on 'response')"]
+        end
+        subgraph L1B ["1B: Local Agent Log Watcher"]
+            LOG_WATCH["Local Log Watcher & Parser<br/>• SQLite Query Parser (Cursor)<br/>• JSONL Stream Tailer (Claude / Antigravity)"]
+        end
     end
 
-    subgraph L2 ["Layer 2: Data Processing"]
+    subgraph L2 ["Layer 2: Data Processing (Python Ingestion Service)"]
         direction TB
-        EVENT_WORKER["Processing Worker<br/>(DB Poller / Decoupled Queue)"]
-        DETERM_PARSER["Deterministic Parsers<br/>(HTML Clean, Teams Quote & Reply Splitter)"]
-        IDENTITY_RES["Identity Resolver<br/>(RapidFuzz + Multi-tenant Aliases -> Person)"]
-        RULE_FILTER["Rule Candidate Filter<br/>(Heuristic Pre-check)"]
-        LANGGRAPH_EXT["LangGraph Extraction Workflow<br/>(OpenAI-compatible LLM + Structured Output)"]
-        ATTR_VAL["Attribution & Confidence Gate<br/>(High >= 0.85 -> Process, 0.5-0.85 -> Review)"]
-        CORRELATION["Correlation Engine<br/>(Match chat commitments with Jira/Shortcut)"]
-        
-        EVENT_WORKER --> DETERM_PARSER --> IDENTITY_RES --> RULE_FILTER
-        RULE_FILTER --> LANGGRAPH_EXT --> ATTR_VAL --> CORRELATION
+        DET_PARSER["Deterministic Parsers<br/>(HTML Clean, Teams Quote & Reply Separator)"]
+        IDENTITY_RES["Identity Resolver<br/>(RapidFuzz + Multi-tenant Aliases -> Canonical Person)"]
+        RULE_FILTER["Heuristic Candidate Filter<br/>(Regex / Keyword Scanning - Tiết kiệm 70% LLM)"]
+        PYDANTIC_EXT["Structured Task Extractor<br/>(OpenAI-compatible LLM + Pydantic v2)"]
+        ATTR_VAL["Attribution Validator<br/>(Kiểm tra Quoted Author vs Actual Author)"]
+        CONF_GATE{"Confidence Gate"}
+        CORRELATION["Correlation & Deduplication Engine<br/>(Khớp cam kết chat với Task / Jira hiện có)"]
+
+        DET_PARSER --> IDENTITY_RES --> RULE_FILTER --> PYDANTIC_EXT --> ATTR_VAL --> CONF_GATE
+        CONF_GATE -- ">= 0.85" --> CORRELATION
+        CONF_GATE -- "0.50 - 0.84" --> REV_QUEUE["review_queue (Lưu vào Neo4j chờ duyệt)"]
+        CONF_GATE -- "< 0.50" --> DISCARD["Bỏ qua (Log discarded)"]
     end
 
-    subgraph L3 ["Layer 3: Operational Store + GraphRAG Memory"]
+    subgraph L3 ["Layer 3: Single-Store Neo4j & Graphiti Memory"]
         direction TB
-        SUPA_PG[("Supabase PostgreSQL<br/>(Operational Source of Truth)")]
-        OUTBOX["Transactional Outbox<br/>(graph_outbox_events)"]
-        OUTBOX_WORKER["Outbox Sync Worker"]
-        GRAPHITI_ENG["Graphiti Temporal GraphRAG Engine"]
-        NEO4J_DB[("Neo4j Knowledge Graph<br/>(Fixed Domain Ontology - 11 Nodes, 13 Edges)")]
-
-        CORRELATION --> SUPA_PG
-        CORRELATION --> OUTBOX
-        OUTBOX --> OUTBOX_WORKER --> GRAPHITI_ENG --> NEO4J_DB
+        subgraph Neo4jStore ["DUY NHẤT NEO4J DATABASE (Local Docker)"]
+            TASK_STORE[("Operational Task Board (ACID)<br/>• (:UnifiedTask {status, priority_score, deadline})<br/>• (:Person)-[:ASSIGNED_TO]->(:UnifiedTask)<br/>• (:Commitment), (:Evidence)")]
+            GRAPHITI_STORE[("Temporal GraphRAG Memory (Graphiti)<br/>• (:Episode), (:Entity)<br/>• (:Decision), (:Lesson)<br/>• Quan hệ thời gian {valid_at, invalid_at}")]
+        end
+        CORRELATION -- "Direct Cypher Commit" --> TASK_STORE
+        CORRELATION -- "Add Temporal Episode" --> GRAPHITI_STORE
+        REV_QUEUE -- "Direct Cypher Commit" --> TASK_STORE
     end
 
-    subgraph L4 ["Layer 4: Intelligence"]
+    subgraph L4 ["Layer 4: Intelligence Engines"]
         direction TB
-        UNIFIED_RET["Unified Retrieval Service<br/>(Fetch Operational Tasks + Graph Temporal Facts)"]
-        PRIORITY_ENG["Deterministic Priority Engine<br/>(Weighted Mathematical Formula)"]
-        STATUS_INF["Status Inference & Anomaly Detector<br/>(Likely Done, Blocked, Stale - No Auto-Close)"]
+        PRIORITY_ENG["Deterministic Priority Engine<br/>(Công thức toán 0-100 kiểm chứng được)"]
+        STATUS_INF["Status Inference & Blocker Detector"]
         FORGOTTEN_DET["Forgotten Commitment Detector"]
-        DAILY_PLAN["Daily Planner / Today Board Generator<br/>(LangGraph + Grounded LLM Explanation)"]
-        KNOWLEDGE_RAG["Domain Knowledge RAG<br/>(Decisions, Lessons Learned)"]
-
-        UNIFIED_RET --> PRIORITY_ENG & STATUS_INF & FORGOTTEN_DET & KNOWLEDGE_RAG
-        PRIORITY_ENG & STATUS_INF & FORGOTTEN_DET --> DAILY_PLAN
     end
 
-    subgraph L5 ["Layer 5: Experience"]
+    subgraph L5 ["Layer 5: Experience (Giao Diện & Tương Tác)"]
         direction TB
-        FASTAPI["FastAPI Application Service<br/>(Unified API Gateway & Auth Guard)"]
-        WEB_UI["Next.js Web UI<br/>(Today, Commitments, Waiting, Forgotten, Risks, Review Queue)"]
-        MCP_SERVER["Model Context Protocol (MCP) Server<br/>(9 Tools for Cursor, Claude Code, Copilot)"]
-
-        DAILY_PLAN & KNOWLEDGE_RAG & SUPA_PG --> FASTAPI
-        FASTAPI <--> WEB_UI
-        FASTAPI <--> MCP_SERVER
+        OWUI["OpenWebUI (Local Docker)<br/>• Trợ lý đàm thoại & Morning Briefing<br/>• Task Board View (Interactive Artifacts / Tables)<br/>• Phê duyệt Review Queue qua Tools"]
+        MCP_SERVER["FastMCP Server (Port 8000)<br/>(Cung cấp 9 Tools chuẩn MCP cho Cursor/Claude/Antigravity)"]
     end
 
-    MS_GRAPH & JIRA_API & SC_API & CONF_API --> CONNECTORS
-    L1_RAW_STORE -. "event notification / polling" .-> EVENT_WORKER
+    %% Connections
+    TEAMS_WEB & OUTLOOK_WEB --> PW_INT
+    CURSOR_LOG & CLAUDE_LOG & AGY_LOG & JIRA_SC --> LOG_WATCH
+
+    PW_INT & LOG_WATCH -- "Contract C12 (RawEventRecord)" --> DET_PARSER
+
+    TASK_STORE & GRAPHITI_STORE <--> PRIORITY_ENG & STATUS_INF & FORGOTTEN_DET
+    PRIORITY_ENG & STATUS_INF & FORGOTTEN_DET <--> OWUI & MCP_SERVER
 
     style L1 fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px
     style L2 fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px
@@ -99,98 +97,78 @@ flowchart TB
 
 ---
 
-## 3. Các Nguyên Tắc Bất Biến (Core Invariants & Guardrails)
+## 3. Các Nguyên Tắc Bất Biến Cốt Lõi (Core Invariants)
 
-Hệ thống tuân thủ 5 nguyên tắc kiến trúc cốt lõi:
+Hệ thống tuân thủ 5 nguyên tắc kiến trúc bất biến sau:
 
 | Nguyên tắc | Mô tả chi tiết | Vi phạm khi |
-| --- | --- | --- |
-| **1. Source of Truth phân định rõ ràng** | **Supabase PostgreSQL** là nguồn chân lý duy nhất (Source of Truth) cho trạng thái hoạt động chính thức (`unified_tasks`, `commitments`, `evidence`, `review_queue`). **Neo4j + Graphiti** chỉ là bộ nhớ ngữ cảnh và quan hệ thời gian (Context Memory). | Khi AI tự động cập nhật `status = 'done'` trong Supabase dựa vào suy luận từ Graphiti mà không có sự xác nhận của người dùng. |
-| **2. Tách biệt Quote & Reply** | Trong chat Teams, người gửi thường trích dẫn (quote) tin nhắn của người khác. Phải phân rã xác định chính xác: `quoted_author`, `quoted_content` vs `actual_author`, `actual_content` trước khi đưa vào LLM. | Khi người A hỏi: *"Bạn có làm cái này không?"*, người B trả lời: *"Để em làm"*, nhưng hệ thống gán task cho người A. |
-| **3. Fixed Domain Ontology 3 lớp** | Schema trong Neo4j được kiểm soát chặt qua 3 lớp: Pydantic Model $\rightarrow$ Application Allowlist Validator $\rightarrow$ Neo4j Constraints & Indexes. | Khi LLM tự tạo Node label mới (ví dụ: `Subtask`, `BugReport`) hoặc edge mới không nằm trong allowlist đã đăng ký. |
-| **4. Bất biến & Không xóa cứng (Append-Only / Soft Invalidation)** | Dữ liệu `raw_events` là bất biến. Facts trong Graphiti khi hết hiệu lực được đánh dấu `invalid_at` chứ không được xóa cứng (hard-delete). Trạng thái task lưu theo lịch sử (`task_status_history`). | Khi chạy lệnh `DELETE FROM raw_events` hoặc `DETACH DELETE` node trong Neo4j. |
-| **5. Read & Propose Only (Zero Autonomous Write-back)** | Hệ thống chỉ đọc và đưa ra đề xuất (Drafting/Suggestions). Không bao giờ tự động gửi tin nhắn Teams, gửi email Outlook, hay đóng ticket Jira nếu không có hành động xác nhận từ người dùng. | Khi MCP tool tự động gọi Jira API để chuyển trạng thái ticket sang Closed. |
+| :--- | :--- | :--- |
+| **1. Single-Store Neo4j với Phân Định Rõ Ràng** | **Neo4j** là cơ sở dữ liệu duy nhất. Quản lý trạng thái Task (`TODO`, `IN_PROGRESS`, `DONE`) bằng **Cypher tất định**. Graphiti chỉ dùng để ghi nhớ ngữ cảnh và hỗ trợ tìm kiếm ngữ nghĩa (Context Memory). | Khi AI tự động đổi trạng thái `status = 'DONE'` bằng suy diễn ngữ nghĩa mà không qua câu lệnh Cypher rõ ràng hoặc không có xác nhận của người dùng. |
+| **2. Tách Biệt Tuyệt Đối Quote & Reply** | Trong tin nhắn Teams, người dùng thường quote lại lời người khác. Bộ parser phải bóc tách: `quoted_author`, `quoted_content` vs `actual_author`, `actual_content` trước khi gửi cho LLM. | Khi người A hỏi: *"Bạn có làm cái này không?"*, người B trả lời: *"Để em làm"*, nhưng hệ thống trích xuất nhầm task gán cho người A. |
+| **3. Fixed Domain Ontology 3 Lớp** | Đồ thị trong Neo4j được kiểm soát chặt chẽ qua 3 lớp: Pydantic Schema $\rightarrow$ Application Allowlist Validator $\rightarrow$ Neo4j Constraints & Indexes. | Khi LLM tự tạo Node label mới (ví dụ: `Subtask`, `BugReport`) hoặc Edge type mới không nằm trong Ontology đã đăng ký. |
+| **4. Local-First & Append-Only** | Dữ liệu sự kiện thô (`raw_events`) là bất biến và lưu cục bộ. Sự kiện trong Graphiti khi hết hiệu lực được đánh dấu `invalid_at` chứ không xóa cứng (`DETACH DELETE`). | Dữ liệu công việc bị gửi lên máy chủ Cloud bên ngoài, hoặc các bản ghi lịch sử bị xóa vĩnh viễn. |
+| **5. Read & Propose Only (Zero Autonomous Write-back)** | Hệ thống chỉ đọc và đưa ra đề xuất. Không bao giờ tự ý gửi tin nhắn Teams, email Outlook hay đóng ticket Jira nếu không có thao tác xác nhận từ người dùng. | Khi MCP tool tự ý gọi API bên ngoài để cập nhật dữ liệu mà chưa được sự đồng ý của User. |
 
 ---
 
-## 4. Cấu Trúc Monorepo Chuẩn Hóa
+## 4. Cấu Trúc Monorepo Tinh Gọn (Lean Layout)
 
-Nhằm đảm bảo **phát triển từng Layer tách biệt** nhưng **đồng bộ hóa tuyệt đối qua Contract**, dự án được tổ chức theo cấu trúc Monorepo:
+Nhằm tối ưu hóa phát triển cục bộ và loại bỏ các thành phần thừa, cấu trúc thư mục được sắp xếp như sau:
 
 ```
 Personal_Task_Board/
 ├── packages/
-│   ├── contracts/                     # [Shared] Pydantic models, JSON Schemas, TypeScript DTOs, Mock Fixtures
+│   ├── contracts/                     # [Shared] Pydantic models, JSON Schemas, TypeScript DTOs, Mocks
 │   │   ├── src/
-│   │   │   ├── l1_acquisition/        # RawEvent, SourceConfig, Checkpoint contracts
+│   │   │   ├── l1_acquisition/        # RawEventRecord, RawAgentSessionRecord, SourceConfig
 │   │   │   ├── l2_processing/         # ParsedMessage, ExtractedCommitment, UnifiedTaskCandidate
-│   │   │   ├── l3_storage/            # Supabase table DTOs, Neo4j Ontology schemas
-│   │   │   ├── l4_intelligence/       # PriorityScore, TodayPlan, AnomalyReport contracts
-│   │   │   └── l5_experience/         # FastAPI request/response DTOs, MCP tool specs
-│   │   ├── mocks/                     # Mock data generators & static test fixtures
-│   │   └── package.json / pyproject.toml
-│   └── database/                      # [Shared] Migrations & Schema definitions
-│       ├── supabase/
-│       │   ├── migrations/            # SQL DDL migrations (tables, RLS, triggers, indexes)
-│       │   └── seeds/                 # Seed data cho local development
-│       └── neo4j/
-│           ├── constraints/           # Cypher constraints & index creation scripts
-│           └── ontology/              # Fixed ontology specifications
+│   │   │   ├── l3_storage/            # Neo4j Node/Edge DTOs, Fixed Ontology schemas
+│   │   │   ├── l4_intelligence/       # PriorityScore, TodayPlan, AnomalyReport
+│   │   │   └── l5_experience/         # OpenWebUI Tool DTOs, MCP tool specs
+│   │   ├── mocks/                     # Fixtures & mock data generators
+│   │   └── pyproject.toml / package.json
+│   └── database/                      # [Shared] Neo4j Migrations, Constraints, Ontology & Client
+│       ├── neo4j/
+│       │   ├── migrations/            # 001_constraints.cypher (Unique constraints & indexes)
+│       │   ├── seeds/                 # 001_dev_seed.cypher (Initial seed data)
+│       │   └── queries/               # common_retrievals.cypher
+│       ├── src/ptb_database/          # Neo4j client pool, Ontology definitions, Tier 2 Validator
+│       └── pyproject.toml
 ├── services/
-│   ├── acquisition/                   # [Layer 1] Ingestion Service & Temporal Worker
+│   ├── acquisition/                   # [Layer 1] Data Ingestion Engine
 │   │   ├── src/
-│   │   │   ├── connectors/            # MS Graph, Jira, Shortcut, Confluence
-│   │   │   ├── workflows/             # Temporal InitialSync & IncrementalSync workflows
-│   │   │   └── activities/            # Temporal activities (fetch, store raw)
+│   │   │   ├── playwright/            # Teams Web & Outlook Web network interception scripts
+│   │   │   └── watchers/              # Cursor SQLite, Claude Code & Antigravity log parsers
 │   │   └── tests/
-│   ├── processing/                    # [Layer 2] Processing & Extraction Worker
+│   ├── processing/                    # [Layer 2 & 4] Python Ingestion & Intelligence Service
 │   │   ├── src/
-│   │   │   ├── parsers/               # HTML cleaner, Teams quote parser
+│   │   │   ├── parsers/               # HTML cleaner, Teams quote/reply parser
 │   │   │   ├── identity/              # RapidFuzz identity resolver
-│   │   │   ├── langgraph/             # Extraction, Attribution, Correlation graph
-│   │   │   └── worker.py              # DB consumer worker listening to raw_events
+│   │   │   ├── extractor/             # Pydantic structured output extractor
+│   │   │   ├── validator/             # Attribution validator & confidence gating
+│   │   │   ├── priority/              # Deterministic priority scoring formula (0-100)
+│   │   │   └── planner/               # Morning briefing & today board generator
 │   │   └── tests/
-│   ├── intelligence/                  # [Layer 4] Reasoning & Planning Engine
-│   │   ├── src/
-│   │   │   ├── priority/              # Deterministic priority scoring engine
-│   │   │   ├── inference/             # Status & anomaly inference
-│   │   │   ├── planner/               # Daily planner & explanation generator
-│   │   │   └── rag/                   # Knowledge retrieval service
-│   │   └── tests/
-│   └── api/                           # [Layer 5] FastAPI Application Gateway
+│   └── mcp/                           # [Layer 5] FastMCP Server
 │       ├── src/
-│       │   ├── routers/               # /board, /tasks, /commitments, /coverage, /review
-│       │   ├── services/              # Application services calling L3/L4
-│       │   └── main.py
+│       │   ├── tools/                 # 9 Standardized MCP tools connecting to Neo4j
+│       │   └── server.py              # FastMCP application (port 8000)
 │       └── tests/
-├── apps/
-│   ├── web/                           # [Layer 5] Next.js 14+ Web Application
-│   │   ├── src/
-│   │   │   ├── app/                   # App Router pages (Today, Commitments, Waiting, etc.)
-│   │   │   ├── components/            # shadcn/ui components & task cards
-│   │   │   └── lib/                   # API client calling FastAPI
-│   │   └── tests/
-│   └── mcp/                           # [Layer 5] Model Context Protocol Server
-│       ├── src/
-│       │   ├── tools/                 # 9 standardized MCP tools
-│       │   └── server.py              # stdio/SSE MCP server
-│       └── tests/
-├── docs/                              # Toàn bộ tài liệu kỹ thuật chi tiết
-└── docker-compose.yml                 # Local stack (Supabase CLI, Neo4j, Temporal, Workers)
+├── docs/                              # Toàn bộ tài liệu kiến trúc & hướng dẫn
+└── docker-compose.yml                 # Khởi chạy Neo4j Community (7687) + OpenWebUI (3000)
 ```
 
 ---
 
-## 5. Chiến Lược Đồng Bộ & Độc Lập Giữa Các Layer (Contract-First Isolation)
+## 5. Chiến Lược Đồng Bộ Giữa Các Layer (Contract-First Isolation)
 
-Mỗi Layer có thể phát triển hoàn toàn độc lập nhờ cơ chế sau:
+Mỗi Layer được cô lập hoàn toàn và đồng bộ thông qua các hợp đồng dữ liệu chuẩn:
 
-1. **Phase 0 đóng băng Shared Contracts**: Trước khi viết logic nghiệp vụ cho bất kỳ Layer nào, gói `packages/contracts` sẽ được xây dựng và xuất bản dưới dạng thư viện Python (`ptb-contracts`) và gói TypeScript (`@ptb/contracts`).
-2. **Mock Data Generators & Fixtures**:
-   - `Layer 2` có thể kiểm thử toàn bộ thuật toán Parsing và Extraction bằng cách nạp Mock Raw Events từ `packages/contracts/mocks/l1_raw_events.json` mà không cần chạy Temporal hay kết nối tài khoản Microsoft thật.
-   - `Layer 4` có thể kiểm thử thuật toán Priority Engine và Daily Planner bằng cách nạp Mock Database & Graph Records mà không cần chờ Layer 2 hoàn thiện.
-   - `Layer 5 (Web UI & MCP)` có thể xây dựng toàn bộ giao diện và tool execution dựa trên Mock FastAPI endpoints tuân thủ OpenAPI specs từ `packages/contracts`.
-3. **Decoupled Asynchronous Boundaries**:
-   - **L1 $\rightarrow$ L2**: Giao tiếp thông qua bảng `raw_events` trong Supabase với cờ trạng thái `processing_status = 'pending' | 'processed' | 'failed'`. L1 hoàn toàn không phụ thuộc vào trạng thái chạy của L2.
-   - **L2 $\rightarrow$ L3**: Áp dụng mô hình **Transactional Outbox**. L2 ghi dữ liệu nghiệp vụ vào Supabase kèm theo một bản ghi trong bảng `graph_outbox_events`. Một background worker độc lập sẽ đọc outbox và nạp vào Neo4j/Graphiti. Nếu Neo4j tạm dừng bảo trì, hoạt động trích xuất task của L2 và dữ liệu trên Supabase không bao giờ bị nghẽn.
-   - **L3/L4 $\rightarrow$ L5**: FastAPI là cổng kiểm soát duy nhất. Cả Web UI và MCP server đều không được kết nối trực tiếp vào PostgreSQL hay Neo4j.
+1. **Phase 0 đóng băng Shared Contracts**: Gói `packages/contracts` cung cấp Pydantic v2 models (`ptb-contracts`) làm ranh giới vững chắc.
+2. **Cô lập kiểm thử bằng Mock Fixtures**:
+   - `Layer 2 (Processing)` kiểm thử bằng cách đọc mock JSON từ `packages/contracts/mocks/` mà không cần chạy Playwright hay mở trình duyệt thật.
+   - `Layer 5 (OpenWebUI & MCP)` phát triển công cụ gọi dữ liệu dựa trên hợp đồng C34/C45 mà không cần chờ Layer 1 và 2 hoàn tất.
+3. **Ranh giới giao tiếp rõ ràng**:
+   - **L1 $\rightarrow$ L2**: Giao tiếp qua `RawEventRecord` (Contract C12) đẩy vào hàng đợi xử lý cục bộ.
+   - **L2 $\rightarrow$ L3**: Ghi trực tiếp vào Neo4j bằng Cypher Transactions (không cần Outbox trung gian).
+   - **L3/L4 $\rightarrow$ L5**: OpenWebUI và FastMCP truy vấn trực tiếp Neo4j thông qua các câu lệnh Cypher đã được tối ưu hóa chỉ mục.

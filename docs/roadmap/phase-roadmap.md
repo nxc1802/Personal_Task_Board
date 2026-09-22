@@ -1,42 +1,31 @@
-# Lộ Trình Triển Khai Mới: Layer-by-Layer Synchronization (Phase Roadmap)
+# Lộ Trình Triển Khai Mới: Lean Local-First Roadmap (6 Phase)
 
 ## 1. Triết Lý Thiết Kế Lộ Trình Mới
 
-Trước đây, lộ trình trong [Proposal.md](file:///Volumes/WorkSpace/Project/Personal_Task_Board/docs/Proposal.md) được tiếp cận theo mô hình **Lát cắt xuyên suốt từ trong ra ngoài (Inside-Out Vertical Slices)**:
-- Phase 1: Foundation (Một chút DB + Một chút Connector + Một chút UI)
-- Phase 2: Core Value (Parsing + Extraction)
-- Phase 3: Unified Task Board (Correlation + UI)
-- Phase 4: Temporal GraphRAG
-- Phase 5: Intelligence
-- Phase 6: Agent Access (MCP)
-
-**Hạn chế của mô hình cũ:** Các tầng bị phụ thuộc chéo (coupling), rất khó phát triển song song hoặc kiểm thử độc lập một tầng nếu các tầng liên quan chưa hoàn thành.
-
-**Mô hình tái cấu trúc: Layer-by-Layer Isolation & Contract-First Synchronization**:
-Thay vì phát triển chắp vá qua nhiều tầng cùng lúc, hệ thống sẽ:
-1. **Khóa cứng toàn bộ Interface & Data Contracts ở Phase 0** kèm theo bộ dữ liệu giả lập (Mock Fixtures).
-2. **Triển khai từng Layer hoàn chỉnh và độc lập** (Layer 3 $\rightarrow$ Layer 1 $\rightarrow$ Layer 2 $\rightarrow$ Layer 4 $\rightarrow$ Layer 5).
-3. **Đồng bộ hóa 100% nhờ tuân thủ Contract**: Bất kỳ Layer nào cũng có thể dev và pass toàn bộ unit/integration test cục bộ bằng mock fixtures.
-4. **Ghép nối toàn diện ở Phase 6**: Kết nối các tầng đã hoàn thiện thành một sản phẩm hoàn chỉnh mà không gặp bất kỳ xung đột nào về schema hay dữ liệu.
+Lộ trình phát triển được điều chỉnh toàn diện theo phương châm **Lean, Local-First & Contract-First Isolation**:
+1. **Loại bỏ sự cồng kềnh**: Bỏ hoàn toàn Next.js (thay bằng OpenWebUI), bỏ LangGraph (thay bằng tiến trình Python Ingestion Service tuần tự), bỏ Supabase Cloud / PostgreSQL (hợp nhất vào Single-Store Neo4j).
+2. **Ưu tiên giá trị cục bộ trước**: Bắt đầu bằng nguồn dữ liệu ngay trên máy lập trình viên (**Layer 1B: Coding Agent Logs** từ Cursor, Claude Code, Antigravity) để thấy ngay giá trị quản trị cam kết và quyết định kỹ thuật, sau đó mở rộng sang **Layer 1A: Playwright Teams Interception**.
+3. **Phát triển tách biệt - Đồng bộ bằng Contract**: Mỗi Layer kiểm thử độc lập 100% bằng mock fixtures từ `packages/contracts`.
 
 ---
 
-## 2. Tổng Quan 7 Phase Triển Khai
+## 2. Tổng Quan 6 Phase Triển Khai
 
 ```mermaid
 gantt
-    title Lộ Trình Phát Triển Tách Biệt Nhưng Đồng Bộ
+    title Lộ Trình Phát Triển Lean Local-First (Personal Task Board)
     dateFormat  YYYY-MM-DD
-    section Giai Đoạn Chuẩn Bị
-    Phase 0: Shared Contracts & Mocks       :p0, 2026-10-01, 7d
-    section Triển Khai Từng Layer
-    Phase 1: Layer 3 - Store & GraphRAG     :p1, after p0, 10d
-    Phase 2: Layer 1 - Data Acquisition     :p2, after p0, 12d
-    Phase 3: Layer 2 - Data Processing      :p3, after p0, 14d
-    Phase 4: Layer 4 - Intelligence         :p4, after p0, 10d
-    Phase 5: Layer 5 - Experience           :p5, after p0, 14d
-    section Tích Hợp & Hiệu Chuẩn
-    Phase 6: Integration & E2E Tuning       :p6, after p3 p5, 10d
+    section Chuẩn Bị & Nền Tảng
+    Phase 0: Shared Contracts & Mocks (Done)   :done, p0, 2026-09-15, 5d
+    Phase 1: Neo4j Single-Store & Client       :active, p1, after p0, 4d
+    section Thu Thập Dữ Liệu
+    Phase 2: Layer 1B - Local Coding Agent Logs :p2, after p1, 5d
+    Phase 3: Layer 1A - Playwright Interceptor  :p3, after p2, 6d
+    section Xử Lý & Trí Tuệ
+    Phase 4: Layer 2 - Python Ingestion Service:p4, after p2, 7d
+    section Trải Nghiệm & Tích Hợp
+    Phase 5: Layer 4 & 5 - OpenWebUI & FastMCP :p5, after p4, 6d
+    Phase 6: Local E2E Verification & Tuning    :p6, after p3 p5, 5d
 ```
 
 ---
@@ -45,133 +34,115 @@ gantt
 
 ---
 
-### Phase 0: Cross-Layer Contracts & Synchronization Backbone
+### Phase 0: Cross-Layer Contracts & Synchronization Backbone (ĐÃ HOÀN THÀNH)
 
-- **Mục tiêu**: Xây dựng bộ hợp đồng dữ liệu chuẩn hóa, khởi tạo Monorepo và bộ sinh dữ liệu giả lập (Mock Fixtures) cho toàn bộ hệ thống.
-- **Thời lượng dự kiến**: 1 tuần.
+- **Mục tiêu**: Thiết lập cấu trúc Monorepo, đóng băng các hợp đồng dữ liệu Pydantic v2 và bộ mock fixtures.
+- **Trạng thái**: ✅ **ĐÃ HOÀN THÀNH (7/7 tests passed)**.
 - **Sản phẩm bàn giao**:
-  1. Cấu trúc Monorepo (`packages/`, `services/`, `apps/`, `docs/`).
-  2. Gói `packages/contracts`:
-     - Pydantic models cho toàn bộ hợp đồng C12, C23, C34, C45, C5Ext.
-     - TypeScript DTOs tương ứng cho Next.js Web App.
-  3. Bộ Mock Fixtures (`packages/contracts/mocks/`):
-     - `l1_raw_teams_message.json`, `l1_raw_jira_issue.json`.
-     - `l2_extracted_candidates.json`.
-     - `l3_graph_neighborhood.json`.
-     - `l4_today_board_view.json`.
-  4. Contract Test Suite kiểm tra tính tương thích giữa Python và TypeScript schemas.
-- **Điều kiện hoàn thành (Exit Criteria)**: Mọi mô hình dữ liệu được biên dịch thành công, test kiểm thử serialization/deserialization đạt 100%.
+  1. Monorepo cấu hình `uv workspace` và `pnpm-workspace`.
+  2. Gói `packages/contracts`: Pydantic models C12, C23, C34, C45, C5Ext và TypeScript DTOs.
+  3. Bộ Mock Fixtures (`mocks/`): `l1_raw_teams_message.json`, `l1_raw_jira_issue.json`, `l2_extracted_candidates.json`, `l3_tasks_with_context.json`, `l4_today_board_view.json`.
 
 ---
 
-### Phase 1: Layer 3 – Operational Store & GraphRAG Memory
+### Phase 1: Neo4j Single-Store Setup & Schema Constraints (ĐANG HOÀN THIỆN)
 
-- **Mục tiêu**: Thiết lập nền tảng lưu trữ kép (Supabase PostgreSQL + Neo4j Graphiti) và kiểm soát tính toàn vẹn của ontology.
-- **Thời lượng dự kiến**: 1.5 tuần.
+- **Mục tiêu**: Xây dựng nền tảng cơ sở dữ liệu duy nhất Neo4j (Local Docker) quản lý cả Task Board và Graphiti Temporal Memory.
+- **Trạng thái**: 🟡 **ĐÃ CÓ NỀN TẢNG (15/15 tests passed)** - Đang tinh chỉnh dọn dẹp phần Supabase cũ.
 - **Sản phẩm bàn giao**:
-  1. `packages/database/supabase`:
-     - File SQL migration tạo 15 bảng nghiệp vụ (`raw_events`, `people`, `source_identities`, `unified_tasks`, `commitments`, `evidence`, `graph_outbox_events`,...).
-     - Kích hoạt RLS, trigger tự động cập nhật `updated_at` và mã hóa `pgcrypto`.
-  2. `packages/database/neo4j`:
-     - Cypher scripts thiết lập Constraints và Indexes cho 11 Node Types và 13 Edge Types.
-  3. Mã nguồn `Tier 2 Application Allowlist Validator` bằng Python.
-  4. Background Service: `Outbox Consumer Worker` đọc `graph_outbox_events` nạp vào Graphiti/Neo4j.
-- **Phương thức Test Độc Lập**: Sử dụng mock outbox events từ Phase 0 để xác minh tính toàn vẹn của đồ thị trong Neo4j mà không cần Layer 2.
+  1. Docker Compose cấu hình Neo4j Community (Port 7474/7687) có sẵn APOC plugin.
+  2. `packages/database/neo4j/migrations/001_constraints.cypher`: Ràng buộc tính duy nhất cho Node IDs (`UnifiedTask`, `Person`, `Evidence`, `Decision`...).
+  3. `packages/database/src/ptb_database/`:
+     - `ontology.py`: Định nghĩa 11 Node Labels và 13 Edge Types cố định.
+     - `validator.py`: Tier 2 Application Allowlist Validator ngăn ngừa sai lệch schema.
+     - `neo4j_client.py`: Client kết nối Neo4j hỗ trợ connection pool và kiểm tra tính sẵn sàng.
+- **Phương thức Test Độc Lập**: Chạy test unit và integration kiểm tra validator và cypher queries với mock fixtures mà không cần Layer 1 và 2.
 
 ---
 
-### Phase 2: Layer 1 – Data Acquisition (Durable Ingestion)
+### Phase 2: Layer 1B – Local Coding Agent Logs Ingestion
 
-- **Mục tiêu**: Xây dựng hệ thống thu thập dữ liệu bất đồng bộ, bền bỉ qua Temporal Workflows.
-- **Thời lượng dự kiến**: 1.5 - 2 tuần.
+- **Mục tiêu**: Thu thập các cam kết, quyết định kiến trúc và bài học sửa bug từ lịch sử làm việc của Coding Agents trên máy cá nhân.
+- **Thời lượng dự kiến**: 4 - 5 ngày.
 - **Sản phẩm bàn giao**:
-  1. Module Connectors (`services/acquisition/src/connectors/`):
-     - `MSGraphTeamsConnector` (hỗ trợ đa tenant).
-     - `MSGraphOutlookConnector`.
-     - `JiraConnector` & `ShortcutConnector`.
-  2. Temporal Workflows & Activities:
-     - `InitialSyncWorkflow` (backfill 30-90 ngày, phân trang, lưu checkpoint).
-     - `IncrementalSyncWorkflow` (chạy định kỳ 5-15 phút, tính toán idempotency key).
-     - Quản lý token, refresh OAuth token tự động.
-  3. Ghi dữ liệu vào bảng `raw_events` với trạng thái `pending`.
-- **Phương thức Test Độc Lập**: Giả lập source API bằng WireMock/httpx_mock, chạy Temporal Workflow trong môi trường test cục bộ, xác minh dữ liệu ghi vào `raw_events` khớp với schema Contract C12.
+  1. `services/acquisition/src/watchers/`:
+     - `cursor_watcher.py`: Kết nối SQLite `state.vscdb` của Cursor, trích xuất các lượt chat Composer.
+     - `claude_code_watcher.py`: Đọc transcripts JSONL từ `~/.claude/projects/`.
+     - `antigravity_watcher.py`: Đọc các lượt tương tác từ `brain/transcript.jsonl`.
+  2. Bộ lọc turn hội thoại có chứa từ khóa kỹ thuật (Decision, Bug Fix, Task Promise).
+  3. Đóng gói thành `RawAgentSessionRecord` (Contract C12).
+- **Phương thức Test Độc Lập**: Kiểm thử với file SQLite và JSONL giả lập; xác nhận dữ liệu trích xuất chính xác 100%.
 
 ---
 
-### Phase 3: Layer 2 – Data Processing (Parsing & AI Extraction)
+### Phase 3: Layer 1A – Playwright Network Interceptor (Teams / Outlook Web)
 
-- **Mục tiêu**: Biến tin nhắn hội thoại và ticket thành cam kết có cấu trúc, bảo vệ tuyệt đối tính quy gán (Attribution).
-- **Thời lượng dự kiến**: 2 tuần.
+- **Mục tiêu**: Tự động bắt các gói tin JSON nội bộ từ Teams Web và Outlook Web bằng session browser có sẵn.
+- **Thời lượng dự kiến**: 5 - 6 ngày.
 - **Sản phẩm bàn giao**:
-  1. Deterministic Parsers: `TeamsQuoteReplyParser` (tách riêng `quoted_content` và `actual_content`).
-  2. `IdentityResolver`: Cơ chế ánh xạ tài khoản đa tenant về `CanonicalPerson` (Rule-based + RapidFuzz).
-  3. `RuleCandidateFilter`: Bộ lọc heuristic từ khóa/regex tiết kiệm chi phí LLM.
-  4. `LangGraph Extraction Workflow`: Prompt trích xuất có cấu trúc, tích hợp LLM OpenAI-compatible, Attribution Validator.
-  5. `ConfidenceGate` ($<0.50$ loại bỏ, $0.50-0.84$ review queue, $\ge 0.85$ auto-approve).
-  6. `CorrelationEngine`: Khớp nối chat commitment với ticket Jira/Shortcut.
-  7. Worker đọc `raw_events` và ghi transaction kép vào `unified_tasks` + `graph_outbox_events`.
-- **Phương thức Test Độc Lập**: Đọc trực tiếp các file JSON mock raw events từ Phase 0, chạy qua parser và LangGraph, xác nhận kết quả đầu ra khớp với Contract C23.
+  1. `services/acquisition/src/playwright/`:
+     - `login_helper.py`: Mở trình duyệt để người dùng đăng nhập lần đầu và lưu `storage_state.json`.
+     - `teams_interceptor.py`: Chạy Chromium Headless, lắng nghe sự kiện `page.on('response')` để bắt các gói tin `/api/chats/.../messages`.
+     - `outlook_interceptor.py`: Bắt các gói tin hội thoại Outlook.
+  2. Cơ chế sinh `idempotency_key` chống trùng lặp dữ liệu khi kết nối lại.
+  3. Kênh hàng đợi đẩy sự kiện sang Layer 2.
+- **Phương thức Test Độc Lập**: Giả lập mạng bằng mock server; kiểm tra khả năng bắt gói tin JSON và đóng gói đúng Contract C12.
 
 ---
 
-### Phase 4: Layer 4 – Intelligence Engine (Reasoning & Planning)
+### Phase 4: Layer 2 – Pure Python Ingestion & Validation Pipeline
 
-- **Mục tiêu**: Xây dựng bộ não tính toán ưu tiên tất định và lập kế hoạch ngày thông minh.
-- **Thời lượng dự kiến**: 1.5 tuần.
+- **Mục tiêu**: Xây dựng pipeline xử lý trích xuất công việc, đảm bảo Attribution chính xác tuyệt đối, loại bỏ LangGraph.
+- **Thời lượng dự kiến**: 6 - 7 ngày.
 - **Sản phẩm bàn giao**:
-  1. `UnifiedRetrievalService`: Truy vấn kết hợp giữa Supabase và Graphiti/Neo4j.
-  2. `PriorityCalculator`: Thuật toán chấm điểm ưu tiên tất định theo công thức toán học $[0, 100]$.
-  3. `StatusInferenceEngine`: Suy luận trạng thái `likely_done`, `blocked`, `stale` mà không tự ý đóng task.
-  4. `ForgottenCommitmentDetector`: Phát hiện các cam kết quá hạn hoặc bị giục phản hồi.
-  5. `DailyPlanner`: LangGraph workflow tổng hợp Morning Briefing và sinh Grounded Explanation qua LLM.
-  6. `KnowledgeRAGService`: Truy vấn quyết định kỹ thuật và bài học kinh nghiệm.
-- **Phương thức Test Độc Lập**: Sử dụng mock database & graph records từ Phase 0, chạy unit test kiểm tra công thức điểm ưu tiên và độ chính xác của giải thích LLM.
+  1. `services/processing/src/`:
+     - `TeamsQuoteReplyParser`: Bóc tách triệt để `quoted_content` vs `actual_content`.
+     - `IdentityResolver`: Ánh xạ tài khoản đa tenant về Canonical Person bằng RapidFuzz.
+     - `RuleCandidateFilter`: Bộ lọc Regex tiết kiệm 70% chi phí gọi LLM.
+     - `StructuredTaskExtractor`: Lời gọi LLM JSON mode kết hợp Pydantic v2.
+     - `AttributionValidator`: Kiểm tra chéo author vs owner.
+     - `ConfidenceGate`: Lọc 3 mức (<0.50 bỏ qua, 0.50-0.84 vào review queue, >=0.85 tự động ghi).
+  2. Mã nguồn ghi trực tiếp vào Neo4j (Cypher Mutations) và Graphiti episodes.
+- **Phương thức Test Độc Lập**: Đưa mock raw events từ Phase 0 qua pipeline, xác minh các node `UnifiedTask` và `Evidence` được tạo chính xác trong Neo4j.
 
 ---
 
-### Phase 5: Layer 5 – Experience (FastAPI, Web UI & MCP)
+### Phase 5: Layer 4 & Layer 5 – OpenWebUI Integration & FastMCP Server
 
-- **Mục tiêu**: Xây dựng toàn bộ giao diện tương tác người dùng (Web UI) và giao diện lập trình cho AI agent (MCP).
-- **Thời lượng dự kiến**: 2 tuần.
+- **Mục tiêu**: Cung cấp giao diện tương tác người dùng qua OpenWebUI và bộ 9 công cụ MCP cho Coding Agents.
+- **Thời lượng dự kiến**: 5 - 6 ngày.
 - **Sản phẩm bàn giao**:
-  1. `services/api` (FastAPI Application Service):
-     - Triển khai đầy đủ các REST endpoints theo Contract C45 và C5Ext.
-     - Xác thực JWT Supabase Auth, middleware phân quyền workspace.
-  2. `apps/web` (Next.js 14+ App Router):
-     - Giao diện Today Board (Headline, Task Cards, Priority Pills, Evidence snippets).
-     - Giao diện Commitments (Tôi nợ ai / Ai nợ tôi).
-     - Giao diện Waiting & Forgotten.
-     - Giao diện Review Queue (Diff inspection duyệt candidate).
-     - Giao diện Coverage Dashboard (Trạng thái sync của từng tenant).
-  3. `apps/mcp` (MCP Server):
-     - Triển khai 9 công cụ MCP chuẩn hóa (`get_today_tasks`, `get_task_context`,...).
-     - Tuân thủ guardrails: Read-only và đề xuất hoàn thành, cấm tự ý write-back.
-- **Phương thức Test Độc Lập**: Web UI và MCP server được kiểm thử hoàn chỉnh với Mock FastAPI responses dựa trên hợp đồng OpenAPI từ Phase 0.
+  1. File cấu hình Docker Compose khởi chạy **OpenWebUI Local Docker** (Port 3000).
+  2. Bộ **OpenWebUI Custom Tools** (Python scripts):
+     - `get_today_tasks`: Trả về danh sách việc theo công thức ưu tiên toán học (0-100).
+     - `get_review_queue`: Xem và duyệt các candidate AI trích xuất.
+     - `update_task_status`: Đổi trạng thái `TODO` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `DONE`.
+     - `query_project_context`: Tra cứu quyết định kiến trúc và bài học bug từ Neo4j/Graphiti.
+  3. `services/mcp/server.py`: FastMCP Server (Port 8000) cung cấp 9 công cụ chuẩn MCP cho Cursor/Claude Code.
+- **Phương thức Test Độc Lập**: Sử dụng `@modelcontextprotocol/inspector` kiểm thử 9 công cụ MCP; kiểm thử giao diện OpenWebUI gọi các Custom Tools cục bộ.
 
 ---
 
-### Phase 6: Layer Integration, E2E Verification & System Tuning
+### Phase 6: Local E2E Verification & System Tuning
 
-- **Mục tiêu**: Ghép nối tất cả các Layer thành sản phẩm hoàn chỉnh, chạy backfill thực tế và hiệu chuẩn.
-- **Thời lượng dự kiến**: 1.5 tuần.
-- **Sản phẩm bàn giao**:
-  1. Kích hoạt toàn bộ dòng dữ liệu End-to-End:
-     $$\text{MS Graph / Jira} \xrightarrow{\text{L1}} \text{raw\_events} \xrightarrow{\text{L2}} \text{Supabase + Outbox} \xrightarrow{\text{L3}} \text{Neo4j} \xrightarrow{\text{L4}} \text{Planner} \xrightarrow{\text{L5}} \text{Web UI / MCP}$$
-  2. Thực hiện Initial Sync 30 ngày trên tenant Teams và Shortcut thật của người dùng.
-  3. Đánh giá chất lượng thực tế:
-     - Độ chính xác quy gán (Attribution Precision) $\ge 95\%$.
-     - Tỷ lệ tin nhắn lọc đúng qua Heuristic Filter $\ge 80\%$.
-     - Đánh giá tính hợp lý của điểm ưu tiên trên Today Board.
-  4. Tinh chỉnh trọng số chấm điểm và ngưỡng Confidence Gate dựa trên phản hồi của người dùng.
+- **Mục tiêu**: Chạy thử nghiệm toàn trình trên máy tính cá nhân của người dùng.
+- **Thời lượng dự kiến**: 4 - 5 ngày.
+- **Nội dung kiểm thử**:
+  1. Khởi động toàn bộ cụm: Neo4j + OpenWebUI + Ingestion Service.
+  2. Chat thử trên Teams $\rightarrow$ Playwright bắt gói tin $\rightarrow$ Ingestion Service bóc tách $\rightarrow$ Neo4j lưu Task.
+  3. Thực hiện phiên code trên Cursor/Antigravity $\rightarrow$ Log Watcher bắt quyết định $\rightarrow$ Graphiti ghi nhận `:Decision`.
+  4. Mở OpenWebUI hỏi *"Hôm nay tôi cần làm gì?"* $\rightarrow$ OpenWebUI gọi Tool hiển thị đúng các task từ Teams và Cursor kèm bằng chứng.
+  5. Tinh chỉnh trọng số chấm điểm ưu tiên và ngưỡng Confidence Gate.
 
 ---
 
-## 4. Bảng Ma Trận Độc Lập & Đồng Bộ Khi Triển Khai
+## 4. Bảng Ma Trận Độc Lập Giữa Các Layer
 
-| Layer | Có thể dev độc lập không? | Dữ liệu Mock sử dụng | Hợp đồng bảo vệ (Contract) | Rủi ro bị chặn bởi layer khác |
-| --- | :---: | --- | --- | :---: |
-| **Layer 1: Acquisition** | **Có** | Mock HTTP response từ MS Graph / Jira | Contract C12 (`raw_events`) | Không có (Hoàn toàn độc lập) |
-| **Layer 2: Processing** | **Có** | Mock raw events JSON từ Phase 0 | Contract C12 (In), C23 (Out) | Không có (Dùng mock raw events) |
-| **Layer 3: Store & Memory** | **Có** | Mock outbox events từ Phase 0 | Contract C23, Fixed Ontology | Không có (Khởi tạo DDL độc lập) |
-| **Layer 4: Intelligence** | **Có** | Mock tasks & graph neighborhood từ Phase 0 | Contract C34 (In), C45 (Out) | Không có (Dùng mock store context) |
-| **Layer 5: Experience** | **Có** | Mock FastAPI JSON responses từ Phase 0 | Contract C45, C5Ext (MCP) | Không có (Dùng mock API/MSW) |
+| Layer | Công nghệ chính | Mock Fixture kiểm thử độc lập | Đầu ra chuẩn hóa |
+| :--- | :--- | :--- | :--- |
+| **Layer 1B: Agent Logs** | Python (`sqlite3`, `jsonlines`) | File `.vscdb` và `.jsonl` mẫu | Contract C12 (`RawAgentSessionRecord`) |
+| **Layer 1A: Playwright** | Playwright Chromium Headless | File mock network JSON | Contract C12 (`RawEventRecord`) |
+| **Layer 2: Ingestion** | Python, BeautifulSoup, Pydantic | Mock raw events JSON từ Phase 0 | Direct Cypher Mutations & Graphiti |
+| **Layer 3: Single-Store** | Neo4j Community (Docker) | Mock Cypher queries & Seed data | Neo4j Graph DB (ACID) |
+| **Layer 4: Intelligence** | Python (Math logic) | Mock graph neighborhood JSON | Contract C45 (`TodayBoardView`) |
+| **Layer 5: OpenWebUI/MCP**| OpenWebUI Tools & FastMCP | Mock Neo4j driver / Cypher records | Giao diện Chat & 9 MCP Tools |
