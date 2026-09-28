@@ -1,10 +1,10 @@
 """Tier 2: Application Allowlist Validator for Neo4j Knowledge Graph.
 
 Ngăn chặn việc nạp các nhãn Node lạ, quan hệ Edge ngoài danh mục cho phép,
-hoặc quan hệ không đúng loại thực thể.
+hoặc quan hệ không đúng loại thực thể theo Canonical Ontology trong docs/v1.md.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 
 from ptb_database.ontology import ALLOWED_NODES, ALLOWED_EDGES, AI_EXTRACTED_EDGES
@@ -16,8 +16,28 @@ class ValidationResult(BaseModel):
 
 
 class GraphOntologyValidator:
-    @staticmethod
-    def validate_node(node_label: str, properties: Dict[str, Any]) -> ValidationResult:
+    # Bắt buộc phải có ít nhất 1 thuộc tính khóa chính tương ứng
+    ID_FIELDS: Dict[str, Tuple[str, ...]] = {
+        "Person": ("canonical_id", "id"),
+        "SourceIdentity": ("identity_key", "id"),
+        "UnifiedTask": ("id", "task_id"),
+        "Evidence": ("id", "evidence_id"),
+        "Commitment": ("id", "commitment_id"),
+        "Project": ("project_key", "id"),
+        "Customer": ("customer_id", "id"),
+        "Tenant": ("tenant_id", "id"),
+        "RawEvent": ("id", "raw_event_id"),
+        "IngestionCheckpoint": ("id", "stream_id"),
+        "ProcessingAttempt": ("id", "attempt_id"),
+        "Decision": ("decision_id", "id"),
+        "Lesson": ("lesson_id", "id"),
+        "Document": ("doc_id", "id"),
+        "Incident": ("incident_id", "id"),
+        "StatusTransitionAudit": ("id", "audit_id"),
+    }
+
+    @classmethod
+    def validate_node(cls, node_label: str, properties: Dict[str, Any]) -> ValidationResult:
         """Kiểm tra nhãn node và thuộc tính định danh."""
         if node_label not in ALLOWED_NODES:
             return ValidationResult(
@@ -25,31 +45,19 @@ class GraphOntologyValidator:
                 error_message=f"Node label '{node_label}' không nằm trong danh mục ALLOWED_NODES ({sorted(ALLOWED_NODES)})"
             )
         
-        # Bắt buộc phải có ID khóa chính tương ứng
-        id_fields = {
-            "Person": "canonical_id",
-            "SourceIdentity": "identity_key",
-            "Task": "task_id",
-            "Project": "project_key",
-            "Customer": "customer_id",
-            "Tenant": "tenant_id",
-            "SourceItem": "item_id",
-            "Decision": "decision_id",
-            "Lesson": "lesson_id",
-            "Document": "doc_id",
-            "Incident": "incident_id",
-        }
-        required_id = id_fields.get(node_label)
-        if required_id and required_id not in properties:
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Node '{node_label}' bắt buộc phải có thuộc tính khóa chính '{required_id}'"
-            )
+        allowed_ids = cls.ID_FIELDS.get(node_label)
+        if allowed_ids:
+            if not any(k in properties for k in allowed_ids):
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"Node '{node_label}' bắt buộc phải có thuộc tính khóa chính trong {allowed_ids}"
+                )
 
         return ValidationResult(is_valid=True)
 
-    @staticmethod
+    @classmethod
     def validate_edge(
+        cls,
         edge_type: str,
         source_label: str,
         target_label: str,

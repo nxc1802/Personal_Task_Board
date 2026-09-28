@@ -1,0 +1,2178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal Task Board - Local Intelligence</title>
+  <style>
+    :root {
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      
+      /* Light Theme */
+      --bg-primary: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-elevated: #ffffff;
+      --bg-muted: #f1f5f9;
+      --border: #e2e8f0;
+      --border-focus: #3b82f6;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      
+      --accent-primary: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-subtle: #eff6ff;
+      --accent-text: #1d4ed8;
+      
+      --success-bg: #ecfdf5;
+      --success-border: #a7f3d0;
+      --success-text: #065f46;
+      --warning-bg: #fffbeb;
+      --warning-border: #fde68a;
+      --warning-text: #92400e;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --danger-text: #991b1b;
+      --info-bg: #f0f9ff;
+      --info-border: #bae6fd;
+      --info-text: #0369a1;
+
+      --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+      --card-shadow-hover: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --modal-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.2), 0 8px 10px -6px rgb(0 0 0 / 0.2);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html.dark, body.dark, @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #0f172a;
+        --bg-surface: #1e293b;
+        --bg-elevated: #334155;
+        --bg-muted: #1e293b;
+        --border: #334155;
+        --border-focus: #60a5fa;
+        --text-primary: #f8fafc;
+        --text-secondary: #cbd5e1;
+        --text-muted: #64748b;
+        
+        --accent-primary: #3b82f6;
+        --accent-hover: #60a5fa;
+        --accent-subtle: #1e3a8a;
+        --accent-text: #93c5fd;
+        
+        --success-bg: #064e3b;
+        --success-border: #047857;
+        --success-text: #a7f3d0;
+        --warning-bg: #78350f;
+        --warning-border: #b45309;
+        --warning-text: #fef3c7;
+        --danger-bg: #7f1d1d;
+        --danger-border: #b91c1c;
+        --danger-text: #fecaca;
+        --info-bg: #0c4a6e;
+        --info-border: #0369a1;
+        --info-text: #bae6fd;
+
+        --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+        --card-shadow-hover: 0 6px 12px -2px rgb(0 0 0 / 0.4);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header & Navigation */
+    header {
+      background-color: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      backdrop-filter: blur(8px);
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 16px;
+      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      cursor: pointer;
+      user-select: none;
+      transition: var(--transition);
+    }
+
+    .status-pill:hover {
+      background: var(--bg-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .status-dot.online { background-color: #10b981; box-shadow: 0 0 6px #10b981; }
+    .status-dot.mock { background-color: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+    .status-dot.offline { background-color: #ef4444; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background-color: var(--bg-surface);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: var(--transition);
+      white-space: nowrap;
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      background-color: var(--bg-muted);
+      border-color: var(--border-focus);
+    }
+
+    .btn-primary {
+      background-color: var(--accent-primary);
+      color: #ffffff;
+      border-color: var(--accent-primary);
+    }
+
+    .btn-primary:hover {
+      background-color: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: 12px;
+      border-radius: var(--radius-sm);
+    }
+
+    .btn-icon {
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+    }
+
+    /* Navigation Bar */
+    .nav-bar {
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      border-top: 1px solid var(--border);
+      background-color: var(--bg-surface);
+    }
+
+    .nav-bar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .nav-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 2px solid transparent;
+      color: var(--text-secondary);
+      font-weight: 500;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: var(--transition);
+      user-select: none;
+    }
+
+    .nav-item:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--border);
+    }
+
+    .nav-item.active {
+      color: var(--accent-primary);
+      border-bottom-color: var(--accent-primary);
+      font-weight: 600;
+    }
+
+    .badge-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--bg-muted);
+      color: var(--text-secondary);
+    }
+
+    .nav-item.active .badge-count {
+      background: var(--accent-subtle);
+      color: var(--accent-text);
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      padding: 20px;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .view-container {
+      display: none;
+      animation: fadeIn 0.15s ease-in-out;
+    }
+
+    .view-container.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Headline / Banner */
+    .headline-card {
+      background: linear-gradient(135deg, rgba(37,99,235,0.06), rgba(139,92,246,0.06));
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: var(--radius-lg);
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .headline-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .headline-icon {
+      font-size: 24px;
+    }
+
+    .headline-text {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text-primary);
+    }
+
+    .headline-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Priority Badge */
+    .priority-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      border-radius: var(--radius-sm);
+      padding: 3px 8px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      letter-spacing: -0.02em;
+    }
+
+    .priority-critical {
+      background-color: var(--danger-bg);
+      color: var(--danger-text);
+      border: 1px solid var(--danger-border);
+    }
+
+    .priority-high {
+      background-color: var(--warning-bg);
+      color: var(--warning-text);
+      border: 1px solid var(--warning-border);
+    }
+
+    .priority-medium {
+      background-color: var(--info-bg);
+      color: var(--info-text);
+      border: 1px solid var(--info-border);
+    }
+
+    .priority-low {
+      background-color: var(--success-bg);
+      color: var(--success-text);
+      border: 1px solid var(--success-border);
+    }
+
+    /* Card Component */
+    .card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      box-shadow: var(--card-shadow);
+      transition: var(--transition);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+
+    .card:hover {
+      box-shadow: var(--card-shadow-hover);
+      border-color: var(--border-focus);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.4;
+      flex: 1;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--bg-muted);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .tag-source {
+      background: rgba(99, 102, 241, 0.1);
+      color: #6366f1;
+      border-color: rgba(99, 102, 241, 0.2);
+    }
+
+    .tag-project {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+      border-color: rgba(16, 185, 129, 0.2);
+    }
+
+    .tag-status {
+      font-weight: 600;
+    }
+
+    .status-TODO { background: rgba(148, 163, 184, 0.15); color: #64748b; }
+    .status-IN_PROGRESS { background: rgba(59, 130, 246, 0.15); color: #2563eb; }
+    .status-BLOCKED { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
+    .status-DONE { background: rgba(16, 185, 129, 0.15); color: #059669; }
+
+    /* Evidence Snippet Callout */
+    .evidence-box {
+      background: var(--bg-muted);
+      border-left: 3px solid var(--accent-primary);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      padding: 8px 12px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      font-style: italic;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .evidence-meta {
+      font-style: normal;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Priority Breakdown Details */
+    .priority-details {
+      background: var(--bg-muted);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border: 1px dashed var(--border);
+    }
+
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-secondary);
+    }
+
+    .breakdown-val {
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+    }
+
+    .explanation-text {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    /* Kanban Board */
+    .kanban-board {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      align-items: start;
+      overflow-x: auto;
+      padding-bottom: 16px;
+    }
+
+    @media (max-width: 1024px) {
+      .kanban-board {
+        grid-template-columns: repeat(4, 300px);
+      }
+    }
+
+    .kanban-col {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      max-height: 80vh;
+      box-shadow: var(--card-shadow);
+    }
+
+    .kanban-col-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      font-size: 13px;
+      background: var(--bg-muted);
+      border-radius: var(--radius-md) var(--radius-md) 0 0;
+    }
+
+    .kanban-col-cards {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 120px;
+    }
+
+    /* Filter Bar */
+    .filter-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .filter-select, .filter-input {
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      transition: var(--transition);
+    }
+
+    .filter-select:focus, .filter-input:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+
+    .filter-input {
+      min-width: 180px;
+      flex: 1;
+    }
+
+    /* Table View */
+    .table-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+      box-shadow: var(--card-shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    th {
+      background: var(--bg-muted);
+      padding: 10px 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-primary);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background-color: var(--bg-muted);
+    }
+
+    /* Review Card Specifics */
+    .review-card {
+      border-left: 4px solid #f59e0b;
+    }
+
+    .confidence-meter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .meter-bar {
+      height: 6px;
+      width: 80px;
+      background: var(--bg-muted);
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+
+    .meter-fill {
+      height: 100%;
+      border-radius: 9999px;
+      background: #f59e0b;
+    }
+
+    /* Modals & Dialogs */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(4px);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-backdrop.active {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 540px;
+      box-shadow: var(--modal-shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: modalPop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalPop {
+      from { transform: scale(0.96); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    .modal-footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      background: var(--bg-muted);
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .form-input, .form-textarea, .form-select {
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    .form-textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    /* Toast Notification */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      pointer-events: auto;
+      padding: 10px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      box-shadow: var(--modal-shadow);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(30px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .empty-state-icon {
+      font-size: 32px;
+      margin-bottom: 4px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header-top {
+        padding: 10px 14px;
+      }
+      .nav-bar {
+        padding: 0 10px;
+      }
+      main {
+        padding: 14px;
+      }
+      .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="header-top">
+      <div class="brand" onclick="switchView('today')">
+        <div class="brand-icon">PTB</div>
+        <div>
+          <div class="brand-title">Personal Task Board</div>
+          <div class="brand-subtitle">Neo4j-only • OpenWebUI Native • Local Intelligence</div>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <div id="connectionStatus" class="status-pill" onclick="toggleConnectionMode()" title="Nhấn để đổi chế độ API / Mock Data">
+          <span class="status-dot mock" id="statusDot"></span>
+          <span id="statusText">Mock Mode (Standalone)</span>
+        </div>
+
+        <button class="btn btn-sm" onclick="refreshCurrentView()" title="Tải lại dữ liệu">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Làm mới
+        </button>
+
+        <button class="btn btn-icon btn-sm" id="themeToggleBtn" onclick="toggleTheme()" title="Chuyển theme Dark/Light">
+          <span id="themeIcon">🌙</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 8 Tabs Navigation according to docs/v1.md -->
+    <nav class="nav-bar">
+      <div class="nav-item active" onclick="switchView('today')" id="tab-today">
+        <span>📌 Today</span>
+        <span class="badge-count" id="count-today">0</span>
+      </div>
+      <div class="nav-item" onclick="switchView('review')" id="tab-review">
+        <span>📥 Inbox / Review</span>
+        <span class="badge-count" id="count-review">0</span>
+      </div>
+      <div class="nav-item" onclick="switchView('tasks')" id="tab-tasks">
+        <span>📋 All Tasks</span>
+        <span class="badge-count" id="count-tasks">0</span>
+      </div>
+      <div class="nav-item" onclick="switchView('waiting')" id="tab-waiting">
+        <span>⏳ Waiting</span>
+        <span class="badge-count" id="count-waiting">0</span>
+      </div>
+      <div class="nav-item" onclick="switchView('forgotten')" id="tab-forgotten">
+        <span>🕰️ Forgotten</span>
+        <span class="badge-count" id="count-forgotten">0</span>
+      </div>
+      <div class="nav-item" onclick="switchView('decisions')" id="tab-decisions">
+        <span>💡 Decisions</span>
+        <span class="badge-count" id="count-decisions">0</span>
+      </div>
+      <div class="nav-item" onclick="switchView('lessons')" id="tab-lessons">
+        <span>📖 Lessons</span>
+        <span class="badge-count" id="count-lessons">0</span>
+      </div>
+      <div class="nav-item" onclick="switchView('health')" id="tab-health">
+        <span>🩺 Sources / Health</span>
+        <span class="badge-count" id="count-health">Healthy</span>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Main View Area -->
+  <main>
+
+    <!-- 1. TODAY VIEW -->
+    <section id="view-today" class="view-container active">
+      <div class="headline-card">
+        <div class="headline-content">
+          <div class="headline-icon">☀️</div>
+          <div>
+            <div class="headline-text" id="todayHeadline">Đang tải kế hoạch hôm nay...</div>
+            <div class="headline-meta" id="todayMeta">Dữ liệu được sắp xếp tất định theo hệ số ưu tiên (L4 Intelligence)</div>
+          </div>
+        </div>
+        <div id="todayRiskAlert" style="display:none; color: var(--danger-text); font-weight: 600; font-size: 13px;">
+          ⚠️ Phát hiện rủi ro tiến độ
+        </div>
+      </div>
+
+      <div style="margin-bottom: 12px; font-weight: 600; font-size: 14px; color: var(--text-secondary);">
+        Top 5 Công việc Ưu tiên Cao nhất
+      </div>
+
+      <div id="todayTasksList" class="grid-2">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 2. INBOX / REVIEW QUEUE VIEW -->
+    <section id="view-review" class="view-container">
+      <div class="headline-card" style="border-left: 4px solid #f59e0b;">
+        <div class="headline-content">
+          <div class="headline-icon">📥</div>
+          <div>
+            <div class="headline-text">Review Queue (Confidence 0.40 - 0.64)</div>
+            <div class="headline-meta">Các task được AI trích xuất cần bạn duyệt hoặc bổ sung thông tin trước khi chính thức đưa vào Task Board.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="reviewQueueList" class="grid-2">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 3. ALL TASKS VIEW (KANBAN & LIST) -->
+    <section id="view-tasks" class="view-container">
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <input type="text" class="filter-input" id="filterSearch" placeholder="🔍 Tìm kiếm tiêu đề, người yêu cầu..." oninput="applyTaskFilters()">
+        
+        <select class="filter-select" id="filterStatus" onchange="applyTaskFilters()">
+          <option value="ALL">Tất cả Trạng thái</option>
+          <option value="TODO">TODO</option>
+          <option value="IN_PROGRESS">IN_PROGRESS</option>
+          <option value="BLOCKED">BLOCKED</option>
+          <option value="DONE">DONE</option>
+        </select>
+
+        <select class="filter-select" id="filterProject" onchange="applyTaskFilters()">
+          <option value="ALL">Tất cả Dự án</option>
+          <option value="OPS">OPS</option>
+          <option value="CORE">CORE</option>
+          <option value="PTB">PTB</option>
+        </select>
+
+        <select class="filter-select" id="filterSource" onchange="applyTaskFilters()">
+          <option value="ALL">Tất cả Nguồn</option>
+          <option value="ms_teams">MS Teams</option>
+          <option value="jira">Jira</option>
+          <option value="shortcut">Shortcut</option>
+          <option value="cursor">Cursor Agent</option>
+          <option value="antigravity">Antigravity</option>
+        </select>
+
+        <select class="filter-select" id="filterPriority" onchange="applyTaskFilters()">
+          <option value="ALL">Tất cả Ưu tiên</option>
+          <option value="HIGH">Ưu tiên cao (>= 75)</option>
+          <option value="MED">Ưu tiên vừa (40 - 74)</option>
+          <option value="LOW">Ưu tiên thấp (&lt; 40)</option>
+        </select>
+
+        <select class="filter-select" id="filterStale" onchange="applyTaskFilters()">
+          <option value="ALL">Tất cả Tuổi task</option>
+          <option value="STALE_3">Trôi &gt; 3 ngày</option>
+          <option value="STALE_7">Trôi &gt; 7 ngày</option>
+        </select>
+
+        <div style="margin-left: auto; display: flex; gap: 6px;">
+          <button class="btn btn-sm btn-primary" id="btnModeKanban" onclick="setTaskViewMode('kanban')">Kanban</button>
+          <button class="btn btn-sm" id="btnModeList" onclick="setTaskViewMode('list')">Danh sách</button>
+        </div>
+      </div>
+
+      <!-- Kanban Container -->
+      <div id="tasksKanbanContainer" class="kanban-board">
+        <div class="kanban-col" data-status="TODO">
+          <div class="kanban-col-header">
+            <span>📝 Cần làm (TODO)</span>
+            <span class="badge-count" id="count-col-todo">0</span>
+          </div>
+          <div class="kanban-col-cards" id="cards-TODO"></div>
+        </div>
+
+        <div class="kanban-col" data-status="IN_PROGRESS">
+          <div class="kanban-col-header">
+            <span>⚡ Đang làm (IN_PROGRESS)</span>
+            <span class="badge-count" id="count-col-inprogress">0</span>
+          </div>
+          <div class="kanban-col-cards" id="cards-IN_PROGRESS"></div>
+        </div>
+
+        <div class="kanban-col" data-status="BLOCKED">
+          <div class="kanban-col-header">
+            <span>🚫 Bị nghẽn (BLOCKED)</span>
+            <span class="badge-count" id="count-col-blocked">0</span>
+          </div>
+          <div class="kanban-col-cards" id="cards-BLOCKED"></div>
+        </div>
+
+        <div class="kanban-col" data-status="DONE">
+          <div class="kanban-col-header">
+            <span>✅ Hoàn thành (DONE)</span>
+            <span class="badge-count" id="count-col-done">0</span>
+          </div>
+          <div class="kanban-col-cards" id="cards-DONE"></div>
+        </div>
+      </div>
+
+      <!-- List Table Container -->
+      <div id="tasksListContainer" class="table-container" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Điểm</th>
+              <th>Tiêu đề Task</th>
+              <th>Trạng thái</th>
+              <th>Dự án</th>
+              <th>Người phụ trách</th>
+              <th>Hạn chót</th>
+              <th>Bằng chứng</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="tasksTableBody">
+            <!-- Rendered by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 4. WAITING ON OTHERS VIEW -->
+    <section id="view-waiting" class="view-container">
+      <div class="headline-card">
+        <div class="headline-content">
+          <div class="headline-icon">⏳</div>
+          <div>
+            <div class="headline-text">Việc đang chờ người khác (Waiting on Others)</div>
+            <div class="headline-meta">Các công việc đang bị nghẽn (BLOCKED) do chờ phản hồi, code review hoặc tài liệu từ đồng nghiệp.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="waitingList" class="grid-2">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 5. FORGOTTEN COMMITMENTS VIEW -->
+    <section id="view-forgotten" class="view-container">
+      <div class="headline-card" style="border-left: 4px solid #ef4444;">
+        <div class="headline-content">
+          <div class="headline-icon">🕰️</div>
+          <div>
+            <div class="headline-text">Cam kết trôi quá hạn (Forgotten Commitments)</div>
+            <div class="headline-meta">Các lời hứa hoặc cam kết trong chat/họp đã trôi nhiều ngày mà chưa có hành động hoàn tất.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="forgottenList" class="grid-2">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 6. DECISIONS VIEW -->
+    <section id="view-decisions" class="view-container">
+      <div class="headline-card">
+        <div class="headline-content">
+          <div class="headline-icon">💡</div>
+          <div>
+            <div class="headline-text">Danh mục Quyết định Kiến trúc & Kỹ thuật</div>
+            <div class="headline-meta">Kho tri thức lưu các Architectural Decision Records (ADR) được trích xuất từ chat và coding agents.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="decisionsList" class="grid-2">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 7. LESSONS LEARNED VIEW -->
+    <section id="view-lessons" class="view-container">
+      <div class="headline-card">
+        <div class="headline-content">
+          <div class="headline-icon">📖</div>
+          <div>
+            <div class="headline-text">Bài học kinh nghiệm sửa lỗi (Lessons Learned)</div>
+            <div class="headline-meta">Được trích xuất tự động từ các phiên debug thành công của Cursor, Claude Code, Antigravity.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="lessonsList" class="grid-2">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- 8. SOURCES / HEALTH VIEW -->
+    <section id="view-health" class="view-container">
+      <div class="headline-card">
+        <div class="headline-content">
+          <div class="headline-icon">🩺</div>
+          <div>
+            <div class="headline-text">Tình trạng Đồng bộ Nguồn Dữ liệu (Coverage & Health)</div>
+            <div class="headline-meta">Kiểm soát tiến trình Acquisition L1: Playwright Interceptors, API Watchers và Coding Agent turn monitors.</div>
+          </div>
+        </div>
+        <div>
+          <button class="btn btn-sm btn-primary" onclick="syncAllSources()">
+            ⚡ Đồng bộ ngay tất cả
+          </button>
+        </div>
+      </div>
+
+      <div id="sourcesGrid" class="grid-3">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Edit Task Modal -->
+  <div class="modal-backdrop" id="editModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Chỉnh sửa Task Candidate</div>
+        <button class="btn btn-icon btn-sm" onclick="closeEditModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editTaskId">
+        <div class="form-group">
+          <label class="form-label">Tiêu đề</label>
+          <input type="text" class="form-input" id="editTaskTitle">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dự án</label>
+          <select class="form-select" id="editTaskProject">
+            <option value="OPS">OPS (DevOps & Staging)</option>
+            <option value="CORE">CORE (Backend & Database)</option>
+            <option value="PTB">PTB (Personal Task Board)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Người thực hiện</label>
+          <input type="text" class="form-input" id="editTaskOwner">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hạn chót (Deadline)</label>
+          <input type="date" class="form-input" id="editTaskDueDate">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ghi chú bằng chứng</label>
+          <textarea class="form-textarea" id="editTaskEvidence" readonly></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeEditModal()">Hủy</button>
+        <button class="btn btn-primary" onclick="saveAndApproveTask()">Lưu & Phê duyệt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Application Logic & Mock Data -->
+  <script>
+    // --- Application State & Configuration ---
+    const CONFIG = {
+      apiBase: "http://localhost:8000",
+      isMockMode: true,
+      currentView: "today",
+      taskViewMode: "kanban"
+    };
+
+    // --- Rich Realistic Mock Data (PTB Canonical v1 Schema) ---
+    const MOCK_DATA = {
+      today: {
+        generated_at: new Date().toISOString(),
+        user_id: "00000000-0000-0000-0000-000000000002",
+        summary_headline: "Hôm nay có 2 việc cần ưu tiên, trong đó 1 lỗi deployment staging đang có người chờ.",
+        identified_risks: [
+          "Shortcut story 1204 sẽ đến hạn trong 48h tới nhưng chưa có commit mới"
+        ],
+        top_tasks: [
+          {
+            task_id: "task-unified-001",
+            title: "Investigate deployment failure on staging",
+            status: "TODO",
+            project_key: "OPS",
+            owner_name: "Dam Quang Cuong",
+            requester_name: "Nguyen Van Huy",
+            due_date: new Date(Date.now() + 6 * 3600000).toISOString(),
+            priority: {
+              total_score: 92.5,
+              deadline_score: 25.0,
+              customer_impact_score: 20.0,
+              production_impact_score: 20.0,
+              commitment_weight: 15.0,
+              waiting_penalty: 15.0,
+              stale_age_score: 0.0,
+              uncertainty_deduction: 2.5,
+              llm_explanation: "Đến hạn hôm nay, ảnh hưởng hệ thống staging và Huy đang chờ phản hồi sau cam kết trên Teams."
+            },
+            primary_evidence_snippet: "Để em check nhé, chiều nay sẽ có kết quả fix cho staging.",
+            deep_link: "https://teams.microsoft.com/l/message/19:channel-devops/1726567080",
+            is_at_risk: true,
+            risk_reason: "Hạn chót chiều nay nhưng chưa bắt đầu."
+          },
+          {
+            task_id: "task-unified-002",
+            title: "Review PR #142: Graphiti temporal episode integration",
+            status: "IN_PROGRESS",
+            project_key: "CORE",
+            owner_name: "Dam Quang Cuong",
+            requester_name: "Tran Thi Mai",
+            due_date: new Date(Date.now() + 24 * 3600000).toISOString(),
+            priority: {
+              total_score: 78.0,
+              deadline_score: 15.0,
+              customer_impact_score: 10.0,
+              production_impact_score: 20.0,
+              commitment_weight: 20.0,
+              waiting_penalty: 15.0,
+              stale_age_score: 0.0,
+              uncertainty_deduction: 2.0,
+              llm_explanation: "Mai đang chờ duyệt PR để unblock nhánh processing."
+            },
+            primary_evidence_snippet: "Anh Cường review giúp em PR #142 với nhé, em đã bổ sung tests.",
+            deep_link: "https://github.com/nxc1802/Personal_Task_Board/pull/142",
+            is_at_risk: false,
+            risk_reason: null
+          },
+          {
+            task_id: "task-unified-003",
+            title: "Cập nhật tài liệu kiến trúc Neo4j-only v1",
+            status: "TODO",
+            project_key: "PTB",
+            owner_name: "Dam Quang Cuong",
+            requester_name: "Le Hoang An",
+            due_date: new Date(Date.now() + 48 * 3600000).toISOString(),
+            priority: {
+              total_score: 65.0,
+              deadline_score: 10.0,
+              customer_impact_score: 15.0,
+              production_impact_score: 10.0,
+              commitment_weight: 25.0,
+              waiting_penalty: 5.0,
+              stale_age_score: 0.0,
+              uncertainty_deduction: 0.0,
+              llm_explanation: "Cam kết đã hứa gửi cho An đầu tuần."
+            },
+            primary_evidence_snippet: "Chiều nay anh gửi file docs/v1.md nhé.",
+            deep_link: null,
+            is_at_risk: false,
+            risk_reason: null
+          }
+        ]
+      },
+      reviewQueue: [
+        {
+          id: "rev-cand-101",
+          raw_event_id: "raw-teams-9912",
+          reason: "Confidence trung bình 0.58; Trích xuất từ tin nhắn chat ngắn trong Teams",
+          candidate_task: {
+            id: "cand-101",
+            title: "Kiểm tra log lỗi đồng bộ webhook Jira",
+            project_key: "OPS",
+            owner_name: "Dam Quang Cuong",
+            requester_name: "Hoang Nam",
+            due_date: new Date(Date.now() + 12 * 3600000).toISOString(),
+            extraction_confidence: 0.58,
+            evidences: [
+              {
+                source_type: "ms_teams",
+                snippet: "Anh xem giúp em cái webhook jira sao sáng nay không thấy bắn event về server.",
+                author_canonical_name: "Hoang Nam"
+              }
+            ]
+          }
+        },
+        {
+          id: "rev-cand-102",
+          raw_event_id: "raw-outlook-4412",
+          reason: "Confidence 0.62; Phân tách attribution người chịu trách nhiệm cần xác nhận",
+          candidate_task: {
+            id: "cand-102",
+            title: "Cung cấp báo cáo audit security cho bên đối tác",
+            project_key: "CORE",
+            owner_name: "Dam Quang Cuong",
+            requester_name: "David Smith",
+            due_date: new Date(Date.now() + 72 * 3600000).toISOString(),
+            extraction_confidence: 0.62,
+            evidences: [
+              {
+                source_type: "outlook",
+                snippet: "Could you please send over the latest SOC2 compliance checklist before Friday?",
+                author_canonical_name: "David Smith"
+              }
+            ]
+          }
+        }
+      ],
+      allTasks: [
+        {
+          id: "task-unified-001",
+          title: "Investigate deployment failure on staging",
+          status: "TODO",
+          project_key: "OPS",
+          owner_name: "Dam Quang Cuong",
+          requester_name: "Nguyen Van Huy",
+          due_date: new Date(Date.now() + 6 * 3600000).toISOString(),
+          priority_score: 92.5,
+          source_type: "ms_teams",
+          evidence_snippet: "Để em check nhé, chiều nay sẽ có kết quả fix cho staging."
+        },
+        {
+          id: "task-unified-002",
+          title: "Review PR #142: Graphiti temporal episode integration",
+          status: "IN_PROGRESS",
+          project_key: "CORE",
+          owner_name: "Dam Quang Cuong",
+          requester_name: "Tran Thi Mai",
+          due_date: new Date(Date.now() + 24 * 3600000).toISOString(),
+          priority_score: 78.0,
+          source_type: "github",
+          evidence_snippet: "Anh Cường review giúp em PR #142 với nhé."
+        },
+        {
+          id: "task-unified-003",
+          title: "Cập nhật tài liệu kiến trúc Neo4j-only v1",
+          status: "TODO",
+          project_key: "PTB",
+          owner_name: "Dam Quang Cuong",
+          requester_name: "Le Hoang An",
+          due_date: new Date(Date.now() + 48 * 3600000).toISOString(),
+          priority_score: 65.0,
+          source_type: "ms_teams",
+          evidence_snippet: "Chiều nay anh gửi file docs/v1.md nhé."
+        },
+        {
+          id: "task-unified-004",
+          title: "Fix Neo4j APOC procedure permission in container",
+          status: "DONE",
+          project_key: "CORE",
+          owner_name: "Dam Quang Cuong",
+          requester_name: "Self",
+          due_date: null,
+          priority_score: 45.0,
+          source_type: "cursor",
+          evidence_snippet: "Applied apoc.* allowlist to neo4j docker environment."
+        },
+        {
+          id: "task-unified-005",
+          title: "Đợi access token cho Microsoft Teams Tenant",
+          status: "BLOCKED",
+          project_key: "OPS",
+          owner_name: "Dam Quang Cuong",
+          requester_name: "Nguyen Van Huy",
+          due_date: null,
+          priority_score: 82.0,
+          source_type: "ms_teams",
+          evidence_snippet: "Admin chưa cấp app registration secret."
+        }
+      ],
+      waiting: [
+        {
+          task_id: "task-unified-005",
+          title: "Đợi access token cho Microsoft Teams Tenant",
+          waiting_for_person_name: "Nguyen Van Huy (Admin)",
+          blocked_since: new Date(Date.now() - 3 * 86400000).toISOString(),
+          waiting_days: 3,
+          reason: "Cần admin duyệt cấp Secret cho App Registration trên Azure Portal."
+        },
+        {
+          task_id: "task-unified-002",
+          title: "Review PR #142: Graphiti temporal episode integration",
+          waiting_for_person_name: "Tran Thi Mai",
+          blocked_since: new Date(Date.now() - 1 * 86400000).toISOString(),
+          waiting_days: 1,
+          reason: "Đang chờ Mai cập nhật thêm unit test cho edge-cases."
+        }
+      ],
+      forgotten: [
+        {
+          commitment_id: "comm-009",
+          task_id: "task-unified-003",
+          title: "Gửi tài liệu architecture v1 cho An",
+          promised_to_name: "Le Hoang An",
+          promised_at: new Date(Date.now() - 4 * 86400000).toISOString(),
+          days_stale: 4,
+          last_conversation_snippet: "Chiều nay anh gửi file docs nhé.",
+          suggested_action: "Gửi link tài liệu hoặc nhắn hẹn lại thời gian cụ thể"
+        }
+      ],
+      decisions: [
+        {
+          decision_id: "ADR-001",
+          project_key: "PTB",
+          summary: "Neo4j-only Architecture (Loại bỏ PostgreSQL & SQLite)",
+          rationale: "Hợp nhất domain store, ingestion journal, checkpoints và Graphiti memory vào một database duy nhất nhằm loại bỏ dual-storage outbox desync.",
+          decided_by: "Tech Lead & Sub-Agent Alpha",
+          decided_at: "2026-09-28T14:00:00Z"
+        },
+        {
+          decision_id: "ADR-002",
+          project_key: "PTB",
+          summary: "Tách bạch Authoritative Task Status và AI Inferred Status",
+          rationale: "LLM chỉ sinh LIKELY_DONE và LIKELY_BLOCKED. Việc chuyển sang DONE đòi hỏi hành động dứt khoát của người dùng hoặc sự kiện đóng ticket rõ ràng.",
+          decided_by: "Architecture Freeze",
+          decided_at: "2026-09-28T16:30:00Z"
+        },
+        {
+          decision_id: "ADR-003",
+          project_key: "PTB",
+          summary: "OpenWebUI làm Frontend chính thức qua Custom Artifacts",
+          rationale: "Không cần duy trì dự án Next.js riêng; nhúng board trực tiếp bằng Artifacts panel của OpenWebUI và sử dụng FastMCP cho coding agents.",
+          decided_by: "Sub-Agent Eta & Lead",
+          decided_at: "2026-09-28T18:00:00Z"
+        }
+      ],
+      lessons: [
+        {
+          lesson_id: "LES-001",
+          topic: "Neo4j APOC Configuration trên MacOS Docker",
+          description: "Container báo lỗi procedure apoc.* không được load do biến môi trường bảo mật mặc định chặn chạy script APOC.",
+          solution: "Bổ sung NEO4J_dbms_security_procedures_unrestricted=apoc.* và NEO4J_dbms_security_procedures_allowlist=apoc.* vào docker-compose.yml.",
+          recorded_at: "2026-09-27T10:15:00Z"
+        },
+        {
+          lesson_id: "LES-002",
+          topic: "Playwright Session Cookie Expiration Handling",
+          description: "Khi cookie session Microsoft Teams hết hạn, interceptor bị treo silent failure mà không thông báo.",
+          solution: "Bắt sự kiện HTTP 401 trên request /api/v1/messages và kích hoạt trigger re-login tự động hoặc gửi alert lên Health View.",
+          recorded_at: "2026-09-28T09:40:00Z"
+        }
+      ],
+      sourcesHealth: {
+        overall_health: "healthy",
+        last_checked_at: new Date().toISOString(),
+        tenants: [
+          {
+            tenant_id: "t-teams-01",
+            tenant_name: "Microsoft Teams (Enterprise)",
+            source_type: "ms_teams",
+            status: "healthy",
+            last_successful_sync: new Date(Date.now() - 5 * 60000).toISOString(),
+            items_synced_total: 1240,
+            error_message: null
+          },
+          {
+            tenant_id: "t-outlook-01",
+            tenant_name: "Microsoft Outlook (Exchange)",
+            source_type: "outlook",
+            status: "healthy",
+            last_successful_sync: new Date(Date.now() - 12 * 60000).toISOString(),
+            items_synced_total: 842,
+            error_message: null
+          },
+          {
+            tenant_id: "t-jira-01",
+            tenant_name: "Jira Cloud (Sprint & Backlog)",
+            source_type: "jira",
+            status: "healthy",
+            last_successful_sync: new Date(Date.now() - 2 * 60000).toISOString(),
+            items_synced_total: 310,
+            error_message: null
+          },
+          {
+            tenant_id: "t-agents-01",
+            tenant_name: "Coding Agents (Cursor / Claude / Antigravity)",
+            source_type: "coding_agents",
+            status: "healthy",
+            last_successful_sync: new Date(Date.now() - 1 * 60000).toISOString(),
+            items_synced_total: 156,
+            error_message: null
+          }
+        ]
+      }
+    };
+
+    // --- Helper Functions ---
+    function showToast(msg, type = "info") {
+      const container = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      const icon = type === "success" ? "✅" : (type === "warning" ? "⚠️" : "ℹ️");
+      toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(msg)}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transition = "opacity 0.3s ease";
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function formatDate(isoStr) {
+      if (!isoStr) return "Không có hạn";
+      const d = new Date(isoStr);
+      return d.toLocaleDateString("vi-VN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function getPriorityClass(score) {
+      if (score >= 80) return "priority-critical";
+      if (score >= 60) return "priority-high";
+      if (score >= 40) return "priority-medium";
+      return "priority-low";
+    }
+
+    // --- Tab Switching ---
+    function switchView(viewName) {
+      CONFIG.currentView = viewName;
+      document.querySelectorAll(".view-container").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+      
+      const targetView = document.getElementById(`view-${viewName}`);
+      const targetTab = document.getElementById(`tab-${viewName}`);
+      if (targetView) targetView.classList.add("active");
+      if (targetTab) targetTab.classList.add("active");
+
+      // Auto-load data for target view
+      renderCurrentView();
+    }
+
+    // --- API Data Fetching with Seamless Fallback ---
+    async function apiFetch(endpoint, options = {}) {
+      if (CONFIG.isMockMode) {
+        return null; // Return null to use MOCK_DATA
+      }
+      try {
+        const res = await fetch(`${CONFIG.apiBase}${endpoint}`, {
+          ...options,
+          headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.warn(`[PTB Board] API call to ${endpoint} failed, falling back to mock:`, err);
+        return null;
+      }
+    }
+
+    async function checkApiConnection() {
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/today`, { method: "HEAD", signal: AbortSignal.timeout(1200) });
+        if (res.ok) {
+          CONFIG.isMockMode = false;
+          updateStatusPill(true);
+          return true;
+        }
+      } catch (_) {}
+      CONFIG.isMockMode = true;
+      updateStatusPill(false);
+      return false;
+    }
+
+    function updateStatusPill(isOnline) {
+      const dot = document.getElementById("statusDot");
+      const text = document.getElementById("statusText");
+      if (isOnline) {
+        dot.className = "status-dot online";
+        text.innerText = "API Live (8000)";
+      } else {
+        dot.className = "status-dot mock";
+        text.innerText = "Mock Mode (Offline)";
+      }
+    }
+
+    function toggleConnectionMode() {
+      CONFIG.isMockMode = !CONFIG.isMockMode;
+      updateStatusPill(!CONFIG.isMockMode);
+      showToast(`Đã chuyển sang chế độ: ${CONFIG.isMockMode ? "Mock Data" : "Live API (8000)"}`);
+      renderCurrentView();
+    }
+
+    // --- Renderers for 8 Views ---
+
+    // 1. TODAY
+    async function renderTodayView() {
+      const apiData = await apiFetch("/api/today");
+      const data = apiData || MOCK_DATA.today;
+
+      document.getElementById("todayHeadline").innerText = data.summary_headline || "Hôm nay không có task ưu tiên khẩn cấp.";
+      const riskEl = document.getElementById("todayRiskAlert");
+      if (data.identified_risks && data.identified_risks.length > 0) {
+        riskEl.style.display = "block";
+        riskEl.innerText = `⚠️ ${data.identified_risks[0]}`;
+      } else {
+        riskEl.style.display = "none";
+      }
+
+      const listContainer = document.getElementById("todayTasksList");
+      listContainer.innerHTML = "";
+
+      const tasks = data.top_tasks || [];
+      document.getElementById("count-today").innerText = tasks.length;
+
+      if (tasks.length === 0) {
+        listContainer.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div>Không có task nào cần làm ngay hôm nay!</div></div>`;
+        return;
+      }
+
+      tasks.forEach(t => {
+        const card = document.createElement("div");
+        card.className = "card";
+        const pScore = t.priority ? t.priority.total_score : 50;
+        const pClass = getPriorityClass(pScore);
+
+        card.innerHTML = `
+          <div class="card-header">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="priority-badge ${pClass}">${pScore.toFixed(1)}</span>
+              <span class="tag tag-project">${escapeHtml(t.project_key || "GLOBAL")}</span>
+              <span class="tag tag-status status-${t.status}">${t.status}</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+              ${formatDate(t.due_date)}
+            </div>
+          </div>
+
+          <div class="card-title">${escapeHtml(t.title)}</div>
+
+          ${t.primary_evidence_snippet ? `
+            <div class="evidence-box">
+              <span>"${escapeHtml(t.primary_evidence_snippet)}"</span>
+              <div class="evidence-meta">
+                <span>👤 Người yêu cầu: <strong>${escapeHtml(t.requester_name || "Chưa rõ")}</strong></span>
+                ${t.deep_link ? `<a href="${t.deep_link}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">Xem nguồn ↗</a>` : ""}
+              </div>
+            </div>
+          ` : ""}
+
+          ${t.priority ? `
+            <div class="priority-details">
+              <div class="breakdown-row">
+                <span>Hạn chót: <strong>${t.priority.deadline_score}</strong></span>
+                <span>Khách hàng: <strong>${t.priority.customer_impact_score}</strong></span>
+                <span>Production: <strong>${t.priority.production_impact_score}</strong></span>
+                <span>Cam kết: <strong>${t.priority.commitment_weight}</strong></span>
+              </div>
+              <div class="explanation-text">
+                💡 <strong>Lý do:</strong> ${escapeHtml(t.priority.llm_explanation)}
+              </div>
+            </div>
+          ` : ""}
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+            ${t.status === "TODO" ? `
+              <button class="btn btn-sm" onclick="updateTaskStatus('${t.task_id}', 'IN_PROGRESS')">⚡ Bắt đầu làm</button>
+            ` : ""}
+            <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${t.task_id}', 'DONE')">✓ Hoàn thành</button>
+          </div>
+        `;
+        listContainer.appendChild(card);
+      });
+    }
+
+    // 2. INBOX / REVIEW
+    async function renderReviewView() {
+      const apiData = await apiFetch("/api/review");
+      const list = apiData || MOCK_DATA.reviewQueue;
+      document.getElementById("count-review").innerText = list.length;
+
+      const container = document.getElementById("reviewQueueList");
+      container.innerHTML = "";
+
+      if (list.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">✨</div><div>Hàng đợi duyệt hiện đang trống!</div></div>`;
+        return;
+      }
+
+      list.forEach(item => {
+        const cand = item.candidate_task;
+        const card = document.createElement("div");
+        card.className = "card review-card";
+        const confPct = Math.round((cand.extraction_confidence || 0.5) * 100);
+
+        card.innerHTML = `
+          <div class="card-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="tag tag-project">${escapeHtml(cand.project_key || "UNASSIGNED")}</span>
+              <div class="confidence-meter" title="Độ tin cậy trích xuất của AI">
+                <span>Độ tin cậy: ${confPct}%</span>
+                <div class="meter-bar"><div class="meter-fill" style="width: ${confPct}%;"></div></div>
+              </div>
+            </div>
+            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(cand.due_date)}</span>
+          </div>
+
+          <div class="card-title">${escapeHtml(cand.title)}</div>
+
+          <div style="font-size: 12px; color: var(--warning-text); background: var(--warning-bg); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--warning-border);">
+            ⚠️ <strong>Cần xác nhận:</strong> ${escapeHtml(item.reason)}
+          </div>
+
+          ${cand.evidences && cand.evidences.length > 0 ? `
+            <div class="evidence-box">
+              <span>"${escapeHtml(cand.evidences[0].snippet)}"</span>
+              <div class="evidence-meta">
+                <span>Nguồn: ${escapeHtml(cand.evidences[0].source_type)} | Tác giả: ${escapeHtml(cand.evidences[0].author_canonical_name || "Ẩn danh")}</span>
+              </div>
+            </div>
+          ` : ""}
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+            <button class="btn btn-sm" onclick="dismissReviewItem('${item.id}')">✕ Bỏ qua</button>
+            <button class="btn btn-sm" onclick="openEditModal('${item.id}')">✎ Sửa</button>
+            <button class="btn btn-sm btn-primary" onclick="approveReviewItem('${item.id}')">✓ Phê duyệt</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 3. ALL TASKS
+    let filteredTasks = [];
+    async function renderTasksView() {
+      const apiData = await apiFetch("/api/tasks");
+      const tasks = apiData || MOCK_DATA.allTasks;
+      document.getElementById("count-tasks").innerText = tasks.length;
+      filteredTasks = [...tasks];
+      applyTaskFilters();
+    }
+
+    function setTaskViewMode(mode) {
+      CONFIG.taskViewMode = mode;
+      const kanbanEl = document.getElementById("tasksKanbanContainer");
+      const listEl = document.getElementById("tasksListContainer");
+      const btnKanban = document.getElementById("btnModeKanban");
+      const btnList = document.getElementById("btnModeList");
+
+      if (mode === "kanban") {
+        kanbanEl.style.display = "grid";
+        listEl.style.display = "none";
+        btnKanban.className = "btn btn-sm btn-primary";
+        btnList.className = "btn btn-sm";
+      } else {
+        kanbanEl.style.display = "none";
+        listEl.style.display = "block";
+        btnKanban.className = "btn btn-sm";
+        btnList.className = "btn btn-sm btn-primary";
+      }
+      applyTaskFilters();
+    }
+
+    function applyTaskFilters() {
+      const all = MOCK_DATA.allTasks; // or state
+      const search = (document.getElementById("filterSearch").value || "").toLowerCase();
+      const status = document.getElementById("filterStatus").value;
+      const project = document.getElementById("filterProject").value;
+      const source = document.getElementById("filterSource").value;
+      const priority = document.getElementById("filterPriority").value;
+
+      filteredTasks = all.filter(t => {
+        if (search && !t.title.toLowerCase().includes(search) && !(t.requester_name || "").toLowerCase().includes(search)) return false;
+        if (status !== "ALL" && t.status !== status) return false;
+        if (project !== "ALL" && t.project_key !== project) return false;
+        if (source !== "ALL" && t.source_type !== source) return false;
+        if (priority === "HIGH" && (t.priority_score || 0) < 75) return false;
+        if (priority === "MED" && ((t.priority_score || 0) < 40 || (t.priority_score || 0) >= 75)) return false;
+        if (priority === "LOW" && (t.priority_score || 0) >= 40) return false;
+        return true;
+      });
+
+      if (CONFIG.taskViewMode === "kanban") {
+        renderKanban(filteredTasks);
+      } else {
+        renderTable(filteredTasks);
+      }
+    }
+
+    function renderKanban(tasks) {
+      const statuses = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
+      statuses.forEach(s => {
+        const col = document.getElementById(`cards-${s}`);
+        const countSpan = document.getElementById(`count-col-${s.toLowerCase().replace('_', '')}`);
+        col.innerHTML = "";
+        
+        const colTasks = tasks.filter(t => t.status === s);
+        if (countSpan) countSpan.innerText = colTasks.length;
+
+        colTasks.forEach(t => {
+          const card = document.createElement("div");
+          card.className = "card";
+          card.style.padding = "12px";
+          const pScore = t.priority_score || 50;
+          card.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="priority-badge ${getPriorityClass(pScore)}">${pScore.toFixed(0)}</span>
+              <span class="tag tag-project">${escapeHtml(t.project_key || "GEN")}</span>
+            </div>
+            <div style="font-weight: 600; font-size: 13px;">${escapeHtml(t.title)}</div>
+            <div style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between;">
+              <span>👤 ${escapeHtml(t.owner_name || "Me")}</span>
+              <span>${formatDate(t.due_date)}</span>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px;">
+              <select class="filter-select" style="font-size: 11px; padding: 2px 6px;" onchange="updateTaskStatus('${t.id}', this.value)">
+                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>TODO</option>
+                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>IN_PROGRESS</option>
+                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>BLOCKED</option>
+                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>DONE</option>
+              </select>
+            </div>
+          `;
+          col.appendChild(card);
+        });
+      });
+    }
+
+    function renderTable(tasks) {
+      const tbody = document.getElementById("tasksTableBody");
+      tbody.innerHTML = "";
+      if (tasks.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">Không có task nào khớp với bộ lọc.</td></tr>`;
+        return;
+      }
+      tasks.forEach(t => {
+        const tr = document.createElement("tr");
+        const pScore = t.priority_score || 50;
+        tr.innerHTML = `
+          <td><span class="priority-badge ${getPriorityClass(pScore)}">${pScore.toFixed(0)}</span></td>
+          <td style="font-weight: 500;">${escapeHtml(t.title)}</td>
+          <td><span class="tag tag-status status-${t.status}">${t.status}</span></td>
+          <td><span class="tag tag-project">${escapeHtml(t.project_key || "GLOBAL")}</span></td>
+          <td>${escapeHtml(t.owner_name || "Tôi")}</td>
+          <td>${formatDate(t.due_date)}</td>
+          <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-muted);">
+            "${escapeHtml(t.evidence_snippet || "")}"
+          </td>
+          <td>
+            <button class="btn btn-sm" onclick="updateTaskStatus('${t.id}', 'DONE')">Xong</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 4. WAITING ON OTHERS
+    async function renderWaitingView() {
+      const apiData = await apiFetch("/api/waiting");
+      const list = apiData || MOCK_DATA.waiting;
+      document.getElementById("count-waiting").innerText = list.length;
+      const container = document.getElementById("waitingList");
+      container.innerHTML = "";
+
+      list.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="tag tag-status status-BLOCKED">⏳ Đang đợi: ${item.waiting_days} ngày</span>
+            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(item.blocked_since)}</span>
+          </div>
+          <div class="card-title">${escapeHtml(item.title)}</div>
+          <div class="evidence-box" style="border-left-color: #ef4444;">
+            <span>Đang chờ: <strong>${escapeHtml(item.waiting_for_person_name)}</strong></span>
+            <div style="font-style: normal; margin-top: 2px;">Lý do: ${escapeHtml(item.reason)}</div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn btn-sm" onclick="showToast('Đã copy tin nhắn nhắc nhở cho ${escapeHtml(item.waiting_for_person_name)}')">🔔 Nhắc nhở (Nudge)</button>
+            <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${item.task_id}', 'IN_PROGRESS')">✓ Đã unblock</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 5. FORGOTTEN COMMITMENTS
+    async function renderForgottenView() {
+      const apiData = await apiFetch("/api/forgotten");
+      const list = apiData || MOCK_DATA.forgotten;
+      document.getElementById("count-forgotten").innerText = list.length;
+      const container = document.getElementById("forgottenList");
+      container.innerHTML = "";
+
+      list.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.style.borderLeft = "4px solid #ef4444";
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="tag" style="background: var(--danger-bg); color: var(--danger-text);">⚠️ Quá hạn ${item.days_stale} ngày</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Cam kết lúc: ${formatDate(item.promised_at)}</span>
+          </div>
+          <div class="card-title">${escapeHtml(item.title)}</div>
+          <div class="evidence-box">
+            <span>"${escapeHtml(item.last_conversation_snippet)}"</span>
+            <div class="evidence-meta">
+              <span>Đã hứa với: <strong>${escapeHtml(item.promised_to_name)}</strong></span>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: var(--text-secondary); background: var(--bg-muted); padding: 8px; border-radius: var(--radius-sm);">
+            🎯 <strong>Gợi ý:</strong> ${escapeHtml(item.suggested_action)}
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn btn-sm" onclick="showToast('Đã chuyển thành Task khẩn cấp!')">🚀 Tạo Task xử lý ngay</button>
+            <button class="btn btn-sm btn-primary" onclick="dismissForgotten('${item.commitment_id}')">✓ Đã gửi / Đã giải quyết</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 6. DECISIONS
+    async function renderDecisionsView() {
+      const apiData = await apiFetch("/api/decisions");
+      const list = apiData || MOCK_DATA.decisions;
+      document.getElementById("count-decisions").innerText = list.length;
+      const container = document.getElementById("decisionsList");
+      container.innerHTML = "";
+
+      list.forEach(d => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="tag tag-project">${escapeHtml(d.decision_id)}</span>
+            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(d.decided_at)}</span>
+          </div>
+          <div class="card-title">${escapeHtml(d.summary)}</div>
+          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.4;">
+            ${escapeHtml(d.rationale)}
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 6px;">
+            Người quyết định: <strong>${escapeHtml(d.decided_by)}</strong>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 7. LESSONS
+    async function renderLessonsView() {
+      const apiData = await apiFetch("/api/lessons");
+      const list = apiData || MOCK_DATA.lessons;
+      document.getElementById("count-lessons").innerText = list.length;
+      const container = document.getElementById("lessonsList");
+      container.innerHTML = "";
+
+      list.forEach(l => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="tag" style="background: rgba(139, 92, 246, 0.1); color: #8b5cf6;">${escapeHtml(l.lesson_id)}</span>
+            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(l.recorded_at)}</span>
+          </div>
+          <div class="card-title">${escapeHtml(l.topic)}</div>
+          <div style="font-size: 12.5px; color: var(--text-secondary);">
+            <strong>Hiện tượng:</strong> ${escapeHtml(l.description)}
+          </div>
+          <div style="background: var(--bg-muted); border-left: 3px solid #10b981; padding: 8px 12px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px;">
+            💡 <strong>Giải pháp:</strong> ${escapeHtml(l.solution)}
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 8. SOURCES / HEALTH
+    async function renderHealthView() {
+      const apiData = await apiFetch("/api/sources/health");
+      const data = apiData || MOCK_DATA.sourcesHealth;
+      document.getElementById("count-health").innerText = data.overall_health.toUpperCase();
+
+      const grid = document.getElementById("sourcesGrid");
+      grid.innerHTML = "";
+
+      (data.tenants || []).forEach(src => {
+        const card = document.createElement("div");
+        card.className = "card";
+        const isHealthy = src.status === "healthy";
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="tag tag-source">${escapeHtml(src.source_type)}</span>
+            <span class="tag tag-status ${isHealthy ? "status-DONE" : "status-BLOCKED"}">
+              ${src.status.toUpperCase()}
+            </span>
+          </div>
+          <div class="card-title" style="font-size: 14px;">${escapeHtml(src.tenant_name)}</div>
+          <div style="font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px;">
+            <div>Đồng bộ gần nhất: <strong>${formatDate(src.last_successful_sync)}</strong></div>
+            <div>Tổng số mục đã bắt: <strong>${src.items_synced_total.toLocaleString()}</strong></div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+            <button class="btn btn-sm" onclick="syncSingleSource('${src.tenant_id}')">⚡ Kích hoạt sync</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    // --- Interactive Action Handlers ---
+    async function updateTaskStatus(taskId, newStatus) {
+      if (!CONFIG.isMockMode) {
+        await apiFetch(`/api/tasks/${taskId}/status`, {
+          method: "POST",
+          body: JSON.stringify({ new_status: newStatus })
+        });
+      }
+      // Optimistic Local update
+      const t1 = MOCK_DATA.allTasks.find(x => x.id === taskId);
+      if (t1) t1.status = newStatus;
+      const t2 = MOCK_DATA.today.top_tasks.find(x => x.task_id === taskId);
+      if (t2) t2.status = newStatus;
+
+      showToast(`Đã chuyển task sang trạng thái ${newStatus}`, "success");
+      renderCurrentView();
+    }
+
+    async function approveReviewItem(revId) {
+      if (!CONFIG.isMockMode) {
+        await apiFetch(`/api/review/${revId}/approve`, { method: "POST" });
+      }
+      const item = MOCK_DATA.reviewQueue.find(x => x.id === revId);
+      if (item) {
+        MOCK_DATA.allTasks.unshift({
+          id: item.candidate_task.id,
+          title: item.candidate_task.title,
+          status: "TODO",
+          project_key: item.candidate_task.project_key || "OPS",
+          owner_name: item.candidate_task.owner_name || "Tôi",
+          requester_name: item.candidate_task.requester_name,
+          due_date: item.candidate_task.due_date,
+          priority_score: 70.0,
+          source_type: item.candidate_task.evidences[0]?.source_type || "chat",
+          evidence_snippet: item.candidate_task.evidences[0]?.snippet || ""
+        });
+      }
+      MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId);
+      showToast("Đã phê duyệt task và đưa vào TODO board!", "success");
+      renderCurrentView();
+    }
+
+    async function dismissReviewItem(revId) {
+      if (!CONFIG.isMockMode) {
+        await apiFetch(`/api/review/${revId}/dismiss`, { method: "POST" });
+      }
+      MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId);
+      showToast("Đã loại bỏ task candidate khỏi hàng đợi duyệt.");
+      renderCurrentView();
+    }
+
+    let currentEditingRevId = null;
+    function openEditModal(revId) {
+      currentEditingRevId = revId;
+      const item = MOCK_DATA.reviewQueue.find(x => x.id === revId);
+      if (!item) return;
+      const cand = item.candidate_task;
+
+      document.getElementById("editTaskId").value = cand.id;
+      document.getElementById("editTaskTitle").value = cand.title;
+      document.getElementById("editTaskProject").value = cand.project_key || "OPS";
+      document.getElementById("editTaskOwner").value = cand.owner_name || "Dam Quang Cuong";
+      document.getElementById("editTaskDueDate").value = cand.due_date ? cand.due_date.substring(0, 10) : "";
+      document.getElementById("editTaskEvidence").value = cand.evidences?.[0]?.snippet || "";
+
+      document.getElementById("editModal").classList.add("active");
+    }
+
+    function closeEditModal() {
+      document.getElementById("editModal").classList.remove("active");
+      currentEditingRevId = null;
+    }
+
+    function saveAndApproveTask() {
+      const item = MOCK_DATA.reviewQueue.find(x => x.id === currentEditingRevId);
+      if (item) {
+        item.candidate_task.title = document.getElementById("editTaskTitle").value;
+        item.candidate_task.project_key = document.getElementById("editTaskProject").value;
+        item.candidate_task.owner_name = document.getElementById("editTaskOwner").value;
+        closeEditModal();
+        approveReviewItem(currentEditingRevId);
+      }
+    }
+
+    function dismissForgotten(commId) {
+      MOCK_DATA.forgotten = MOCK_DATA.forgotten.filter(x => x.commitment_id !== commId);
+      showToast("Đã cập nhật cam kết hoàn tất!", "success");
+      renderCurrentView();
+    }
+
+    function syncSingleSource(tenantId) {
+      showToast(`Đang đồng bộ adapter ${tenantId}...`, "info");
+      setTimeout(() => {
+        showToast(`Đồng bộ thành công! Bắt thêm 0 sự kiện mới.`, "success");
+      }, 1000);
+    }
+
+    function syncAllSources() {
+      showToast("Đang kích hoạt đồng bộ toàn bộ nguồn...", "info");
+      setTimeout(() => {
+        showToast("Tất cả các nguồn dữ liệu đều trong trạng thái hoàn hảo!", "success");
+      }, 1200);
+    }
+
+    // --- Master Render Router ---
+    function renderCurrentView() {
+      switch (CONFIG.currentView) {
+        case "today": renderTodayView(); break;
+        case "review": renderReviewView(); break;
+        case "tasks": renderTasksView(); break;
+        case "waiting": renderWaitingView(); break;
+        case "forgotten": renderForgottenView(); break;
+        case "decisions": renderDecisionsView(); break;
+        case "lessons": renderLessonsView(); break;
+        case "health": renderHealthView(); break;
+      }
+    }
+
+    function refreshCurrentView() {
+      showToast("Đang làm mới dữ liệu...");
+      renderCurrentView();
+    }
+
+    // --- Theme Controller ---
+    function toggleTheme() {
+      const html = document.documentElement;
+      const isDark = html.classList.toggle("dark");
+      document.getElementById("themeIcon").innerText = isDark ? "☀️" : "🌙";
+      localStorage.setItem("ptb_theme", isDark ? "dark" : "light");
+    }
+
+    function initTheme() {
+      const savedTheme = localStorage.getItem("ptb_theme");
+      if (savedTheme === "dark" || (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+        document.documentElement.classList.add("dark");
+        document.getElementById("themeIcon").innerText = "☀️";
+      }
+    }
+
+    // --- Bootstrap On Load ---
+    window.addEventListener("DOMContentLoaded", async () => {
+      initTheme();
+      await checkApiConnection();
+      renderCurrentView();
+    });
+  </script>
+</body>
+</html>

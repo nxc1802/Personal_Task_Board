@@ -132,11 +132,12 @@ class TeamsNetworkInterceptor:
                 event_ts = datetime.now(timezone.utc)
 
             # Idempotency Key
-            content_hash = hashlib.sha256(content_text.encode("utf-8")).hexdigest()[:16]
+            full_content_hash = hashlib.sha256(content_text.strip().encode("utf-8")).hexdigest()
             idempotency_key = hashlib.sha256(
-                f"{self.tenant_id}:ms_teams_web:{msg_id}:{content_hash}".encode("utf-8")
+                f"{self.tenant_id}:ms_teams_web:{msg_id}:{full_content_hash[:16]}".encode("utf-8")
             ).hexdigest()
 
+            now_utc = datetime.now(timezone.utc)
             record = RawEventRecord(
                 id=f"raw-teams-{uuid.uuid4().hex[:12]}",
                 tenant_id=self.tenant_id,
@@ -145,13 +146,17 @@ class TeamsNetworkInterceptor:
                 parent_external_id=msg.get("parentMessageId"),
                 idempotency_key=idempotency_key,
                 event_timestamp=event_ts,
+                captured_at=now_utc,
                 author_external_id=author_id,
                 author_display_name=author_name,
                 conversation_or_project_id=conv_id,
                 deep_link=f"https://teams.microsoft.com/l/message/{conv_id}/{msg_id}",
                 raw_payload=msg,
+                payload_json=json.dumps(msg, default=str),
+                normalized_text=content_text.strip(),
+                content_hash=full_content_hash,
                 processing_status=ProcessingStatus.PENDING,
-                created_at=datetime.now(timezone.utc),
+                created_at=now_utc,
             )
             records.append(record)
 

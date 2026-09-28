@@ -187,11 +187,12 @@ class OutlookNetworkInterceptor:
             else:
                 event_ts = datetime.now(timezone.utc)
 
-            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+            full_content_hash = hashlib.sha256(content.strip().encode("utf-8")).hexdigest()
             idempotency_key = hashlib.sha256(
-                f"{self.tenant_id}:ms_outlook_web:{item_id}:{content_hash}".encode("utf-8")
+                f"{self.tenant_id}:ms_outlook_web:{item_id}:{full_content_hash[:16]}".encode("utf-8")
             ).hexdigest()
 
+            now_utc = datetime.now(timezone.utc)
             record = RawEventRecord(
                 id=f"raw-outlook-{uuid.uuid4().hex[:12]}",
                 tenant_id=self.tenant_id,
@@ -200,13 +201,17 @@ class OutlookNetworkInterceptor:
                 parent_external_id=conv_id,
                 idempotency_key=idempotency_key,
                 event_timestamp=event_ts,
+                captured_at=now_utc,
                 author_external_id=author_id,
                 author_display_name=author_name,
                 conversation_or_project_id=conv_id,
                 deep_link=f"https://outlook.office.com/mail/deeplink/read/{item_id}",
                 raw_payload=item,
+                payload_json=json.dumps(item, default=str),
+                normalized_text=content.strip(),
+                content_hash=full_content_hash,
                 processing_status=ProcessingStatus.PENDING,
-                created_at=datetime.now(timezone.utc),
+                created_at=now_utc,
             )
             records.append(record)
 

@@ -1,0 +1,29 @@
+[project]
+name = "ptb-application"
+version = "0.1.0"
+description = "Layer 5: Central Application Service for Personal Task Board"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ptb-contracts",
+    "ptb-database",
+    "ptb-processing",
+    "ptb-graph-memory",
+    "ptb-intelligence",
+    "pydantic>=2.7.0",
+]
+
+[tool.uv.sources]
+ptb-contracts = { workspace = true }
+ptb-database = { workspace = true }
+ptb-processing = { workspace = true }
+ptb-graph-memory = { workspace = true }
+ptb-intelligence = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

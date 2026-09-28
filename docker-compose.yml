@@ -18,7 +18,34 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
       - ./packages/database/neo4j/constraints:/var/lib/neo4j/import/constraints
+    networks:
+      - ptb_network
+
+  # OpenWebUI: Local Chat, Tools & Artifacts UI
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: ptb_openwebui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      - WEBUI_AUTH=False
+      - ENABLE_OLLAMA_API=True
+      - OPENAI_API_BASE_URLS=${LLM_BASE_URL:-http://localhost:11434/v1}
+      - WEBUI_NAME=Personal Task Board
+    depends_on:
+      - neo4j
+    networks:
+      - ptb_network
+
+networks:
+  ptb_network:
+    name: ptb_network
+    driver: bridge
 
 volumes:
   neo4j_data:
   neo4j_logs:
+  openwebui_data:

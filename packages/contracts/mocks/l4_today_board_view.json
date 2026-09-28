@@ -6,7 +6,7 @@
     {
       "task_id": "task-unified-001",
       "title": "Investigate deployment failure on staging",
-      "status": "open",
+      "status": "TODO",
       "project_key": "OPS",
       "owner_name": "Dam Quang Cuong",
       "requester_name": "Nguyen Van Huy",

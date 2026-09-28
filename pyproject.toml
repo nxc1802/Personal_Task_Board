@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Personal Intelligence System for unified task management across Teams, Outlook, Jira, and Shortcut"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0.3",
+]
 
 [tool.uv.workspace]
 members = [
@@ -13,5 +15,12 @@ members = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["packages", "services"]
+pythonpath = ["."]
+testpaths = ["packages", "services", "integrations"]
 asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

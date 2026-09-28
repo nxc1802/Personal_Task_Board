@@ -47,7 +47,7 @@ def test_load_l2_extracted_candidates():
     candidates = [UnifiedTaskCandidate.model_validate(item) for item in data]
     assert len(candidates) == 1
     task = candidates[0]
-    assert task.status == TaskStatus.OPEN
+    assert task.status == TaskStatus.TODO
     assert len(task.evidences) == 2
     assert task.evidences[0].confidence == 0.96
 
@@ -106,3 +106,62 @@ def test_raw_agent_session_record():
     assert record.agent_type == AgentType.CURSOR
     assert record.turn_index == 1
     assert len(record.tool_invocations) == 1
+
+
+def test_canonical_single_store_models():
+    from datetime import datetime, timezone
+    from ptb_contracts import (
+        IngestionCheckpointRecord,
+        ProcessingAttemptRecord,
+        StatusTransitionAuditRecord,
+        CommitmentRecord,
+        UnifiedTaskRecord,
+        EvidenceNodeRecord,
+        TaskStatus,
+        SourceType,
+        ProcessingStatus,
+    )
+
+    cp = IngestionCheckpointRecord(
+        id="cp-01",
+        source_type=SourceType.MS_TEAMS_WEB,
+        stream_id="channel-devops",
+        tenant_id="tenant-fpt-internal",
+        last_external_id="msg-100",
+        last_event_timestamp=datetime.now(timezone.utc),
+    )
+    assert cp.stream_id == "channel-devops"
+
+    attempt = ProcessingAttemptRecord(
+        id="att-01",
+        raw_event_id="raw-01",
+        attempt_number=1,
+        status=ProcessingStatus.PROCESSED,
+    )
+    assert attempt.status == ProcessingStatus.PROCESSED
+
+    audit = StatusTransitionAuditRecord(
+        id="aud-01",
+        task_id="task-01",
+        old_status=TaskStatus.TODO,
+        new_status=TaskStatus.IN_PROGRESS,
+        reason="Evidence from Teams chat indicates active development",
+        source_evidence_ids=["ev-01"],
+        confidence=0.9,
+    )
+    assert audit.change_actor == "SYSTEM"
+
+    task = UnifiedTaskRecord(
+        id="task-01",
+        title="Refactor single-store Neo4j",
+        status=TaskStatus.TODO,
+    )
+    assert task.status == TaskStatus.TODO
+
+    comm = CommitmentRecord(
+        id="comm-01",
+        title="I will deliver this today",
+        owner_id="person-01",
+    )
+    assert comm.status == "ACTIVE"
+

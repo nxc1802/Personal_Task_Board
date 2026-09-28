@@ -3,7 +3,7 @@
     "id": "task-unified-001",
     "title": "Investigate deployment failure on staging",
     "description": "Kiểm tra nguyên nhân deployment bị lỗi theo yêu cầu của Huy trên Teams và khớp với Jira OPS-88",
-    "status": "open",
+    "status": "TODO",
     "owner_canonical_id": "00000000-0000-0000-0000-000000000002",
     "requester_canonical_id": "00000000-0000-0000-0000-000000000003",
     "project_key": "OPS",

@@ -60,7 +60,7 @@ def create_mock_unified_task(
     return UnifiedTaskCandidate(
         id=task_id,
         title=title,
-        status=TaskStatus.OPEN,
+        status=TaskStatus.TODO,
         owner_canonical_id=owner_id,
         requester_canonical_id=requester_id,
         extraction_confidence=0.95,

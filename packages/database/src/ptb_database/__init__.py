@@ -1,4 +1,4 @@
-"""ptb_database: Supabase migrations, fixed ontology, and Neo4j outbox worker."""
+"""ptb_database: Neo4j Single-Store ontology, Tier 2 validator, and clients."""
 
 from ptb_database.ontology import (
     ALLOWED_NODES,
@@ -9,8 +9,12 @@ from ptb_database.validator import (
     GraphOntologyValidator,
     ValidationResult,
 )
-from ptb_database.outbox_worker import OutboxWorker
 from ptb_database.neo4j_client import Neo4jClient
+from ptb_database.repositories import (
+    RawEventRepository,
+    CheckpointRepository,
+    TaskDomainRepository,
+)
 
 __all__ = [
     "ALLOWED_NODES",
@@ -18,6 +22,8 @@ __all__ = [
     "AI_EXTRACTED_EDGES",
     "GraphOntologyValidator",
     "ValidationResult",
-    "OutboxWorker",
     "Neo4jClient",
+    "RawEventRepository",
+    "CheckpointRepository",
+    "TaskDomainRepository",
 ]

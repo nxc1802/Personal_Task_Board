@@ -7,7 +7,16 @@
 // Layer 1: Data Acquisition
 // ==========================================
 
-export type SourceType = "ms_teams" | "ms_outlook" | "jira" | "shortcut" | "confluence";
+export type SourceType =
+  | "ms_teams"
+  | "ms_outlook"
+  | "ms_teams_web"
+  | "ms_outlook_web"
+  | "coding_agent"
+  | "jira"
+  | "shortcut"
+  | "confluence"
+  | "git";
 
 export type ProcessingStatus = "pending" | "processing" | "processed" | "failed" | "skipped";
 

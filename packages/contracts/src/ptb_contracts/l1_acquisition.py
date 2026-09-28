@@ -13,6 +13,7 @@ class SourceType(str, Enum):
     JIRA = "jira"
     SHORTCUT = "shortcut"
     CONFLUENCE = "confluence"
+    GIT = "git"
 
 
 class AgentType(str, Enum):
@@ -49,7 +50,7 @@ class RawAgentSessionRecord(BaseModel):
 
 
 class RawEventRecord(BaseModel):
-    id: str = Field(description="UUID v4 của raw event trong Supabase hoặc local storage")
+    id: str = Field(description="UUID v4 của raw event trong Neo4j Ingestion Journal")
     tenant_id: str = Field(description="Định danh tenant (e.g., 'tenant-fpt-internal', 'client-tenant', 'local-user')")
     source_type: SourceType = Field(description="Loại nguồn dữ liệu")
     external_id: str = Field(description="ID gốc từ hệ thống ngoại vi (message ID, ticket ID)")
@@ -57,17 +58,41 @@ class RawEventRecord(BaseModel):
     idempotency_key: str = Field(description="Hash duy nhất: SHA256(tenant_id + source_type + external_id + payload_hash)")
     
     event_timestamp: datetime = Field(description="Thời gian phát sinh event tại nguồn")
+    captured_at: Optional[datetime] = Field(default=None, description="Thời điểm ingest vào hệ thống")
     author_external_id: str = Field(description="ID người gửi tại nguồn (email, accountId, AAD ObjectId)")
     author_display_name: Optional[str] = Field(default=None, description="Tên hiển thị tại nguồn")
     conversation_or_project_id: str = Field(description="Channel ID, Chat ID, hoặc Project Key")
     deep_link: Optional[str] = Field(default=None, description="URL dẫn thẳng đến tin nhắn/ticket gốc")
     
-    raw_payload: Dict[str, Any] = Field(description="Toàn bộ JSON response nhận từ Source API hoặc Playwright")
+    raw_payload: Dict[str, Any] = Field(default_factory=dict, description="Toàn bộ JSON response nhận từ Source API hoặc Playwright")
+    payload_json: Optional[str] = Field(default=None, description="Chuỗi JSON serialized của raw_payload để lưu vào Neo4j property")
+    normalized_text: Optional[str] = Field(default=None, description="Nội dung văn bản trích xuất đã chuẩn hóa")
+    content_hash: Optional[str] = Field(default=None, description="SHA256 của nội dung văn bản chuẩn hóa")
     
     processing_status: ProcessingStatus = Field(default=ProcessingStatus.PENDING)
     retry_count: int = Field(default=0)
     last_error: Optional[str] = Field(default=None)
     created_at: Optional[datetime] = Field(default=None)
+
+
+class IngestionCheckpointRecord(BaseModel):
+    id: str = Field(description="UUID hoặc key của checkpoint")
+    source_type: SourceType
+    stream_id: str = Field(description="Định danh stream/channel/repo/session")
+    tenant_id: str = Field(default="default")
+    last_external_id: Optional[str] = None
+    last_event_timestamp: Optional[datetime] = None
+    cursor_token: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class ProcessingAttemptRecord(BaseModel):
+    id: str = Field(description="UUID v4 của processing attempt")
+    raw_event_id: str
+    attempt_number: int = 1
+    status: ProcessingStatus
+    error_message: Optional[str] = None
+    attempted_at: Optional[datetime] = None
 
 
 class SourceConnectionConfig(BaseModel):

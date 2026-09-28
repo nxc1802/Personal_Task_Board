@@ -5,17 +5,30 @@ from pydantic import BaseModel, Field
 
 
 class TaskStatus(str, Enum):
-    OPEN = "open"
-    IN_PROGRESS = "in_progress"
-    LIKELY_DONE = "likely_done"
-    DONE = "done"
-    BLOCKED = "blocked"
-    DISMISSED = "dismissed"
+    TODO = "TODO"
+    IN_PROGRESS = "IN_PROGRESS"
+    BLOCKED = "BLOCKED"
+    DONE = "DONE"
+    DISMISSED = "DISMISSED"
+    # Backwards compatibility aliases
+    open = "TODO"
+    in_progress = "IN_PROGRESS"
+    blocked = "BLOCKED"
+    done = "DONE"
+    dismissed = "DISMISSED"
+
+
+class InferredStatus(str, Enum):
+    LIKELY_DONE = "LIKELY_DONE"
+    LIKELY_BLOCKED = "LIKELY_BLOCKED"
+    IN_PROGRESS = "IN_PROGRESS"
 
 
 class EvidenceType(str, Enum):
     CHAT_COMMITMENT = "chat_commitment"
     CHAT_REQUEST = "chat_request"
+    AGENT_DECISION = "agent_decision"
+    AGENT_BUG_FIX = "agent_bug_fix"
     JIRA_TICKET = "jira_ticket"
     SHORTCUT_STORY = "shortcut_story"
     EMAIL_THREAD = "email_thread"
@@ -27,6 +40,7 @@ class ParsedMessageContent(BaseModel):
     quoted_author_raw: Optional[str] = Field(default=None)
     quoted_content_text: Optional[str] = Field(default=None)
     actual_content_text: str = Field(description="Nội dung thực tế của người gửi hiện tại")
+    actual_author_raw: Optional[str] = Field(default=None, description="Tác giả thực tế của tin nhắn hiện tại")
 
 
 class EvidenceRecord(BaseModel):
@@ -36,18 +50,32 @@ class EvidenceRecord(BaseModel):
     evidence_type: EvidenceType
     source_type: str
     external_url: Optional[str] = None
-    author_canonical_id: str = Field(description="ID người gửi theo bảng people")
+    author_canonical_id: Optional[str] = Field(default=None, description="ID người gửi theo Person node")
+    author_canonical_name: Optional[str] = Field(default=None, description="Tên canonical người gửi")
     timestamp: datetime
     snippet: str = Field(description="Đoạn trích văn bản làm bằng chứng")
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     extraction_version: str = Field(default="v1.0")
+
+
+class CommitmentRecord(BaseModel):
+    id: str = Field(description="UUID v4 của commitment")
+    title: str = Field(description="Mô tả cam kết cụ thể")
+    owner_id: str = Field(description="Person ID của người cam kết")
+    requester_id: Optional[str] = Field(default=None, description="Person ID của người nhận cam kết")
+    due_date: Optional[datetime] = None
+    explicit_deadline: bool = Field(default=False)
+    status: str = Field(default="ACTIVE", description="'ACTIVE', 'FULFILLED', 'ABANDONED'")
+    task_id: Optional[str] = Field(default=None, description="Task materialize từ commitment")
+    evidence_id: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ExtractedCommitment(BaseModel):
     title: str = Field(description="Mô tả ngắn gọn về hành động hoặc cam kết")
     owner_id: str = Field(description="Canonical person ID của người cam kết thực hiện")
     requester_id: Optional[str] = Field(default=None, description="Canonical person ID của người yêu cầu")
-    project_key: Optional[str] = Field(default=None)
+    project_key: Optional[str] = None
     due_date: Optional[datetime] = None
     explicit_deadline: bool = Field(default=False)
     confidence: float = Field(ge=0.0, le=1.0)
@@ -59,21 +87,41 @@ class UnifiedTaskCandidate(BaseModel):
     id: str = Field(description="UUID v4 của unified_task")
     title: str = Field(description="Tiêu đề task được chuẩn hóa")
     description: Optional[str] = None
-    status: TaskStatus = Field(default=TaskStatus.OPEN)
+    status: TaskStatus = Field(default=TaskStatus.TODO)
+    inferred_status: Optional[str] = Field(default=None, description="e.g. 'LIKELY_DONE'")
     
-    owner_canonical_id: str = Field(description="Người chịu trách nhiệm chính (canonical person ID)")
+    owner_canonical_id: Optional[str] = Field(default=None, description="Người chịu trách nhiệm chính (canonical person ID)")
+    owner_name: Optional[str] = Field(default=None, description="Tên hiển thị chuẩn hóa của owner")
     requester_canonical_id: Optional[str] = Field(default=None, description="Người yêu cầu")
+    requester_name: Optional[str] = Field(default=None, description="Tên hiển thị chuẩn hóa của requester")
     
     project_key: Optional[str] = Field(default=None, description="e.g. 'OPS', 'CUSTOMER_A'")
     customer_id: Optional[str] = Field(default=None)
     
     due_date: Optional[datetime] = None
     explicit_deadline: bool = Field(default=False)
+    priority_score: float = Field(default=0.0, ge=0.0, le=100.0)
     
-    extraction_confidence: float = Field(ge=0.0, le=1.0)
+    extraction_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    correlation_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     review_status: str = Field(default="auto_approved", description="'auto_approved', 'pending_review', 'rejected'")
     
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
     evidences: List[EvidenceRecord] = Field(default_factory=list)
+
+
+class StatusTransitionAuditRecord(BaseModel):
+    id: str = Field(description="UUID v4 của audit record")
+    task_id: str
+    old_status: TaskStatus
+    new_status: TaskStatus
+    reason: str
+    source_evidence_ids: List[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    change_actor: str = Field(default="SYSTEM", description="'SYSTEM' | 'USER'")
 
 
 class ReviewQueueItem(BaseModel):
