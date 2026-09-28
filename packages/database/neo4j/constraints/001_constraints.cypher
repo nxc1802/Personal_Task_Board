@@ -37,6 +37,9 @@ FOR (re:RawEvent) REQUIRE re.idempotency_key IS UNIQUE;
 CREATE CONSTRAINT c_checkpoint_id IF NOT EXISTS 
 FOR (cp:IngestionCheckpoint) REQUIRE cp.id IS UNIQUE;
 
+CREATE CONSTRAINT c_checkpoint_composite IF NOT EXISTS 
+FOR (cp:IngestionCheckpoint) REQUIRE (cp.tenant_id, cp.source_type, cp.stream_id) IS UNIQUE;
+
 CREATE CONSTRAINT c_processing_attempt_id IF NOT EXISTS 
 FOR (pa:ProcessingAttempt) REQUIRE pa.id IS UNIQUE;
 
@@ -51,6 +54,12 @@ FOR (doc:Document) REQUIRE doc.doc_id IS UNIQUE;
 
 CREATE CONSTRAINT c_incident_id IF NOT EXISTS 
 FOR (inc:Incident) REQUIRE inc.incident_id IS UNIQUE;
+
+CREATE CONSTRAINT c_status_transition_audit_id IF NOT EXISTS 
+FOR (sta:StatusTransitionAudit) REQUIRE sta.id IS UNIQUE;
+
+CREATE CONSTRAINT c_merge_audit_id IF NOT EXISTS 
+FOR (ma:MergeAudit) REQUIRE ma.id IS UNIQUE;
 
 // 2. INDEXES TỐI ƯU HÓA TRUY VẤN
 CREATE INDEX idx_task_status IF NOT EXISTS 

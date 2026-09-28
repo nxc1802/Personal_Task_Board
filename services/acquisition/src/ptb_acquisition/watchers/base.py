@@ -25,6 +25,16 @@ class BaseAgentWatcher(ABC):
         self.base_paths = base_paths or self.get_default_paths()
         self.filter_valuable_only = filter_valuable_only
 
+    @property
+    def is_installed(self) -> bool:
+        """Kiểm tra xem ít nhất một thư mục log mặc định của agent có tồn tại trên máy không."""
+        return any(os.path.exists(p) for p in self.base_paths)
+
+    @property
+    def status(self) -> str:
+        """Trả về AVAILABLE nếu đã cài đặt, hoặc NOT_INSTALLED nếu không tìm thấy trên hệ thống."""
+        return "AVAILABLE" if self.is_installed else "NOT_INSTALLED"
+
     @abstractmethod
     def get_default_paths(self) -> List[str]:
         """Trả về danh sách đường dẫn lưu trữ mặc định theo OS hiện tại."""

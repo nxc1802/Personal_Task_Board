@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 import json
 from typing import Any, Callable, Dict, List, Optional
+from unittest.mock import AsyncMock
 import pytest
 
 from ptb_contracts.l1_acquisition import (
@@ -15,6 +16,7 @@ from ptb_contracts.l1_acquisition import (
 from ptb_contracts.l2_processing import (
     EvidenceRecord,
     EvidenceType,
+    MergeAuditRecord,
     StatusTransitionAuditRecord,
     TaskStatus,
     UnifiedTaskCandidate,
@@ -39,6 +41,9 @@ class MockRecord:
 
     def data(self) -> Dict[str, Any]:
         return self._data
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._data
 
 
 class MockAsyncResult:
@@ -194,7 +199,8 @@ async def test_persist_raw_event_idempotency_existing():
 @pytest.mark.asyncio
 async def test_get_pending_raw_events():
     async def handler(query, params):
-        assert "WHERE re.processing_status = 'pending'" in query
+        assert "re.processing_status IN ['PENDING', 'pending', 'RETRY', 'retry']" in query
+        assert "(re.next_retry_at IS NULL OR re.next_retry_at <= datetime())" in query
         assert "ORDER BY re.event_timestamp ASC" in query
         assert params["limit"] == 10
         nodes = [
@@ -590,3 +596,270 @@ async def test_record_status_transition_audit():
 
     audit_id = await repo.record_status_transition_audit(audit)
     assert audit_id == "audit-uuid-1"
+
+
+# ==============================================================================
+# 4. Checkpoint Deduplication & Advanced Tests
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_cleanup_duplicate_checkpoints_with_deletions():
+    async def handler(query, params):
+        if "size(nodes) > 1" in query:
+            assert "UNWIND tail(nodes) AS dup" in query
+            assert "DETACH DELETE dup" in query
+            return MockAsyncResult(single_record=MockRecord({"deleted_count": 3}))
+        return MockAsyncResult()
+
+    session = MockSession(run_handler=handler)
+    client = make_client_with_session(session)
+    repo = CheckpointRepository(client)
+
+    deleted = await repo.cleanup_duplicate_checkpoints()
+    assert deleted == 3
+
+
+@pytest.mark.asyncio
+async def test_cleanup_duplicate_checkpoints_no_duplicates():
+    async def handler(query, params):
+        return MockAsyncResult(single_record=None)
+
+    session = MockSession(run_handler=handler)
+    client = make_client_with_session(session)
+    repo = CheckpointRepository(client)
+
+    deleted = await repo.cleanup_duplicate_checkpoints()
+    assert deleted == 0
+
+
+@pytest.mark.asyncio
+async def test_get_checkpoint_tenant_id_default_and_custom():
+    queries = []
+    async def handler(query, params):
+        queries.append((query, params))
+        return MockAsyncResult(single_record=None)
+
+    session = MockSession(run_handler=handler)
+    client = make_client_with_session(session)
+    repo = CheckpointRepository(client)
+
+    # 1. Custom tenant_id
+    await repo.get_checkpoint("jira", "stream-1", tenant_id="my-tenant")
+    assert len(queries) == 1
+    assert queries[0][1]["tenant_id"] == "my-tenant"
+    assert "ORDER BY cp.updated_at DESC" in queries[0][0]
+
+    # 2. None tenant_id falls back to default
+    await repo.get_checkpoint("jira", "stream-2", tenant_id=None)
+    assert len(queries) == 2
+    assert queries[1][1]["tenant_id"] == "default"
+
+
+# ==============================================================================
+# 5. RawEvent Lifecycle & Advanced Mark Status Tests
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_persist_raw_event_lifecycle_fields():
+    session = MockSession()
+    client = make_client_with_session(session)
+    repo = RawEventRepository(client)
+
+    now = datetime.now(timezone.utc)
+    record = RawEventRecord(
+        id="raw-lifecycle-1",
+        tenant_id="tenant-alpha",
+        source_type=SourceType.MS_TEAMS,
+        external_id="msg-alpha-1",
+        idempotency_key="idemp-alpha-1",
+        event_timestamp=now,
+        author_external_id="user-alpha",
+        conversation_or_project_id="conv-alpha",
+        raw_payload={"msg": "hello"},
+        processing_status=ProcessingStatus.PENDING,
+        processing_attempt_count=0,
+        last_processing_error=None,
+        next_retry_at=now,
+        processor_version="v2.0-beta",
+    )
+
+    await repo.persist_raw_event(record)
+    assert len(session.queries) == 1
+    query, params = session.queries[0]
+    assert "re.processing_attempt_count = $processing_attempt_count" in query
+    assert "re.last_processing_error = $last_processing_error" in query
+    assert "re.next_retry_at = $next_retry_at" in query
+    assert "re.processor_version = $processor_version" in query
+    assert params["processor_version"] == "v2.0-beta"
+    assert params["processing_attempt_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_mark_event_status_retry_and_processing():
+    session = MockSession()
+    client = make_client_with_session(session)
+    repo = RawEventRepository(client)
+
+    retry_time = datetime(2026, 9, 29, 3, 0, 0, tzinfo=timezone.utc)
+
+    # 1. Mark RETRY
+    await repo.mark_event_status(
+        "raw-100",
+        ProcessingStatus.RETRY,
+        error="LLM rate limited",
+        next_retry_at=retry_time,
+        processor_version="v1.1",
+    )
+    assert len(session.queries) == 1
+    q1, p1 = session.queries[0]
+    assert p1["status"] == "retry"
+    assert p1["error"] == "LLM rate limited"
+    assert p1["next_retry_at"] == retry_time.isoformat()
+    assert p1["processor_version"] == "v1.1"
+
+    # 2. Mark PROCESSING
+    await repo.mark_event_status(
+        "raw-100",
+        ProcessingStatus.PROCESSING,
+        processor_version="v1.1",
+    )
+    assert len(session.queries) == 2
+    q2, p2 = session.queries[1]
+    assert p2["status"] == "processing"
+
+
+# ==============================================================================
+# 6. Task Timestamps & Evidence Preserved Tests
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_task_created_at_on_create_only():
+    session = MockSession()
+    client = make_client_with_session(session)
+    repo = TaskDomainRepository(client)
+
+    fixed_created = datetime(2026, 9, 25, 8, 0, 0, tzinfo=timezone.utc)
+    original_ev_time = datetime(2026, 9, 25, 7, 30, 0, tzinfo=timezone.utc)
+
+    task = UnifiedTaskCandidate(
+        id="task-timestamps-test",
+        title="Check timestamps",
+        status=TaskStatus.TODO,
+        created_at=fixed_created,
+        evidences=[
+            EvidenceRecord(
+                id="ev-ts-1",
+                task_id="task-timestamps-test",
+                raw_event_id="raw-1",
+                evidence_type=EvidenceType.CHAT_COMMITMENT,
+                source_type="ms_teams",
+                timestamp=original_ev_time,
+                snippet="Original timestamp test",
+            )
+        ]
+    )
+
+    await repo.upsert_task_atomic(task)
+    tx_queries = session.active_tx.queries
+    task_q, task_p = tx_queries[0]
+    ev_q, ev_p = tx_queries[1]
+
+    # Task Cypher: ON CREATE SET t.created_at = $created_at
+    assert "ON CREATE SET t.created_at = $created_at" in task_q
+    assert "t.updated_at = $updated_at" in task_q
+    assert task_p["created_at"] == fixed_created.isoformat()
+
+    # Evidence Cypher: e.timestamp = ev.timestamp
+    assert "e.timestamp = ev.timestamp" in ev_q
+    assert ev_p["evidences"][0]["timestamp"] == original_ev_time.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_record_merge_audit():
+    async def handler(query, params):
+        assert "MATCH (t:UnifiedTask {id: $winning_task_id})" in query
+        assert "CREATE (a:MergeAudit" in query
+        assert "CREATE (t)-[:MERGE_AUDIT]->(a)" in query
+        assert params["winning_task_id"] == "task-win-001"
+        assert params["candidate_task_ids"] == ["task-cand-002"]
+        assert params["correlation_score"] == 0.92
+        assert params["deterministic_anchors"] == ["jira:OPS-88"]
+        return MockAsyncResult(single_record=MockRecord({"id": "audit-merge-1"}))
+
+    session = MockSession(run_handler=handler)
+    client = make_client_with_session(session)
+    repo = TaskDomainRepository(client)
+
+    audit = MergeAuditRecord(
+        id="audit-merge-1",
+        winning_task_id="task-win-001",
+        candidate_task_ids=["task-cand-002"],
+        correlation_score=0.92,
+        deterministic_anchors=["jira:OPS-88"],
+        semantic_score=0.80,
+        merge_reason="Deterministic anchor matched: jira:OPS-88 -> AUTO-MERGE",
+        processor_version="v1.1",
+        created_at=datetime(2026, 9, 28, 14, 0, 0, tzinfo=timezone.utc),
+    )
+
+    audit_id = await repo.record_merge_audit(audit)
+    assert audit_id == "audit-merge-1"
+
+
+@pytest.mark.asyncio
+async def test_split_task_in_repo():
+    ev1 = EvidenceRecord(
+        id="ev-1",
+        task_id="task-orig",
+        raw_event_id="raw-1",
+        evidence_type=EvidenceType.CHAT_COMMITMENT,
+        source_type="ms_teams",
+        timestamp=datetime(2026, 9, 28, 10, 0, 0, tzinfo=timezone.utc),
+        snippet="Snippet 1",
+    )
+    ev2 = EvidenceRecord(
+        id="ev-2",
+        task_id="task-orig",
+        raw_event_id="raw-2",
+        evidence_type=EvidenceType.EMAIL_THREAD,
+        source_type="ms_outlook",
+        timestamp=datetime(2026, 9, 28, 11, 0, 0, tzinfo=timezone.utc),
+        snippet="Snippet 2",
+    )
+    orig_task = UnifiedTaskCandidate(
+        id="task-orig",
+        title="Original Big Task",
+        status=TaskStatus.IN_PROGRESS,
+        evidences=[ev1, ev2],
+    )
+
+    session = MockSession()
+    client = make_client_with_session(session)
+    repo = TaskDomainRepository(client)
+    repo.get_task_by_id = AsyncMock(
+        side_effect=lambda tid: orig_task if tid == "task-orig" else None
+    )
+
+    new_task = await repo.split_task(
+        original_task_id="task-orig",
+        evidence_ids_to_detach=["ev-2"],
+        new_task_title="Split Task 2",
+    )
+
+    assert new_task.title == "Split Task 2"
+    assert len(new_task.evidences) == 1
+    assert new_task.evidences[0].id == "ev-2"
+    assert new_task.evidences[0].raw_event_id == "raw-2"
+    assert new_task.evidences[0].source_type == "ms_outlook"
+
+    # Verify Cypher execution in transaction
+    assert session.active_tx is not None
+    assert session.active_tx.committed is True
+    q, p = session.active_tx.queries[0]
+    assert "MATCH (orig:UnifiedTask {id: $original_task_id})" in q
+    assert "DELETE r" in q
+    assert "MERGE (new_t)-[:HAS_EVIDENCE]->(e)" in q
+    assert p["original_task_id"] == "task-orig"
+    assert p["evidence_ids_to_detach"] == ["ev-2"]
+
+

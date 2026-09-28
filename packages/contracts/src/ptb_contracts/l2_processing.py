@@ -101,15 +101,38 @@ class UnifiedTaskCandidate(BaseModel):
     due_date: Optional[datetime] = None
     explicit_deadline: bool = Field(default=False)
     priority_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    priority_override: Optional[float] = Field(default=None, description="Manual priority override from user")
+    inferred_priority_score: Optional[float] = Field(default=None, description="Inferred priority score when override is active")
+    status_authoritative: bool = Field(default=False, description="True if status was set manually by user or authoritative source")
     
     extraction_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     correlation_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     review_status: str = Field(default="auto_approved", description="'auto_approved', 'pending_review', 'rejected'")
     
+    # Audit trail metadata from Correlation & Merge
+    candidate_task_ids: List[str] = Field(default_factory=list, description="Danh sách task candidates được so sánh khi merge")
+    winning_task_id: Optional[str] = Field(default=None, description="ID task đích nếu task này là kết quả merge")
+    correlation_score: Optional[float] = Field(default=None, description="Correlation score khi merge")
+    deterministic_anchors: List[str] = Field(default_factory=list, description="Các deterministic anchors khớp khi merge")
+    merge_reason: Optional[str] = Field(default=None, description="Lý do chi tiết gộp task")
+    merge_audit: Optional["MergeAuditRecord"] = Field(default=None, description="Chi tiết audit trail của lần merge gần nhất")
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     evidences: List[EvidenceRecord] = Field(default_factory=list)
+
+
+class MergeAuditRecord(BaseModel):
+    id: str = Field(description="UUID v4 của merge audit record")
+    winning_task_id: str = Field(description="ID task đích được gộp vào")
+    candidate_task_ids: List[str] = Field(default_factory=list, description="Danh sách task candidates được so sánh")
+    correlation_score: float = Field(default=0.0, description="Điểm correlation_confidence")
+    deterministic_anchors: List[str] = Field(default_factory=list, description="Danh sách anchors khớp")
+    semantic_score: float = Field(default=0.0, description="Điểm tương đồng ngữ nghĩa")
+    merge_reason: str = Field(default="", description="Lý do chi tiết gộp task")
+    processor_version: str = Field(default="v1.1", description="Phiên bản processor")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class StatusTransitionAuditRecord(BaseModel):
@@ -130,3 +153,4 @@ class ReviewQueueItem(BaseModel):
     candidate_task: UnifiedTaskCandidate
     reason: str = Field(description="Lý do cần người dùng xác nhận (e.g., 'Confidence trung bình 0.72', 'Attribution chưa chắc chắn')")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+

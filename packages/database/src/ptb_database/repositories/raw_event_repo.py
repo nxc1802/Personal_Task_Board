@@ -60,6 +60,18 @@ class RawEventRepository:
             if record.created_at and hasattr(record.created_at, "isoformat")
             else datetime.now(timezone.utc).isoformat()
         )
+        next_retry_at = (
+            record.next_retry_at.isoformat()
+            if record.next_retry_at and hasattr(record.next_retry_at, "isoformat")
+            else (str(record.next_retry_at) if record.next_retry_at else None)
+        )
+        processed_at = (
+            record.processed_at.isoformat()
+            if record.processed_at and hasattr(record.processed_at, "isoformat")
+            else (str(record.processed_at) if record.processed_at else None)
+        )
+        last_processing_error = record.last_processing_error or record.last_error
+        attempt_count = record.processing_attempt_count if record.processing_attempt_count is not None else record.retry_count
 
         cypher = """
         MERGE (re:RawEvent {idempotency_key: $idempotency_key})
@@ -80,8 +92,13 @@ class RawEventRepository:
             re.normalized_text = $normalized_text,
             re.content_hash = $content_hash,
             re.processing_status = $processing_status,
-            re.retry_count = 0,
+            re.retry_count = $retry_count,
             re.last_error = $last_error,
+            re.processing_attempt_count = $processing_attempt_count,
+            re.last_processing_error = $last_processing_error,
+            re.next_retry_at = $next_retry_at,
+            re.processed_at = $processed_at,
+            re.processor_version = $processor_version,
             re.created_at = $created_at
         RETURN re.id AS id
         """
@@ -102,7 +119,13 @@ class RawEventRepository:
             "normalized_text": record.normalized_text,
             "content_hash": record.content_hash,
             "processing_status": status,
-            "last_error": record.last_error,
+            "retry_count": attempt_count,
+            "last_error": last_processing_error,
+            "processing_attempt_count": attempt_count,
+            "last_processing_error": last_processing_error,
+            "next_retry_at": next_retry_at,
+            "processed_at": processed_at,
+            "processor_version": record.processor_version,
             "created_at": created_at,
         }
 
@@ -114,11 +137,13 @@ class RawEventRepository:
             return event_id
 
     async def get_pending_raw_events(self, limit: int = 50) -> list[RawEventRecord]:
-        """Query các RawEvent có processing_status = 'pending' ORDER BY event_timestamp ASC."""
+        """Query các RawEvent có processing_status IN ['PENDING', 'pending', 'RETRY', 'retry']
+        và (next_retry_at IS NULL OR next_retry_at <= datetime()) ORDER BY event_timestamp ASC."""
         driver = self._get_driver()
         cypher = """
         MATCH (re:RawEvent)
-        WHERE re.processing_status = 'pending'
+        WHERE re.processing_status IN ['PENDING', 'pending', 'RETRY', 'retry']
+          AND (re.next_retry_at IS NULL OR re.next_retry_at <= datetime())
         RETURN re
         ORDER BY re.event_timestamp ASC
         LIMIT $limit
@@ -139,12 +164,22 @@ class RawEventRepository:
                     else:
                         data["raw_payload"] = {}
                 # Chuyển đổi timestamp ISO format sang datetime object nếu cần
-                for dt_field in ["event_timestamp", "captured_at", "created_at"]:
+                for dt_field in [
+                    "event_timestamp",
+                    "captured_at",
+                    "created_at",
+                    "next_retry_at",
+                    "processed_at",
+                ]:
                     if dt_field in data and isinstance(data[dt_field], str):
                         try:
                             data[dt_field] = datetime.fromisoformat(data[dt_field])
                         except Exception:
                             pass
+                if "processing_attempt_count" not in data or data["processing_attempt_count"] is None:
+                    data["processing_attempt_count"] = data.get("retry_count", 0)
+                if "last_processing_error" not in data or data["last_processing_error"] is None:
+                    data["last_processing_error"] = data.get("last_error")
                 events.append(RawEventRecord.model_validate(data))
             return events
 
@@ -153,23 +188,45 @@ class RawEventRepository:
         event_id: str,
         status: ProcessingStatus,
         error: Optional[str] = None,
+        next_retry_at: Optional[datetime] = None,
+        processed_at: Optional[datetime] = None,
+        processor_version: Optional[str] = None,
     ) -> None:
-        """Cập nhật processing_status và last_error, tăng retry_count nếu failed."""
+        """Cập nhật processing_status, retry_count, processing_attempt_count, last_processing_error, next_retry_at, processed_at khi mark PROCESSING, PROCESSED, RETRY, FAILED."""
         driver = self._get_driver()
         status_val = status.value if hasattr(status, "value") else str(status)
         updated_at = datetime.now(timezone.utc).isoformat()
+
+        next_retry_iso = (
+            next_retry_at.isoformat()
+            if next_retry_at and hasattr(next_retry_at, "isoformat")
+            else (str(next_retry_at) if next_retry_at else None)
+        )
+        processed_at_iso = (
+            processed_at.isoformat()
+            if processed_at and hasattr(processed_at, "isoformat")
+            else (str(processed_at) if processed_at else None)
+        )
 
         cypher = """
         MATCH (re:RawEvent {id: $event_id})
         SET re.processing_status = $status,
             re.last_error = $error,
-            re.retry_count = CASE WHEN $status = 'failed' THEN coalesce(re.retry_count, 0) + 1 ELSE coalesce(re.retry_count, 0) END,
+            re.last_processing_error = $error,
+            re.retry_count = CASE WHEN $status = 'failed' THEN coalesce(re.retry_count, 0) + 1 WHEN $status IN ['retry', 'RETRY', 'failed', 'FAILED'] THEN coalesce(re.retry_count, 0) + 1 ELSE coalesce(re.retry_count, 0) END,
+            re.processing_attempt_count = CASE WHEN $status IN ['processing', 'PROCESSING', 'retry', 'RETRY', 'failed', 'FAILED'] THEN coalesce(re.processing_attempt_count, re.retry_count, 0) + 1 ELSE coalesce(re.processing_attempt_count, re.retry_count, 0) END,
+            re.next_retry_at = $next_retry_at,
+            re.processed_at = CASE WHEN $status IN ['processed', 'PROCESSED'] THEN coalesce($processed_at, $updated_at) ELSE re.processed_at END,
+            re.processor_version = coalesce($processor_version, re.processor_version),
             re.updated_at = $updated_at
         """
         params = {
             "event_id": event_id,
             "status": status_val,
             "error": error,
+            "next_retry_at": next_retry_iso,
+            "processed_at": processed_at_iso,
+            "processor_version": processor_version,
             "updated_at": updated_at,
         }
         async with driver.session(database=self.neo4j_client.database) as session:

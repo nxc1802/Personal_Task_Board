@@ -33,8 +33,16 @@ class ProcessingStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     PROCESSED = "processed"
+    RETRY = "retry"
     FAILED = "failed"
     SKIPPED = "skipped"
+    # Backwards compatibility / uppercase aliases
+    pending = "pending"
+    processing = "processing"
+    processed = "processed"
+    retry = "retry"
+    failed = "failed"
+    skipped = "skipped"
 
 
 class RawAgentSessionRecord(BaseModel):
@@ -72,7 +80,22 @@ class RawEventRecord(BaseModel):
     processing_status: ProcessingStatus = Field(default=ProcessingStatus.PENDING)
     retry_count: int = Field(default=0)
     last_error: Optional[str] = Field(default=None)
+    processing_attempt_count: int = Field(default=0, description="Số lần đã thử xử lý event này")
+    last_processing_error: Optional[str] = Field(default=None, description="Lỗi gần nhất trong quá trình processing")
+    next_retry_at: Optional[datetime] = Field(default=None, description="Thời điểm được phép retry tiếp theo")
+    processed_at: Optional[datetime] = Field(default=None, description="Thời điểm hoàn tất xử lý thành công")
+    processor_version: Optional[str] = Field(default=None, description="Phiên bản pipeline/LLM xử lý event")
     created_at: Optional[datetime] = Field(default=None)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.retry_count and not self.processing_attempt_count:
+            object.__setattr__(self, "processing_attempt_count", self.retry_count)
+        elif self.processing_attempt_count and not self.retry_count:
+            object.__setattr__(self, "retry_count", self.processing_attempt_count)
+        if self.last_error and not self.last_processing_error:
+            object.__setattr__(self, "last_processing_error", self.last_error)
+        elif self.last_processing_error and not self.last_error:
+            object.__setattr__(self, "last_error", self.last_processing_error)
 
 
 class IngestionCheckpointRecord(BaseModel):

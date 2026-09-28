@@ -5,6 +5,7 @@ description = "Personal Intelligence System for unified task management across T
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "platformdirs>=4.12.1",
     "pyyaml>=6.0.3",
 ]
 
@@ -16,7 +17,7 @@ members = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["packages", "services", "integrations"]
+testpaths = ["packages", "services", "integrations", "tests"]
 asyncio_mode = "auto"
 
 [dependency-groups]

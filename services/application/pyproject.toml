@@ -11,6 +11,7 @@ dependencies = [
     "ptb-graph-memory",
     "ptb-intelligence",
     "pydantic>=2.7.0",
+    "fastapi>=0.141.1",
 ]
 
 [tool.uv.sources]

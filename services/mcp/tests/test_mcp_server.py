@@ -393,3 +393,47 @@ async def test_tool_10_get_source_health(mcp_server):
     assert "tenants" in content
     assert "overall_health" in content
     assert content["overall_health"] == "healthy"
+
+
+def test_mcp_server_defaults_and_run_mcp_server():
+    """Kiểm tra cấu hình mặc định host 127.0.0.1, port 8001 và hàm run_mcp_server."""
+    import inspect
+    from unittest.mock import patch
+    from ptb_mcp.server import (
+        DEFAULT_MCP_HOST,
+        DEFAULT_MCP_PORT,
+        create_mcp_server,
+        run_mcp_server,
+        run_sse_server,
+    )
+
+    # 1. Kiểm tra hằng số host và port mặc định
+    assert DEFAULT_MCP_HOST == "127.0.0.1"
+    assert DEFAULT_MCP_PORT == 8001
+
+    # 2. Kiểm tra server name
+    srv = create_mcp_server()
+    assert getattr(srv, "name", None) == "ptb-mcp"
+
+    # 3. Kiểm tra signature của run_mcp_server
+    sig = inspect.signature(run_mcp_server)
+    assert sig.parameters["host"].default == "127.0.0.1"
+    assert sig.parameters["port"].default == 8001
+
+    # 4. Kiểm tra signature của run_sse_server
+    sse_sig = inspect.signature(run_sse_server)
+    assert sse_sig.parameters["host"].default == "127.0.0.1"
+    assert sse_sig.parameters["port"].default == 8001
+
+    # 5. Kiểm tra run_mcp_server gọi run_sse_server với đúng tham số
+    coro_to_close = None
+
+    def fake_run(coro):
+        nonlocal coro_to_close
+        coro_to_close = coro
+
+    with patch("ptb_mcp.server.asyncio.run", side_effect=fake_run):
+        run_mcp_server(host="127.0.0.1", port=8001)
+
+    assert coro_to_close is not None
+    coro_to_close.close()

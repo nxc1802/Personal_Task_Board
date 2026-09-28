@@ -113,6 +113,7 @@ class AgentWatchersAdapter(AcquisitionAdapter):
                 else str(watcher.agent_type)
             )
             paths_found = [p for p in watcher.base_paths if os.path.exists(p)]
+            is_avail = len(paths_found) > 0
             streams.append(
                 {
                     "stream_id": agent_name,
@@ -120,7 +121,8 @@ class AgentWatchersAdapter(AcquisitionAdapter):
                     "agent_type": agent_name,
                     "source_type": SourceType.CODING_AGENT.value,
                     "paths_checked": watcher.base_paths,
-                    "available": len(paths_found) > 0,
+                    "available": is_avail,
+                    "status": "AVAILABLE" if is_avail else "NOT_INSTALLED",
                 }
             )
 
@@ -151,6 +153,9 @@ class AgentWatchersAdapter(AcquisitionAdapter):
 
         for w in watchers:
             try:
+                # Nếu agent không được cài đặt trên máy người dùng, bỏ qua một cách an toàn
+                if hasattr(w, "is_installed") and not w.is_installed:
+                    continue
                 # Quét an toàn trong async thread pool
                 turns = await asyncio.to_thread(w.scan_sessions)
                 for t in turns:
@@ -241,7 +246,8 @@ class AgentWatchersAdapter(AcquisitionAdapter):
                 any_found = True
 
             watcher_statuses[agent_key] = {
-                "status": "healthy" if paths_found else "path_not_found",
+                "status": "healthy" if paths_found else "NOT_INSTALLED",
+                "installed": len(paths_found) > 0,
                 "paths_checked": w.base_paths,
                 "paths_found": paths_found,
             }

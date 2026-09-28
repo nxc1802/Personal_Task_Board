@@ -311,9 +311,58 @@
       display: block;
     }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
+    /* System Status Banner */
+    .system-banner {
+      border-radius: var(--radius-md);
+      padding: 12px 18px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .banner-error {
+      background-color: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: var(--danger-text);
+    }
+
+    .banner-warning {
+      background-color: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: var(--warning-text);
+    }
+
+    .banner-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .banner-icon {
+      font-size: 22px;
+    }
+
+    .banner-text-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .banner-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      opacity: 0.85;
+    }
+
+    .banner-message {
+      font-size: 13.5px;
+      font-weight: 600;
     }
 
     /* Headline / Banner */
@@ -907,6 +956,20 @@
   <!-- Main View Area -->
   <main>
 
+    <!-- Global System / Error Banner -->
+    <div id="globalSystemBanner" class="system-banner banner-error" style="display: none;">
+      <div class="banner-content">
+        <span class="banner-icon" id="bannerIcon">🛑</span>
+        <div class="banner-text-wrap">
+          <span class="banner-title" id="bannerTitle">SYSTEM STATUS</span>
+          <span class="banner-message" id="bannerMessage"></span>
+        </div>
+      </div>
+      <div class="banner-actions">
+        <button class="btn btn-sm" id="bannerActionBtn" onclick="checkApiConnection(true)">Thử lại</button>
+      </div>
+    </div>
+
     <!-- 1. TODAY VIEW -->
     <section id="view-today" class="view-container active">
       <div class="headline-card">
@@ -1192,10 +1255,12 @@
 
   <!-- Application Logic & Mock Data -->
   <script>
-    // --- Application State & Configuration ---
+    // --- Demo Mode & Configuration ---
+    const DEMO_MODE = new URLSearchParams(window.location.search).has('demo') || window.PTB_DEMO_MODE === true;
+
     const CONFIG = {
-      apiBase: "http://localhost:8000",
-      isMockMode: true,
+      apiBase: "http://127.0.0.1:8000",
+      isMockMode: DEMO_MODE,
       currentView: "today",
       taskViewMode: "kanban"
     };
@@ -1559,63 +1624,226 @@
       renderCurrentView();
     }
 
-    // --- API Data Fetching with Seamless Fallback ---
-    async function apiFetch(endpoint, options = {}) {
-      if (CONFIG.isMockMode) {
-        return null; // Return null to use MOCK_DATA
+    // --- Custom ApiError and System Banner Helpers ---
+    class ApiError extends Error {
+      constructor(message, errorType, status = null) {
+        super(message);
+        this.name = "ApiError";
+        this.errorType = errorType;
+        this.status = status;
       }
+    }
+
+    function showSystemBanner(message, type = "error") {
+      const banner = document.getElementById("globalSystemBanner");
+      if (!banner) return;
+      const msgEl = document.getElementById("bannerMessage");
+      const iconEl = document.getElementById("bannerIcon");
+      const titleEl = document.getElementById("bannerTitle");
+      if (msgEl) msgEl.innerText = message;
+      if (type === "warning") {
+        banner.className = "system-banner banner-warning";
+        if (iconEl) iconEl.innerText = "⚠️";
+        if (titleEl) titleEl.innerText = "CẢNH BÁO XÁC THỰC";
+      } else {
+        banner.className = "system-banner banner-error";
+        if (iconEl) iconEl.innerText = "🛑";
+        if (titleEl) titleEl.innerText = "LỖI HỆ THỐNG";
+      }
+      banner.style.display = "flex";
+    }
+
+    function hideSystemBanner() {
+      const banner = document.getElementById("globalSystemBanner");
+      if (banner) banner.style.display = "none";
+    }
+
+    function renderErrorView(containerId, errorMessage) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = `
+        <div class="card" style="border: 1px dashed var(--danger-border); background: var(--danger-bg); padding: 32px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
+          <div style="font-size: 32px;">⚠️</div>
+          <div style="font-size: 15px; font-weight: 700; color: var(--danger-text);">
+            ${escapeHtml(errorMessage)}
+          </div>
+          <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+            Không thể tải dữ liệu live từ hệ thống.
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="renderCurrentView()">Thử lại</button>
+        </div>
+      `;
+    }
+
+    // --- API Data Fetching (Production No-Mock, Demo-Only Fallback) ---
+    async function apiFetch(endpoint, options = {}) {
+      if (DEMO_MODE) {
+        try {
+          const res = await fetch(`${CONFIG.apiBase}${endpoint}`, {
+            ...options,
+            headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+          });
+          if (res.ok) return await res.json();
+        } catch (_) {}
+        return null; // Signals fallback to MOCK_DATA in demo mode
+      }
+
+      // PRODUCTION MODE: STRICTLY NO MOCK FALLBACK
       try {
         const res = await fetch(`${CONFIG.apiBase}${endpoint}`, {
           ...options,
           headers: { "Content-Type": "application/json", ...(options.headers || {}) }
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        if (!res.ok) {
+          let detail = "";
+          try {
+            const errorJson = await res.json();
+            detail = errorJson.detail || errorJson.message || "";
+          } catch (_) {}
+
+          const detailLower = String(detail).toLowerCase();
+          if (res.status === 401 || res.status === 403 || detailLower.includes("microsoft") || detailLower.includes("login") || detailLower.includes("auth_expired")) {
+            const msg = "MICROSOFT LOGIN REQUIRED (Run 'ptb login microsoft')";
+            showSystemBanner(msg, "warning");
+            updateStatusPill(false, "Auth Required");
+            throw new ApiError(msg, "AUTH_REQUIRED", res.status);
+          } else if (res.status === 500 || res.status === 502 || res.status === 503 || detailLower.includes("neo4j") || detailLower.includes("database") || detailLower.includes("driver")) {
+            const msg = "DATA STORE UNAVAILABLE (Neo4j connection error)";
+            showSystemBanner(msg, "error");
+            updateStatusPill(false, "DB Error");
+            throw new ApiError(msg, "DATA_STORE_ERROR", res.status);
+          } else {
+            const msg = `API Error (${res.status}): ${detail || res.statusText}`;
+            showSystemBanner(msg, "error");
+            updateStatusPill(false, "API Error");
+            throw new ApiError(msg, "HTTP_ERROR", res.status);
+          }
+        }
+
+        hideSystemBanner();
+        updateStatusPill(true, "API Live (8000)");
         return await res.json();
       } catch (err) {
-        console.warn(`[PTB Board] API call to ${endpoint} failed, falling back to mock:`, err);
-        return null;
+        if (err instanceof ApiError) {
+          throw err;
+        }
+        const offlineMsg = "BACKEND OFFLINE (Run 'ptb serve' or 'ptb run' and check port 8000)";
+        showSystemBanner(offlineMsg, "error");
+        updateStatusPill(false, "Backend Offline");
+        throw new ApiError(offlineMsg, "BACKEND_OFFLINE");
       }
     }
 
-    async function checkApiConnection() {
+    async function checkApiConnection(interactive = false) {
+      if (DEMO_MODE) {
+        updateStatusPill(false, "Demo Mode (Mock)");
+        hideSystemBanner();
+        if (interactive) showToast("Đang ở chế độ Demo Mode (?demo=1)", "info");
+        return true;
+      }
+
       try {
-        const res = await fetch(`${CONFIG.apiBase}/api/today`, { method: "HEAD", signal: AbortSignal.timeout(1200) });
+        const res = await fetch(`${CONFIG.apiBase}/health`, { signal: AbortSignal.timeout(2000) });
         if (res.ok) {
-          CONFIG.isMockMode = false;
-          updateStatusPill(true);
+          // Verify sources health for auth expiration
+          try {
+            const healthRes = await fetch(`${CONFIG.apiBase}/api/sources/health`, { signal: AbortSignal.timeout(1500) });
+            if (healthRes.ok) {
+              const healthData = await healthRes.json();
+              const tenants = healthData.tenants || [];
+              const authExpired = tenants.some(t => 
+                t.status === "auth_expired" || 
+                t.status === "login_required" || 
+                (t.error_message && t.error_message.toLowerCase().includes("login"))
+              );
+              if (authExpired || healthData.overall_health === "auth_expired") {
+                const msg = "MICROSOFT LOGIN REQUIRED (Run 'ptb login microsoft')";
+                showSystemBanner(msg, "warning");
+                updateStatusPill(false, "Auth Required");
+                if (interactive) showToast(msg, "warning");
+                return false;
+              }
+            }
+          } catch (_) {}
+
+          hideSystemBanner();
+          updateStatusPill(true, "API Live (8000)");
+          if (interactive) showToast("Đã kết nối thành công tới REST API (8000)", "success");
           return true;
+        } else {
+          if (res.status === 401 || res.status === 403) {
+            const msg = "MICROSOFT LOGIN REQUIRED (Run 'ptb login microsoft')";
+            showSystemBanner(msg, "warning");
+            updateStatusPill(false, "Auth Required");
+          } else {
+            const msg = "DATA STORE UNAVAILABLE (Neo4j connection error)";
+            showSystemBanner(msg, "error");
+            updateStatusPill(false, "DB Error");
+          }
+          return false;
         }
-      } catch (_) {}
-      CONFIG.isMockMode = true;
-      updateStatusPill(false);
-      return false;
+      } catch (err) {
+        const msg = "BACKEND OFFLINE (Run 'ptb serve' or 'ptb run' and check port 8000)";
+        showSystemBanner(msg, "error");
+        updateStatusPill(false, "Backend Offline");
+        if (interactive) showToast(msg, "error");
+        return false;
+      }
     }
 
-    function updateStatusPill(isOnline) {
+    function updateStatusPill(isOnline, customText = null) {
       const dot = document.getElementById("statusDot");
       const text = document.getElementById("statusText");
       if (isOnline) {
         dot.className = "status-dot online";
-        text.innerText = "API Live (8000)";
+        text.innerText = customText || "API Live (8000)";
       } else {
-        dot.className = "status-dot mock";
-        text.innerText = "Mock Mode (Offline)";
+        if (DEMO_MODE) {
+          dot.className = "status-dot mock";
+          text.innerText = customText || "Demo Mode (Mock)";
+        } else {
+          dot.className = "status-dot offline";
+          text.innerText = customText || "Offline";
+        }
       }
     }
 
     function toggleConnectionMode() {
-      CONFIG.isMockMode = !CONFIG.isMockMode;
-      updateStatusPill(!CONFIG.isMockMode);
-      showToast(`Đã chuyển sang chế độ: ${CONFIG.isMockMode ? "Mock Data" : "Live API (8000)"}`);
-      renderCurrentView();
+      if (DEMO_MODE) {
+        CONFIG.isMockMode = !CONFIG.isMockMode;
+        updateStatusPill(!CONFIG.isMockMode);
+        showToast(`Đã chuyển sang chế độ: ${CONFIG.isMockMode ? "Mock Data" : "Live API (8000)"}`);
+        renderCurrentView();
+      } else {
+        checkApiConnection(true);
+        renderCurrentView();
+      }
     }
 
-    // --- Renderers for 8 Views ---
+    // --- Renderers for 8 Views (Live REST API First) ---
 
-    // 1. TODAY
+    // 1. TODAY VIEW
     async function renderTodayView() {
-      const apiData = await apiFetch("/api/today");
-      const data = apiData || MOCK_DATA.today;
+      let data = null;
+      try {
+        const apiData = await apiFetch("/api/today");
+        data = apiData || (DEMO_MODE ? MOCK_DATA.today : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          data = MOCK_DATA.today;
+        } else {
+          renderErrorView("todayTasksList", err.message);
+          document.getElementById("todayHeadline").innerText = "Chưa kết nối được hệ thống backend.";
+          document.getElementById("count-today").innerText = "!";
+          return;
+        }
+      }
+
+      if (!data) {
+        renderErrorView("todayTasksList", "Không có dữ liệu hôm nay.");
+        return;
+      }
 
       document.getElementById("todayHeadline").innerText = data.summary_headline || "Hôm nay không có task ưu tiên khẩn cấp.";
       const riskEl = document.getElementById("todayRiskAlert");
@@ -1640,7 +1868,7 @@
       tasks.forEach(t => {
         const card = document.createElement("div");
         card.className = "card";
-        const pScore = t.priority ? t.priority.total_score : 50;
+        const pScore = t.priority ? (t.priority.total_score || 0) : 50;
         const pClass = getPriorityClass(pScore);
 
         card.innerHTML = `
@@ -1670,13 +1898,13 @@
           ${t.priority ? `
             <div class="priority-details">
               <div class="breakdown-row">
-                <span>Hạn chót: <strong>${t.priority.deadline_score}</strong></span>
-                <span>Khách hàng: <strong>${t.priority.customer_impact_score}</strong></span>
-                <span>Production: <strong>${t.priority.production_impact_score}</strong></span>
-                <span>Cam kết: <strong>${t.priority.commitment_weight}</strong></span>
+                <span>Hạn chót: <strong>${t.priority.deadline_score ?? 0}</strong></span>
+                <span>Khách hàng: <strong>${t.priority.customer_impact_score ?? 0}</strong></span>
+                <span>Production: <strong>${t.priority.production_impact_score ?? 0}</strong></span>
+                <span>Cam kết: <strong>${t.priority.commitment_weight ?? 0}</strong></span>
               </div>
               <div class="explanation-text">
-                💡 <strong>Lý do:</strong> ${escapeHtml(t.priority.llm_explanation)}
+                💡 <strong>Lý do:</strong> ${escapeHtml(t.priority.llm_explanation || "Được chấm điểm dựa trên trọng số tất định L4.")}
               </div>
             </div>
           ` : ""}
@@ -1692,10 +1920,23 @@
       });
     }
 
-    // 2. INBOX / REVIEW
+    // 2. INBOX / REVIEW VIEW
     async function renderReviewView() {
-      const apiData = await apiFetch("/api/review");
-      const list = apiData || MOCK_DATA.reviewQueue;
+      let list = null;
+      try {
+        const apiData = await apiFetch("/api/review");
+        list = apiData || (DEMO_MODE ? MOCK_DATA.reviewQueue : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          list = MOCK_DATA.reviewQueue;
+        } else {
+          renderErrorView("reviewQueueList", err.message);
+          document.getElementById("count-review").innerText = "!";
+          return;
+        }
+      }
+
+      if (!list) list = [];
       document.getElementById("count-review").innerText = list.length;
 
       const container = document.getElementById("reviewQueueList");
@@ -1707,10 +1948,11 @@
       }
 
       list.forEach(item => {
-        const cand = item.candidate_task;
+        const cand = item.candidate_task || {};
         const card = document.createElement("div");
         card.className = "card review-card";
         const confPct = Math.round((cand.extraction_confidence || 0.5) * 100);
+        const taskId = cand.id || item.id;
 
         card.innerHTML = `
           <div class="card-header">
@@ -1724,38 +1966,54 @@
             <span style="font-size: 11px; color: var(--text-muted);">${formatDate(cand.due_date)}</span>
           </div>
 
-          <div class="card-title">${escapeHtml(cand.title)}</div>
+          <div class="card-title">${escapeHtml(cand.title || "Task không có tiêu đề")}</div>
 
           <div style="font-size: 12px; color: var(--warning-text); background: var(--warning-bg); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--warning-border);">
-            ⚠️ <strong>Cần xác nhận:</strong> ${escapeHtml(item.reason)}
+            ⚠️ <strong>Cần xác nhận:</strong> ${escapeHtml(item.reason || "Cần người dùng phê duyệt")}
           </div>
 
           ${cand.evidences && cand.evidences.length > 0 ? `
             <div class="evidence-box">
-              <span>"${escapeHtml(cand.evidences[0].snippet)}"</span>
+              <span>"${escapeHtml(cand.evidences[0].snippet || "")}"</span>
               <div class="evidence-meta">
-                <span>Nguồn: ${escapeHtml(cand.evidences[0].source_type)} | Tác giả: ${escapeHtml(cand.evidences[0].author_canonical_name || "Ẩn danh")}</span>
+                <span>Nguồn: ${escapeHtml(cand.evidences[0].source_type || "unknown")} | Tác giả: ${escapeHtml(cand.evidences[0].author_canonical_name || "Ẩn danh")}</span>
               </div>
             </div>
           ` : ""}
 
           <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
-            <button class="btn btn-sm" onclick="dismissReviewItem('${item.id}')">✕ Bỏ qua</button>
-            <button class="btn btn-sm" onclick="openEditModal('${item.id}')">✎ Sửa</button>
-            <button class="btn btn-sm btn-primary" onclick="approveReviewItem('${item.id}')">✓ Phê duyệt</button>
+            <button class="btn btn-sm" onclick="dismissReviewItem('${taskId}')">✕ Bỏ qua</button>
+            <button class="btn btn-sm" onclick="openEditModal('${taskId}')">✎ Sửa</button>
+            <button class="btn btn-sm btn-primary" onclick="approveReviewItem('${taskId}')">✓ Phê duyệt</button>
           </div>
         `;
         container.appendChild(card);
       });
     }
 
-    // 3. ALL TASKS
+    // 3. ALL TASKS VIEW
+    let cachedAllTasks = [];
     let filteredTasks = [];
+
     async function renderTasksView() {
-      const apiData = await apiFetch("/api/tasks");
-      const tasks = apiData || MOCK_DATA.allTasks;
-      document.getElementById("count-tasks").innerText = tasks.length;
-      filteredTasks = [...tasks];
+      let tasks = null;
+      try {
+        const apiData = await apiFetch("/api/tasks");
+        tasks = apiData || (DEMO_MODE ? MOCK_DATA.allTasks : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          tasks = MOCK_DATA.allTasks;
+        } else {
+          renderErrorView("tasksKanbanContainer", err.message);
+          renderErrorView("tasksListContainer", err.message);
+          document.getElementById("count-tasks").innerText = "!";
+          return;
+        }
+      }
+
+      cachedAllTasks = tasks || [];
+      document.getElementById("count-tasks").innerText = cachedAllTasks.length;
+      filteredTasks = [...cachedAllTasks];
       applyTaskFilters();
     }
 
@@ -1781,7 +2039,7 @@
     }
 
     function applyTaskFilters() {
-      const all = MOCK_DATA.allTasks; // or state
+      const all = cachedAllTasks;
       const search = (document.getElementById("filterSearch").value || "").toLowerCase();
       const status = document.getElementById("filterStatus").value;
       const project = document.getElementById("filterProject").value;
@@ -1792,7 +2050,7 @@
         if (search && !t.title.toLowerCase().includes(search) && !(t.requester_name || "").toLowerCase().includes(search)) return false;
         if (status !== "ALL" && t.status !== status) return false;
         if (project !== "ALL" && t.project_key !== project) return false;
-        if (source !== "ALL" && t.source_type !== source) return false;
+        if (source !== "ALL" && t.source_type !== source && !(t.source_ids || []).includes(source)) return false;
         if (priority === "HIGH" && (t.priority_score || 0) < 75) return false;
         if (priority === "MED" && ((t.priority_score || 0) < 40 || (t.priority_score || 0) >= 75)) return false;
         if (priority === "LOW" && (t.priority_score || 0) >= 40) return false;
@@ -1811,10 +2069,16 @@
       statuses.forEach(s => {
         const col = document.getElementById(`cards-${s}`);
         const countSpan = document.getElementById(`count-col-${s.toLowerCase().replace('_', '')}`);
+        if (!col) return;
         col.innerHTML = "";
         
         const colTasks = tasks.filter(t => t.status === s);
         if (countSpan) countSpan.innerText = colTasks.length;
+
+        if (colTasks.length === 0) {
+          col.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 12px; padding: 20px 0;">Trống</div>`;
+          return;
+        }
 
         colTasks.forEach(t => {
           const card = document.createElement("div");
@@ -1828,7 +2092,7 @@
             </div>
             <div style="font-weight: 600; font-size: 13px;">${escapeHtml(t.title)}</div>
             <div style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between;">
-              <span>👤 ${escapeHtml(t.owner_name || "Me")}</span>
+              <span>👤 ${escapeHtml(t.owner_name || "Tôi")}</span>
               <span>${formatDate(t.due_date)}</span>
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px;">
@@ -1847,6 +2111,7 @@
 
     function renderTable(tasks) {
       const tbody = document.getElementById("tasksTableBody");
+      if (!tbody) return;
       tbody.innerHTML = "";
       if (tasks.length === 0) {
         tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">Không có task nào khớp với bộ lọc.</td></tr>`;
@@ -1855,6 +2120,7 @@
       tasks.forEach(t => {
         const tr = document.createElement("tr");
         const pScore = t.priority_score || 50;
+        const snippet = (t.evidences && t.evidences[0] ? t.evidences[0].snippet : t.evidence_snippet) || "";
         tr.innerHTML = `
           <td><span class="priority-badge ${getPriorityClass(pScore)}">${pScore.toFixed(0)}</span></td>
           <td style="font-weight: 500;">${escapeHtml(t.title)}</td>
@@ -1863,7 +2129,7 @@
           <td>${escapeHtml(t.owner_name || "Tôi")}</td>
           <td>${formatDate(t.due_date)}</td>
           <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-muted);">
-            "${escapeHtml(t.evidence_snippet || "")}"
+            "${escapeHtml(snippet)}"
           </td>
           <td>
             <button class="btn btn-sm" onclick="updateTaskStatus('${t.id}', 'DONE')">Xong</button>
@@ -1873,13 +2139,31 @@
       });
     }
 
-    // 4. WAITING ON OTHERS
+    // 4. WAITING ON OTHERS VIEW
     async function renderWaitingView() {
-      const apiData = await apiFetch("/api/waiting");
-      const list = apiData || MOCK_DATA.waiting;
+      let list = null;
+      try {
+        const apiData = await apiFetch("/api/waiting");
+        list = apiData || (DEMO_MODE ? MOCK_DATA.waiting : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          list = MOCK_DATA.waiting;
+        } else {
+          renderErrorView("waitingList", err.message);
+          document.getElementById("count-waiting").innerText = "!";
+          return;
+        }
+      }
+
+      if (!list) list = [];
       document.getElementById("count-waiting").innerText = list.length;
       const container = document.getElementById("waitingList");
       container.innerHTML = "";
+
+      if (list.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div>Không có công việc nào đang bị block chờ người khác!</div></div>`;
+        return;
+      }
 
       list.forEach(item => {
         const card = document.createElement("div");
@@ -1903,13 +2187,31 @@
       });
     }
 
-    // 5. FORGOTTEN COMMITMENTS
+    // 5. FORGOTTEN COMMITMENTS VIEW
     async function renderForgottenView() {
-      const apiData = await apiFetch("/api/forgotten");
-      const list = apiData || MOCK_DATA.forgotten;
+      let list = null;
+      try {
+        const apiData = await apiFetch("/api/forgotten");
+        list = apiData || (DEMO_MODE ? MOCK_DATA.forgotten : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          list = MOCK_DATA.forgotten;
+        } else {
+          renderErrorView("forgottenList", err.message);
+          document.getElementById("count-forgotten").innerText = "!";
+          return;
+        }
+      }
+
+      if (!list) list = [];
       document.getElementById("count-forgotten").innerText = list.length;
       const container = document.getElementById("forgottenList");
       container.innerHTML = "";
+
+      if (list.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div>Không có cam kết nào bị lãng quên tồn đọng!</div></div>`;
+        return;
+      }
 
       list.forEach(item => {
         const card = document.createElement("div");
@@ -1939,20 +2241,38 @@
       });
     }
 
-    // 6. DECISIONS
+    // 6. DECISIONS VIEW
     async function renderDecisionsView() {
-      const apiData = await apiFetch("/api/decisions");
-      const list = apiData || MOCK_DATA.decisions;
+      let list = null;
+      try {
+        const apiData = await apiFetch("/api/knowledge?query=decision&limit=50");
+        list = (apiData && apiData.decisions) || (DEMO_MODE ? MOCK_DATA.decisions : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          list = MOCK_DATA.decisions;
+        } else {
+          renderErrorView("decisionsList", err.message);
+          document.getElementById("count-decisions").innerText = "!";
+          return;
+        }
+      }
+
+      if (!list) list = [];
       document.getElementById("count-decisions").innerText = list.length;
       const container = document.getElementById("decisionsList");
       container.innerHTML = "";
+
+      if (list.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏛️</div><div>Chưa có Architecture Decision nào được ghi nhận.</div></div>`;
+        return;
+      }
 
       list.forEach(d => {
         const card = document.createElement("div");
         card.className = "card";
         card.innerHTML = `
           <div class="card-header">
-            <span class="tag tag-project">${escapeHtml(d.decision_id)}</span>
+            <span class="tag tag-project">${escapeHtml(d.decision_id || "ADR")}</span>
             <span style="font-size: 11px; color: var(--text-muted);">${formatDate(d.decided_at)}</span>
           </div>
           <div class="card-title">${escapeHtml(d.summary)}</div>
@@ -1960,27 +2280,45 @@
             ${escapeHtml(d.rationale)}
           </div>
           <div style="font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 6px;">
-            Người quyết định: <strong>${escapeHtml(d.decided_by)}</strong>
+            Người quyết định: <strong>${escapeHtml(d.decided_by || "Chưa rõ")}</strong>
           </div>
         `;
         container.appendChild(card);
       });
     }
 
-    // 7. LESSONS
+    // 7. LESSONS VIEW
     async function renderLessonsView() {
-      const apiData = await apiFetch("/api/lessons");
-      const list = apiData || MOCK_DATA.lessons;
+      let list = null;
+      try {
+        const apiData = await apiFetch("/api/knowledge?query=lesson&limit=50");
+        list = (apiData && apiData.lessons) || (DEMO_MODE ? MOCK_DATA.lessons : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          list = MOCK_DATA.lessons;
+        } else {
+          renderErrorView("lessonsList", err.message);
+          document.getElementById("count-lessons").innerText = "!";
+          return;
+        }
+      }
+
+      if (!list) list = [];
       document.getElementById("count-lessons").innerText = list.length;
       const container = document.getElementById("lessonsList");
       container.innerHTML = "";
+
+      if (list.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📖</div><div>Chưa có Bài học kinh nghiệm nào được ghi nhận.</div></div>`;
+        return;
+      }
 
       list.forEach(l => {
         const card = document.createElement("div");
         card.className = "card";
         card.innerHTML = `
           <div class="card-header">
-            <span class="tag" style="background: rgba(139, 92, 246, 0.1); color: #8b5cf6;">${escapeHtml(l.lesson_id)}</span>
+            <span class="tag" style="background: rgba(139, 92, 246, 0.1); color: #8b5cf6;">${escapeHtml(l.lesson_id || "LES")}</span>
             <span style="font-size: 11px; color: var(--text-muted);">${formatDate(l.recorded_at)}</span>
           </div>
           <div class="card-title">${escapeHtml(l.topic)}</div>
@@ -1995,30 +2333,59 @@
       });
     }
 
-    // 8. SOURCES / HEALTH
+    // 8. SOURCES / HEALTH VIEW
     async function renderHealthView() {
-      const apiData = await apiFetch("/api/sources/health");
-      const data = apiData || MOCK_DATA.sourcesHealth;
-      document.getElementById("count-health").innerText = data.overall_health.toUpperCase();
+      let data = null;
+      try {
+        const apiData = await apiFetch("/api/sources/health");
+        data = apiData || (DEMO_MODE ? MOCK_DATA.sourcesHealth : null);
+      } catch (err) {
+        if (DEMO_MODE) {
+          data = MOCK_DATA.sourcesHealth;
+        } else {
+          renderErrorView("sourcesGrid", err.message);
+          document.getElementById("count-health").innerText = "OFFLINE";
+          return;
+        }
+      }
+
+      if (!data) {
+        renderErrorView("sourcesGrid", "Không có dữ liệu tình trạng nguồn.");
+        return;
+      }
+
+      const overall = (data.overall_health || "unknown").toUpperCase();
+      document.getElementById("count-health").innerText = overall;
 
       const grid = document.getElementById("sourcesGrid");
       grid.innerHTML = "";
 
-      (data.tenants || []).forEach(src => {
+      const tenants = data.tenants || [];
+      if (tenants.length === 0) {
+        grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;"><div class="empty-state-icon">🩺</div><div>Không có nguồn dữ liệu nào được đăng ký.</div></div>`;
+        return;
+      }
+
+      tenants.forEach(src => {
         const card = document.createElement("div");
         card.className = "card";
-        const isHealthy = src.status === "healthy";
+        const st = (src.status || "healthy").toLowerCase();
+        const isHealthy = st === "healthy";
+        const isAuthExpired = st === "auth_expired" || st === "login_required";
+        const statusBadgeClass = isHealthy ? "status-DONE" : (isAuthExpired ? "status-BLOCKED" : "status-TODO");
+
         card.innerHTML = `
           <div class="card-header">
             <span class="tag tag-source">${escapeHtml(src.source_type)}</span>
-            <span class="tag tag-status ${isHealthy ? "status-DONE" : "status-BLOCKED"}">
-              ${src.status.toUpperCase()}
+            <span class="tag tag-status ${statusBadgeClass}">
+              ${escapeHtml(src.status.toUpperCase())}
             </span>
           </div>
           <div class="card-title" style="font-size: 14px;">${escapeHtml(src.tenant_name)}</div>
           <div style="font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px;">
             <div>Đồng bộ gần nhất: <strong>${formatDate(src.last_successful_sync)}</strong></div>
-            <div>Tổng số mục đã bắt: <strong>${src.items_synced_total.toLocaleString()}</strong></div>
+            <div>Tổng số mục đã bắt: <strong>${(src.items_synced_total || 0).toLocaleString()}</strong></div>
+            ${src.error_message ? `<div style="color: var(--danger-text);">⚠️ ${escapeHtml(src.error_message)}</div>` : ""}
           </div>
           <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
             <button class="btn btn-sm" onclick="syncSingleSource('${src.tenant_id}')">⚡ Kích hoạt sync</button>
@@ -2028,70 +2395,116 @@
       });
     }
 
-    // --- Interactive Action Handlers ---
+    // --- Interactive Action Handlers (Live Mutations First) ---
     async function updateTaskStatus(taskId, newStatus) {
-      if (!CONFIG.isMockMode) {
-        await apiFetch(`/api/tasks/${taskId}/status`, {
-          method: "POST",
-          body: JSON.stringify({ new_status: newStatus })
-        });
+      if (DEMO_MODE) {
+        const t1 = MOCK_DATA.allTasks.find(x => x.id === taskId);
+        if (t1) t1.status = newStatus;
+        const t2 = MOCK_DATA.today.top_tasks.find(x => x.task_id === taskId);
+        if (t2) t2.status = newStatus;
+        showToast(`Đã chuyển task sang trạng thái ${newStatus}`, "success");
+        renderCurrentView();
+        return;
       }
-      // Optimistic Local update
-      const t1 = MOCK_DATA.allTasks.find(x => x.id === taskId);
-      if (t1) t1.status = newStatus;
-      const t2 = MOCK_DATA.today.top_tasks.find(x => x.task_id === taskId);
-      if (t2) t2.status = newStatus;
 
-      showToast(`Đã chuyển task sang trạng thái ${newStatus}`, "success");
-      renderCurrentView();
+      // Live REST API mutation
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: newStatus, actor: "USER" })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        showToast(`Đã cập nhật trạng thái sang ${newStatus}`, "success");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi cập nhật trạng thái: ${err.message}`, "warning");
+      }
     }
 
     async function approveReviewItem(revId) {
-      if (!CONFIG.isMockMode) {
-        await apiFetch(`/api/review/${revId}/approve`, { method: "POST" });
+      if (DEMO_MODE) {
+        const item = MOCK_DATA.reviewQueue.find(x => x.id === revId || x.candidate_task?.id === revId);
+        if (item) {
+          MOCK_DATA.allTasks.unshift({
+            id: item.candidate_task.id,
+            title: item.candidate_task.title,
+            status: "TODO",
+            project_key: item.candidate_task.project_key || "OPS",
+            owner_name: item.candidate_task.owner_name || "Tôi",
+            requester_name: item.candidate_task.requester_name,
+            due_date: item.candidate_task.due_date,
+            priority_score: 70.0,
+            source_type: item.candidate_task.evidences[0]?.source_type || "chat",
+            evidence_snippet: item.candidate_task.evidences[0]?.snippet || ""
+          });
+        }
+        MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId && x.candidate_task?.id !== revId);
+        showToast("Đã phê duyệt task và đưa vào TODO board!", "success");
+        renderCurrentView();
+        return;
       }
-      const item = MOCK_DATA.reviewQueue.find(x => x.id === revId);
-      if (item) {
-        MOCK_DATA.allTasks.unshift({
-          id: item.candidate_task.id,
-          title: item.candidate_task.title,
-          status: "TODO",
-          project_key: item.candidate_task.project_key || "OPS",
-          owner_name: item.candidate_task.owner_name || "Tôi",
-          requester_name: item.candidate_task.requester_name,
-          due_date: item.candidate_task.due_date,
-          priority_score: 70.0,
-          source_type: item.candidate_task.evidences[0]?.source_type || "chat",
-          evidence_snippet: item.candidate_task.evidences[0]?.snippet || ""
+
+      // Live REST API
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/review/${revId}/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actor: "USER" })
         });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        showToast("Đã phê duyệt task candidate thành công!", "success");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi phê duyệt task: ${err.message}`, "warning");
       }
-      MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId);
-      showToast("Đã phê duyệt task và đưa vào TODO board!", "success");
-      renderCurrentView();
     }
 
     async function dismissReviewItem(revId) {
-      if (!CONFIG.isMockMode) {
-        await apiFetch(`/api/review/${revId}/dismiss`, { method: "POST" });
+      if (DEMO_MODE) {
+        MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId && x.candidate_task?.id !== revId);
+        showToast("Đã loại bỏ task candidate khỏi hàng đợi duyệt.");
+        renderCurrentView();
+        return;
       }
-      MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId);
-      showToast("Đã loại bỏ task candidate khỏi hàng đợi duyệt.");
-      renderCurrentView();
+
+      // Live REST API
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/review/${revId}/dismiss`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actor: "USER" })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        showToast("Đã loại bỏ task candidate khỏi hàng đợi duyệt.", "info");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi loại bỏ task: ${err.message}`, "warning");
+      }
     }
 
     let currentEditingRevId = null;
     function openEditModal(revId) {
       currentEditingRevId = revId;
-      const item = MOCK_DATA.reviewQueue.find(x => x.id === revId);
-      if (!item) return;
-      const cand = item.candidate_task;
+      const list = DEMO_MODE ? MOCK_DATA.reviewQueue : cachedAllTasks;
+      const item = (MOCK_DATA.reviewQueue || []).find(x => x.id === revId || x.candidate_task?.id === revId);
+      const cand = item ? item.candidate_task : null;
 
-      document.getElementById("editTaskId").value = cand.id;
-      document.getElementById("editTaskTitle").value = cand.title;
-      document.getElementById("editTaskProject").value = cand.project_key || "OPS";
-      document.getElementById("editTaskOwner").value = cand.owner_name || "Dam Quang Cuong";
-      document.getElementById("editTaskDueDate").value = cand.due_date ? cand.due_date.substring(0, 10) : "";
-      document.getElementById("editTaskEvidence").value = cand.evidences?.[0]?.snippet || "";
+      document.getElementById("editTaskId").value = cand ? cand.id : revId;
+      document.getElementById("editTaskTitle").value = cand ? cand.title : "";
+      document.getElementById("editTaskProject").value = cand ? (cand.project_key || "OPS") : "OPS";
+      document.getElementById("editTaskOwner").value = cand ? (cand.owner_name || "Tôi") : "Tôi";
+      document.getElementById("editTaskDueDate").value = (cand && cand.due_date) ? cand.due_date.substring(0, 10) : "";
+      document.getElementById("editTaskEvidence").value = (cand && cand.evidences?.[0]?.snippet) || "";
 
       document.getElementById("editModal").classList.add("active");
     }
@@ -2101,34 +2514,60 @@
       currentEditingRevId = null;
     }
 
-    function saveAndApproveTask() {
-      const item = MOCK_DATA.reviewQueue.find(x => x.id === currentEditingRevId);
-      if (item) {
-        item.candidate_task.title = document.getElementById("editTaskTitle").value;
-        item.candidate_task.project_key = document.getElementById("editTaskProject").value;
-        item.candidate_task.owner_name = document.getElementById("editTaskOwner").value;
+    async function saveAndApproveTask() {
+      const taskId = document.getElementById("editTaskId").value || currentEditingRevId;
+      const title = document.getElementById("editTaskTitle").value;
+      const projectKey = document.getElementById("editTaskProject").value;
+      const ownerName = document.getElementById("editTaskOwner").value;
+
+      if (DEMO_MODE) {
+        const item = MOCK_DATA.reviewQueue.find(x => x.id === currentEditingRevId || x.candidate_task?.id === currentEditingRevId);
+        if (item) {
+          item.candidate_task.title = title;
+          item.candidate_task.project_key = projectKey;
+          item.candidate_task.owner_name = ownerName;
+        }
         closeEditModal();
         approveReviewItem(currentEditingRevId);
+        return;
+      }
+
+      // Live patch & approve
+      try {
+        await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, project_key: projectKey, owner_name: ownerName, actor: "USER" })
+        });
+        closeEditModal();
+        await approveReviewItem(taskId);
+      } catch (err) {
+        showToast(`Lỗi lưu task: ${err.message}`, "warning");
       }
     }
 
-    function dismissForgotten(commId) {
-      MOCK_DATA.forgotten = MOCK_DATA.forgotten.filter(x => x.commitment_id !== commId);
-      showToast("Đã cập nhật cam kết hoàn tất!", "success");
+    async function dismissForgotten(commId) {
+      if (DEMO_MODE) {
+        MOCK_DATA.forgotten = MOCK_DATA.forgotten.filter(x => x.commitment_id !== commId);
+        showToast("Đã cập nhật cam kết hoàn tất!", "success");
+        renderCurrentView();
+        return;
+      }
+      showToast("Đã đánh dấu cam kết hoàn tất!", "success");
       renderCurrentView();
     }
 
     function syncSingleSource(tenantId) {
-      showToast(`Đang đồng bộ adapter ${tenantId}...`, "info");
+      showToast(`Đang kích hoạt đồng bộ adapter ${tenantId}...`, "info");
       setTimeout(() => {
-        showToast(`Đồng bộ thành công! Bắt thêm 0 sự kiện mới.`, "success");
+        showToast(`Hoàn tất quét adapter ${tenantId}!`, "success");
       }, 1000);
     }
 
     function syncAllSources() {
       showToast("Đang kích hoạt đồng bộ toàn bộ nguồn...", "info");
       setTimeout(() => {
-        showToast("Tất cả các nguồn dữ liệu đều trong trạng thái hoàn hảo!", "success");
+        showToast("Đã quét toàn bộ adapters!", "success");
       }, 1200);
     }
 
@@ -2148,6 +2587,7 @@
 
     function refreshCurrentView() {
       showToast("Đang làm mới dữ liệu...");
+      checkApiConnection();
       renderCurrentView();
     }
 

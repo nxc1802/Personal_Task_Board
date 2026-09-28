@@ -165,3 +165,72 @@ def test_canonical_single_store_models():
     )
     assert comm.status == "ACTIVE"
 
+
+def test_raw_event_record_lifecycle_fields():
+    from datetime import datetime, timezone
+    from ptb_contracts import RawEventRecord, SourceType, ProcessingStatus
+
+    now = datetime.now(timezone.utc)
+    ev = RawEventRecord(
+        id="raw-lifecycle-test",
+        tenant_id="tenant-test",
+        source_type=SourceType.MS_TEAMS,
+        external_id="msg-test-1",
+        idempotency_key="idemp-test-1",
+        event_timestamp=now,
+        author_external_id="user-test",
+        conversation_or_project_id="conv-test",
+        raw_payload={"body": "test"},
+    )
+    assert ev.processing_status == ProcessingStatus.PENDING
+    assert ev.processing_attempt_count == 0
+    assert ev.last_processing_error is None
+    assert ev.next_retry_at is None
+    assert ev.processed_at is None
+    assert ev.processor_version is None
+
+    # Test with retry and error fields
+    retry_ev = RawEventRecord(
+        id="raw-retry-test",
+        tenant_id="tenant-test",
+        source_type=SourceType.JIRA,
+        external_id="jira-123",
+        idempotency_key="idemp-jira-123",
+        event_timestamp=now,
+        author_external_id="user-jira",
+        conversation_or_project_id="PROJ",
+        raw_payload={},
+        processing_status=ProcessingStatus.RETRY,
+        processing_attempt_count=2,
+        last_processing_error="API rate limit exceeded",
+        next_retry_at=now,
+        processor_version="v1.1",
+    )
+    assert retry_ev.processing_status == ProcessingStatus.RETRY
+    assert retry_ev.processing_attempt_count == 2
+    assert retry_ev.last_processing_error == "API rate limit exceeded"
+    assert retry_ev.processor_version == "v1.1"
+
+
+def test_canonical_person_record_canonical_id():
+    from ptb_contracts import CanonicalPersonRecord
+
+    # 1. Initialize with canonical_id
+    p1 = CanonicalPersonRecord(
+        canonical_id="person-cuong-01",
+        canonical_name="Cuong Nguyen",
+        primary_email="cuong@example.com",
+    )
+    assert p1.canonical_id == "person-cuong-01"
+    assert p1.id == "person-cuong-01"
+
+    # 2. Initialize with legacy id
+    p2 = CanonicalPersonRecord(
+        id="person-legacy-02",
+        canonical_name="Legacy Person",
+        primary_email="legacy@example.com",
+    )
+    assert p2.canonical_id == "person-legacy-02"
+    assert p2.id == "person-legacy-02"
+
+

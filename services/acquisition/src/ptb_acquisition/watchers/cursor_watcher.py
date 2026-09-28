@@ -28,36 +28,55 @@ class CursorWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        """Xác định đường dẫn workspaceStorage của Cursor theo hệ điều hành."""
+        """Xác định đường dẫn workspaceStorage của Cursor theo hệ điều hành sử dụng platformdirs."""
         paths = []
+        try:
+            import platformdirs
+            cfg_ws = os.path.join(platformdirs.user_config_dir("Cursor", appauthor=False), "User", "workspaceStorage")
+            data_ws = os.path.join(platformdirs.user_data_dir("Cursor", appauthor=False), "User", "workspaceStorage")
+            for p in (cfg_ws, data_ws):
+                if p not in paths:
+                    paths.append(p)
+        except Exception as e:
+            logger.debug(f"platformdirs resolution error for Cursor: {e}")
+
         if sys.platform == "darwin":
             p = os.path.expanduser("~/Library/Application Support/Cursor/User/workspaceStorage")
-            if os.path.isdir(p):
+            if p not in paths:
                 paths.append(p)
         elif sys.platform == "win32":
             appdata = os.getenv("APPDATA")
             if appdata:
                 p = os.path.join(appdata, "Cursor", "User", "workspaceStorage")
-                if os.path.isdir(p):
+                if p not in paths:
                     paths.append(p)
         else:
             p = os.path.expanduser("~/.config/Cursor/User/workspaceStorage")
-            if os.path.isdir(p):
+            if p not in paths:
                 paths.append(p)
-        return paths
+
+        existing = [p for p in paths if os.path.isdir(p)]
+        return existing if existing else paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét tất cả các thư mục workspace của Cursor và trích xuất sessions."""
         all_records: List[RawAgentSessionRecord] = []
-        for storage_dir in self.base_paths:
-            if not os.path.isdir(storage_dir):
-                continue
-            for item in os.listdir(storage_dir):
-                ws_dir = os.path.join(storage_dir, item)
-                db_path = os.path.join(ws_dir, "state.vscdb")
-                if os.path.isfile(db_path):
-                    records = self.extract_from_db(db_path, workspace_id=item)
-                    all_records.extend(records)
+        try:
+            for storage_dir in self.base_paths:
+                if not os.path.isdir(storage_dir):
+                    continue
+                try:
+                    for item in os.listdir(storage_dir):
+                        ws_dir = os.path.join(storage_dir, item)
+                        db_path = os.path.join(ws_dir, "state.vscdb")
+                        if os.path.isfile(db_path):
+                            records = self.extract_from_db(db_path, workspace_id=item)
+                            all_records.extend(records)
+                except Exception as dir_err:
+                    logger.debug(f"Error accessing storage dir {storage_dir}: {dir_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Cursor sessions: {e}")
         return all_records
 
     def extract_from_db(self, db_path: str, workspace_id: str = "unknown") -> List[RawAgentSessionRecord]:

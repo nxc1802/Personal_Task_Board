@@ -39,6 +39,7 @@ from ptb_database.repositories import (
 )
 from ptb_graph_memory.client import GraphitiMemoryClient
 from ptb_intelligence.detectors import ForgottenCommitmentDetector, WaitingOnDetector
+from ptb_intelligence.lifecycle import TaskIntelligenceLifecycle
 from ptb_intelligence.planner import TodayBoardPlanner
 from ptb_intelligence.priority import DeterministicPriorityEngine
 from ptb_intelligence.status_machine import StatusInferenceMachine
@@ -68,6 +69,7 @@ class ApplicationService:
         planner: Optional[TodayBoardPlanner] = None,
         graph_memory: Optional[GraphitiMemoryClient] = None,
         status_machine: Optional[StatusInferenceMachine] = None,
+        lifecycle: Optional[TaskIntelligenceLifecycle] = None,
         neo4j_client: Optional[Neo4jClient] = None,
     ) -> None:
         client = neo4j_client or Neo4jClient()
@@ -78,6 +80,11 @@ class ApplicationService:
         self.planner = planner or TodayBoardPlanner(priority_engine=self.priority_engine)
         self.graph_memory = graph_memory or GraphitiMemoryClient(neo4j_client=client)
         self.status_machine = status_machine or StatusInferenceMachine()
+        self.lifecycle = lifecycle or TaskIntelligenceLifecycle(
+            task_repo=self.task_repo,
+            status_machine=self.status_machine,
+            priority_engine=self.priority_engine,
+        )
 
     async def get_today_plan(self, user_id: str = "default") -> TodayBoardView:
         """Lấy today tasks, waiting on others, forgotten commitments, headline."""
@@ -354,9 +361,16 @@ class ApplicationService:
                 change_actor=actor,
             )
             task.status = target_status
+            if actor != "SYSTEM":
+                task.status_authoritative = True
             task.updated_at = now
             await self.task_repo.upsert_task_atomic(task)
             await self.task_repo.record_status_transition_audit(audit)
+
+            # Trigger TaskIntelligenceLifecycle hook
+            if hasattr(self, "lifecycle") and self.lifecycle:
+                await self.lifecycle.on_task_changed(task, now=now)
+
             return TaskActionResponse(
                 success=True,
                 task_id=task_id,
@@ -371,6 +385,8 @@ class ApplicationService:
                     task.status = TaskStatus(new_status)
                 except Exception:
                     pass
+            if actor != "SYSTEM":
+                task.status_authoritative = True
             task.updated_at = now
             audit = StatusTransitionAuditRecord(
                 id=str(uuid4()),
@@ -384,6 +400,11 @@ class ApplicationService:
             )
             await self.task_repo.upsert_task_atomic(task)
             await self.task_repo.record_status_transition_audit(audit)
+
+            # Trigger TaskIntelligenceLifecycle hook
+            if hasattr(self, "lifecycle") and self.lifecycle:
+                await self.lifecycle.on_task_changed(task, now=now)
+
             return TaskActionResponse(
                 success=True,
                 task_id=task_id,
@@ -394,6 +415,8 @@ class ApplicationService:
         elif action_norm == "REJECT":
             task.review_status = "rejected"
             task.status = TaskStatus.DISMISSED
+            if actor != "SYSTEM":
+                task.status_authoritative = True
             task.updated_at = now
             audit = StatusTransitionAuditRecord(
                 id=str(uuid4()),
@@ -407,6 +430,11 @@ class ApplicationService:
             )
             await self.task_repo.upsert_task_atomic(task)
             await self.task_repo.record_status_transition_audit(audit)
+
+            # Trigger TaskIntelligenceLifecycle hook
+            if hasattr(self, "lifecycle") and self.lifecycle:
+                await self.lifecycle.on_task_changed(task, now=now)
+
             return TaskActionResponse(
                 success=True,
                 task_id=task_id,
@@ -416,6 +444,8 @@ class ApplicationService:
 
         elif action_norm == "DISMISS":
             task.status = TaskStatus.DISMISSED
+            if actor != "SYSTEM":
+                task.status_authoritative = True
             task.updated_at = now
             audit = StatusTransitionAuditRecord(
                 id=str(uuid4()),
@@ -429,6 +459,11 @@ class ApplicationService:
             )
             await self.task_repo.upsert_task_atomic(task)
             await self.task_repo.record_status_transition_audit(audit)
+
+            # Trigger TaskIntelligenceLifecycle hook
+            if hasattr(self, "lifecycle") and self.lifecycle:
+                await self.lifecycle.on_task_changed(task, now=now)
+
             return TaskActionResponse(
                 success=True,
                 task_id=task_id,
@@ -438,6 +473,8 @@ class ApplicationService:
 
         elif action_norm == "MARK_DONE":
             task.status = TaskStatus.DONE
+            if actor != "SYSTEM":
+                task.status_authoritative = True
             task.updated_at = now
             audit = StatusTransitionAuditRecord(
                 id=str(uuid4()),
@@ -451,6 +488,11 @@ class ApplicationService:
             )
             await self.task_repo.upsert_task_atomic(task)
             await self.task_repo.record_status_transition_audit(audit)
+
+            # Trigger TaskIntelligenceLifecycle hook
+            if hasattr(self, "lifecycle") and self.lifecycle:
+                await self.lifecycle.on_task_changed(task, now=now)
+
             return TaskActionResponse(
                 success=True,
                 task_id=task_id,
@@ -464,3 +506,90 @@ class ApplicationService:
                 task_id=task_id,
                 message=f"Unsupported action: {action}",
             )
+
+    async def split_task(
+        self,
+        task_id: str,
+        evidence_ids: list[str],
+        new_title: Optional[str] = None,
+    ) -> UnifiedTaskCandidate:
+        """Tách các evidence chỉ định khỏi task_id thành một UnifiedTask mới.
+
+        Gọi TaskDomainRepository.split_task và cập nhật domain graph.
+        Bảo toàn 100% Provenance của RawEvent và cập nhật updated_at cho cả 2 tasks.
+        """
+        logger.info(
+            f"Splitting task {task_id}: detaching {len(evidence_ids)} evidences, new_title={new_title}"
+        )
+        new_task = await self.task_repo.split_task(
+            original_task_id=task_id,
+            evidence_ids_to_detach=evidence_ids,
+            new_task_title=new_title,
+        )
+        # Re-compute intelligence lifecycle on both original task and new task after split
+        if hasattr(self, "lifecycle") and self.lifecycle:
+            try:
+                original_task = await self.task_repo.get_task_by_id(task_id)
+                if isinstance(original_task, (UnifiedTaskCandidate, TaskWithContext)):
+                    await self.lifecycle.on_task_changed(original_task)
+            except Exception as orig_err:
+                logger.debug("Could not recompute lifecycle for original task %s: %s", task_id, orig_err)
+
+            if isinstance(new_task, (UnifiedTaskCandidate, TaskWithContext)):
+                try:
+                    lifecycle_res = await self.lifecycle.on_task_changed(new_task)
+                    new_task = getattr(lifecycle_res, "task", new_task)
+                except Exception as new_err:
+                    logger.debug("Could not recompute lifecycle for new task: %s", new_err)
+        return new_task
+
+    async def update_task(
+        self,
+        task_id: str,
+        **updates: Any,
+    ) -> Optional[UnifiedTaskCandidate]:
+        """Cập nhật các trường thông tin của UnifiedTask (title, description, status, due_date, etc.)."""
+        task = await self.task_repo.get_task_by_id(task_id)
+        if not task:
+            return None
+
+        now = datetime.now(timezone.utc)
+        old_status = task.status
+        actor = updates.pop("actor", "USER")
+
+        for field, val in updates.items():
+            if val is not None and hasattr(task, field):
+                if field == "status" and isinstance(val, str):
+                    try:
+                        val = TaskStatus(val)
+                    except Exception:
+                        pass
+                setattr(task, field, val)
+
+        if "status" in updates and actor != "SYSTEM":
+            task.status_authoritative = True
+        if "priority_score" in updates and actor != "SYSTEM":
+            task.priority_override = task.priority_score
+
+        task.updated_at = now
+        await self.task_repo.upsert_task_atomic(task)
+
+        if old_status != task.status:
+            audit = StatusTransitionAuditRecord(
+                id=str(uuid4()),
+                task_id=task_id,
+                old_status=old_status,
+                new_status=task.status,
+                reason=f"Status updated via update_task by {actor}",
+                confidence=1.0,
+                changed_at=now,
+                change_actor=actor,
+            )
+            await self.task_repo.record_status_transition_audit(audit)
+
+        # Trigger TaskIntelligenceLifecycle hook
+        if hasattr(self, "lifecycle") and self.lifecycle:
+            await self.lifecycle.on_task_changed(task, now=now)
+
+        return await self.task_repo.get_task_by_id(task_id) or task
+

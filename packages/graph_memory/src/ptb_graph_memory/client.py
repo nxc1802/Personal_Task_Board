@@ -1,55 +1,92 @@
 """GraphitiMemoryClient: Temporal Knowledge Graph & Episodic Memory integration for Neo4j.
 
-Manages episodic memory nodes (Decisions, Lessons) with temporal validity
-(valid_at, invalid_at) and provides contextual semantic graph search.
+Manages episodic memory nodes (Decisions, Lessons, and Evidence) with temporal validity
+(valid_at, invalid_at) and provides contextual semantic graph search via Graphiti and Neo4j.
+
+Invariant: Graphiti operates as a derived semantic layer. Any failure in Graphiti
+must never rollback or break authoritative Neo4j transactions or domain operations.
 """
 
 from datetime import datetime, timezone
 import logging
+import os
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
 from neo4j import AsyncDriver
-from ptb_contracts.l3_storage import DecisionNodeRecord, LessonNodeRecord
+from ptb_contracts.l3_storage import DecisionNodeRecord, EvidenceNodeRecord, LessonNodeRecord
 from ptb_database.neo4j_client import Neo4jClient
+from ptb_graph_memory.adapter import GraphitiAdapter
 
 logger = logging.getLogger("ptb.graph_memory.client")
 
 
 class GraphitiMemoryClient:
-    """Temporal Episodic Memory Client powered by Neo4j and Graphiti principles."""
+    """Temporal Episodic Memory Client powered by Neo4j and Graphiti-Core."""
 
     def __init__(
         self,
         neo4j_client: Optional[Neo4jClient] = None,
         driver: Optional[AsyncDriver] = None,
         database: Optional[str] = None,
+        graphiti_client: Optional[Any] = None,
+        enable_graphiti: bool = True,
     ) -> None:
-        """Initialize GraphitiMemoryClient with a Neo4jClient or raw AsyncDriver.
+        """Initialize GraphitiMemoryClient with a Neo4jClient, raw AsyncDriver, or Graphiti adapter.
         
         Args:
             neo4j_client: Optional existing Neo4jClient instance.
             driver: Optional raw AsyncDriver instance (useful for mocks/tests).
             database: Optional Neo4j database name (defaults to client database or 'neo4j').
+            graphiti_client: Optional custom Graphiti instance or GraphitiAdapter.
+            enable_graphiti: Whether to enable the derived Graphiti semantic layer.
         """
         if neo4j_client is not None:
             self._neo4j_client = neo4j_client
             self._driver = driver or (neo4j_client.get_driver() if hasattr(neo4j_client, "get_driver") else None)
             self._database = database or getattr(neo4j_client, "database", "neo4j")
+            uri = getattr(neo4j_client, "uri", os.getenv("NEO4J_URI"))
+            user = getattr(neo4j_client, "username", os.getenv("NEO4J_USERNAME"))
+            password = getattr(neo4j_client, "password", os.getenv("NEO4J_PASSWORD"))
         elif driver is not None:
             self._neo4j_client = None
             self._driver = driver
             self._database = database or "neo4j"
+            uri = os.getenv("NEO4J_URI")
+            user = os.getenv("NEO4J_USERNAME")
+            password = os.getenv("NEO4J_PASSWORD")
         else:
             self._neo4j_client = Neo4jClient()
             self._driver = None
-            self._database = database or "neo4j"
+            self._database = database or getattr(self._neo4j_client, "database", "neo4j")
+            uri = getattr(self._neo4j_client, "uri", os.getenv("NEO4J_URI"))
+            user = getattr(self._neo4j_client, "username", os.getenv("NEO4J_USERNAME"))
+            password = getattr(self._neo4j_client, "password", os.getenv("NEO4J_PASSWORD"))
+
+        # Setup Graphiti adapter with graceful degradation
+        if isinstance(graphiti_client, GraphitiAdapter):
+            self._adapter = graphiti_client
+        elif graphiti_client is not None:
+            self._adapter = GraphitiAdapter(graphiti_instance=graphiti_client, enabled=enable_graphiti)
+        else:
+            self._adapter = GraphitiAdapter(
+                uri=uri,
+                user=user,
+                password=password,
+                database=self._database,
+                enabled=enable_graphiti,
+            )
+
+    @property
+    def adapter(self) -> GraphitiAdapter:
+        """Get the underlying GraphitiAdapter."""
+        return self._adapter
 
     def get_driver(self) -> AsyncDriver:
         """Get or create the underlying Neo4j AsyncDriver."""
         if self._driver is not None:
             return self._driver
-        if self._neo4j_client is not None:
+        if self._neo4j_client is not None and hasattr(self._neo4j_client, "get_driver"):
             self._driver = self._neo4j_client.get_driver()
             return self._driver
         raise RuntimeError("Neo4j driver is not configured.")
@@ -64,7 +101,10 @@ class GraphitiMemoryClient:
         return True
 
     async def close(self) -> None:
-        """Close driver connection."""
+        """Close driver and adapter connections."""
+        if self._adapter is not None:
+            await self._adapter.close()
+
         if self._neo4j_client is not None and hasattr(self._neo4j_client, "close"):
             await self._neo4j_client.close()
         elif self._driver is not None and hasattr(self._driver, "close"):
@@ -77,18 +117,13 @@ class GraphitiMemoryClient:
         affects_task_id: Optional[str] = None,
         affects_project_key: Optional[str] = None,
     ) -> str:
-        """Store a Decision as an Episodic Node with temporal attributes (valid_at, invalid_at).
+        """Store a Decision as an Episodic Node in Neo4j with temporal attributes (valid_at, invalid_at)
+        and ingest into Graphiti derived semantic memory.
 
-        Args:
-            decision: DecisionNodeRecord instance or compatible dictionary.
-            affects_task_id: Optional UnifiedTask ID influenced by this decision.
-            affects_project_key: Optional Project Key influenced by this decision.
-
-        Returns:
-            The decision_id.
+        Invariant: Failures in Graphiti ingestion never rollback authoritative Neo4j data.
         """
         driver = self.get_driver()
-        
+
         if isinstance(decision, dict):
             dec_id = decision.get("decision_id") or str(uuid4())
             summary = decision.get("summary", "")
@@ -113,6 +148,7 @@ class GraphitiMemoryClient:
         decided_at_iso = decided_at.isoformat() if hasattr(decided_at, "isoformat") else str(decided_at)
         now_iso = datetime.now(timezone.utc).isoformat()
 
+        # 1. Authoritative write to Neo4j
         cypher = """
         MERGE (d:Decision {decision_id: $decision_id})
         SET d:EpisodicNode,
@@ -143,7 +179,6 @@ class GraphitiMemoryClient:
         async with driver.session(database=self._database) as session:
             await session.run(cypher, params)
 
-            # Optional edge creation: (Decision)-[:AFFECTS]->(Project/UnifiedTask)
             if affects_task_id:
                 link_task_cypher = """
                 MATCH (d:Decision {decision_id: $decision_id})
@@ -160,7 +195,27 @@ class GraphitiMemoryClient:
                 """
                 await session.run(link_proj_cypher, {"decision_id": dec_id, "project_key": affects_project_key})
 
-        logger.info("Created decision episode: %s (valid_at: %s)", dec_id, valid_at_iso)
+        logger.info("Created decision episode in Neo4j: %s (valid_at: %s)", dec_id, valid_at_iso)
+
+        # 2. Derived Semantic Ingestion in Graphiti (never throws or interrupts)
+        try:
+            body = f"Decision: {summary}\nRationale: {rationale}\nTopic: {topic or 'General'}\nDecided by: {decided_by}"
+            await self._adapter.add_episode(
+                name=f"decision_{dec_id}",
+                episode_body=body,
+                source_description=f"Authoritative Decision ({decided_by})",
+                reference_time=valid_at if isinstance(valid_at, datetime) else decided_at,
+                source_type="text",
+                group_id=affects_project_key or "ptb_global",
+                uuid=dec_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Graphiti ingestion failed for decision %s: %s (authoritative data intact)",
+                dec_id,
+                exc,
+            )
+
         return dec_id
 
     async def add_lesson_episode(
@@ -169,15 +224,10 @@ class GraphitiMemoryClient:
         derived_from_task_id: Optional[str] = None,
         related_incident_id: Optional[str] = None,
     ) -> str:
-        """Store a Lesson as an Episodic Node with temporal attributes (valid_at, invalid_at).
+        """Store a Lesson as an Episodic Node in Neo4j with temporal attributes (valid_at, invalid_at)
+        and ingest into Graphiti derived semantic memory.
 
-        Args:
-            lesson: LessonNodeRecord instance or compatible dictionary.
-            derived_from_task_id: Optional UnifiedTask ID that produced this lesson.
-            related_incident_id: Optional Incident ID related to this lesson.
-
-        Returns:
-            The lesson_id.
+        Invariant: Failures in Graphiti ingestion never rollback authoritative Neo4j data.
         """
         driver = self.get_driver()
 
@@ -203,6 +253,7 @@ class GraphitiMemoryClient:
         recorded_at_iso = recorded_at.isoformat() if hasattr(recorded_at, "isoformat") else str(recorded_at)
         now_iso = datetime.now(timezone.utc).isoformat()
 
+        # 1. Authoritative write to Neo4j
         cypher = """
         MERGE (l:Lesson {lesson_id: $lesson_id})
         SET l:EpisodicNode,
@@ -231,7 +282,6 @@ class GraphitiMemoryClient:
         async with driver.session(database=self._database) as session:
             await session.run(cypher, params)
 
-            # Optional edge creation: (Lesson)-[:DERIVED_FROM]->(Task/Incident)
             if derived_from_task_id:
                 link_task_cypher = """
                 MATCH (l:Lesson {lesson_id: $lesson_id})
@@ -248,8 +298,138 @@ class GraphitiMemoryClient:
                 """
                 await session.run(link_inc_cypher, {"lesson_id": les_id, "incident_id": related_incident_id})
 
-        logger.info("Created lesson episode: %s (valid_at: %s)", les_id, valid_at_iso)
+        logger.info("Created lesson episode in Neo4j: %s (valid_at: %s)", les_id, valid_at_iso)
+
+        # 2. Derived Semantic Ingestion in Graphiti (never throws or interrupts)
+        try:
+            body = f"Lesson: {topic}\nDescription: {description}\nSolution: {solution}"
+            await self._adapter.add_episode(
+                name=f"lesson_{les_id}",
+                episode_body=body,
+                source_description="Authoritative Post-Incident / Task Lesson",
+                reference_time=valid_at if isinstance(valid_at, datetime) else recorded_at,
+                source_type="text",
+                group_id="ptb_global",
+                uuid=les_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Graphiti ingestion failed for lesson %s: %s (authoritative data intact)",
+                les_id,
+                exc,
+            )
+
         return les_id
+
+    async def add_evidence_episode(
+        self,
+        evidence: Union[EvidenceNodeRecord, Dict[str, Any]],
+        task_id: Optional[str] = None,
+        raw_event_id: Optional[str] = None,
+    ) -> str:
+        """Store accepted Evidence as an Episodic Node in Neo4j with temporal attributes (valid_at, invalid_at)
+        and ingest into Graphiti derived semantic memory.
+
+        Invariant: Failures in Graphiti ingestion never rollback authoritative Neo4j data.
+        """
+        driver = self.get_driver()
+
+        if isinstance(evidence, dict):
+            ev_id = evidence.get("id") or str(uuid4())
+            snippet = evidence.get("snippet", "")
+            source_type = evidence.get("source_type", "UNKNOWN")
+            confidence = float(evidence.get("confidence", 1.0))
+            external_url = evidence.get("external_url")
+            ts = evidence.get("timestamp") or datetime.now(timezone.utc)
+            valid_at = evidence.get("valid_at") or ts
+            invalid_at = evidence.get("invalid_at")
+            task_id = task_id or evidence.get("task_id")
+            raw_event_id = raw_event_id or evidence.get("raw_event_id")
+        else:
+            ev_id = getattr(evidence, "id", None) or str(uuid4())
+            snippet = getattr(evidence, "snippet", "")
+            source_type = getattr(evidence, "source_type", "UNKNOWN")
+            confidence = float(getattr(evidence, "confidence", 1.0))
+            external_url = getattr(evidence, "external_url", None)
+            ts = getattr(evidence, "timestamp", None) or datetime.now(timezone.utc)
+            valid_at = getattr(evidence, "valid_at", ts)
+            invalid_at = getattr(evidence, "invalid_at", None)
+            raw_event_id = raw_event_id or getattr(evidence, "raw_event_id", None)
+
+        valid_at_iso = valid_at.isoformat() if hasattr(valid_at, "isoformat") else str(valid_at)
+        invalid_at_iso = invalid_at.isoformat() if hasattr(invalid_at, "isoformat") else (str(invalid_at) if invalid_at else None)
+        ts_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        # 1. Authoritative write / update to Neo4j
+        cypher = """
+        MERGE (e:Evidence {id: $id})
+        SET e:EpisodicNode,
+            e.snippet = $snippet,
+            e.source_type = $source_type,
+            e.confidence = $confidence,
+            e.external_url = $external_url,
+            e.timestamp = $timestamp,
+            e.valid_at = $valid_at,
+            e.invalid_at = $invalid_at,
+            e.episode_type = 'EVIDENCE',
+            e.updated_at = $updated_at
+        RETURN e.id AS id
+        """
+
+        params = {
+            "id": ev_id,
+            "snippet": snippet,
+            "source_type": source_type,
+            "confidence": confidence,
+            "external_url": external_url,
+            "timestamp": ts_iso,
+            "valid_at": valid_at_iso,
+            "invalid_at": invalid_at_iso,
+            "updated_at": now_iso,
+        }
+
+        async with driver.session(database=self._database) as session:
+            await session.run(cypher, params)
+
+            if task_id:
+                link_task_cypher = """
+                MATCH (t:UnifiedTask {id: $task_id})
+                MATCH (e:Evidence {id: $id})
+                MERGE (t)-[:HAS_EVIDENCE]->(e)
+                """
+                await session.run(link_task_cypher, {"id": ev_id, "task_id": task_id})
+
+            if raw_event_id:
+                link_raw_cypher = """
+                MATCH (r:RawEvent {id: $raw_event_id})
+                MATCH (e:Evidence {id: $id})
+                MERGE (e)-[:DERIVED_FROM]->(r)
+                """
+                await session.run(link_raw_cypher, {"id": ev_id, "raw_event_id": raw_event_id})
+
+        logger.info("Created evidence episode in Neo4j: %s (valid_at: %s)", ev_id, valid_at_iso)
+
+        # 2. Derived Semantic Ingestion in Graphiti (never throws or interrupts)
+        try:
+            body = f"Evidence ({source_type}): {snippet}"
+            await self._adapter.add_episode(
+                name=f"evidence_{ev_id}",
+                episode_body=body,
+                source_description=f"Authoritative Evidence from {source_type}",
+                reference_time=valid_at if isinstance(valid_at, datetime) else ts,
+                source_type="text",
+                group_id=task_id or "ptb_global",
+                uuid=ev_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Graphiti ingestion failed for evidence %s: %s (authoritative data intact)",
+                ev_id,
+                exc,
+            )
+
+        return ev_id
 
     async def invalidate_episode(
         self,
@@ -280,7 +460,7 @@ class GraphitiMemoryClient:
         limit: int = 5,
         include_invalidated: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Search contextual knowledge graph episodes by topic, summary, description, and edges.
+        """Search contextual knowledge graph episodes by topic, summary, description, snippet, and edges.
 
         Args:
             query: The search term or topic keywords.
@@ -294,7 +474,6 @@ class GraphitiMemoryClient:
         now_iso = datetime.now(timezone.utc).isoformat()
         clean_query = query.strip()
 
-        # Build Cypher query matching episodic nodes
         cypher = """
         MATCH (n:EpisodicNode)
         WHERE (
@@ -304,6 +483,7 @@ class GraphitiMemoryClient:
             OR toLower(coalesce(n.description, '')) CONTAINS toLower($query)
             OR toLower(coalesce(n.rationale, '')) CONTAINS toLower($query)
             OR toLower(coalesce(n.solution, '')) CONTAINS toLower($query)
+            OR toLower(coalesce(n.snippet, '')) CONTAINS toLower($query)
         )
         AND ($include_invalid = true OR n.invalid_at IS NULL OR n.invalid_at > $now)
         OPTIONAL MATCH (n)-[r]-(neighbor)
@@ -319,7 +499,7 @@ class GraphitiMemoryClient:
         RETURN n,
                node_labels,
                [e IN raw_edges WHERE e IS NOT NULL] AS edges
-        ORDER BY coalesce(n.valid_at, n.recorded_at, n.decided_at, '') DESC
+        ORDER BY coalesce(n.valid_at, n.recorded_at, n.decided_at, n.timestamp, '') DESC
         LIMIT $limit
         """
 
@@ -339,7 +519,7 @@ class GraphitiMemoryClient:
                 edges = row.get("edges") or []
 
                 node_dict = dict(node) if hasattr(node, "items") or isinstance(node, dict) else {}
-                
+
                 # Determine ID and Type
                 episode_type = node_dict.get("episode_type")
                 if not episode_type:
@@ -347,6 +527,8 @@ class GraphitiMemoryClient:
                         episode_type = "DECISION"
                     elif "Lesson" in labels:
                         episode_type = "LESSON"
+                    elif "Evidence" in labels:
+                        episode_type = "EVIDENCE"
                     else:
                         episode_type = "EPISODIC"
 
@@ -361,11 +543,13 @@ class GraphitiMemoryClient:
                 summary = (
                     node_dict.get("summary")
                     or node_dict.get("topic")
+                    or (f"Evidence ({node_dict.get('source_type', 'UNKNOWN')})" if episode_type == "EVIDENCE" else None)
                     or node_dict.get("description", "")
                 )
                 content = (
                     node_dict.get("rationale")
                     or node_dict.get("solution")
+                    or node_dict.get("snippet")
                     or node_dict.get("description", "")
                 )
 

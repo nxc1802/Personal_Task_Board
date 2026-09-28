@@ -33,18 +33,20 @@ class CheckpointRepository:
         """Tìm node (:IngestionCheckpoint {source_type: ..., stream_id: ..., tenant_id: ...})."""
         driver = self._get_driver()
         st_val = source_type.value if hasattr(source_type, "value") else str(source_type)
+        tid_val = tenant_id if (tenant_id is not None and str(tenant_id).strip() != "") else "default"
         cypher = """
         MATCH (cp:IngestionCheckpoint)
         WHERE cp.source_type = $source_type
           AND cp.stream_id = $stream_id
           AND cp.tenant_id = $tenant_id
         RETURN cp
+        ORDER BY cp.updated_at DESC
         LIMIT 1
         """
         params = {
             "source_type": st_val,
             "stream_id": stream_id,
-            "tenant_id": tenant_id,
+            "tenant_id": tid_val,
         }
         async with driver.session(database=self.neo4j_client.database) as session:
             result = await session.run(cypher, params)
@@ -123,3 +125,31 @@ class CheckpointRepository:
                                 pass
                     checkpoints.append(IngestionCheckpointRecord.model_validate(data))
         return checkpoints
+
+    async def cleanup_duplicate_checkpoints(self) -> int:
+        """Tìm và xóa các IngestionCheckpoint bị trùng lặp theo (tenant_id, source_type, stream_id),
+        giữ lại node có updated_at mới nhất. Trả về số lượng nodes đã xóa."""
+        driver = self._get_driver()
+        # Đảm bảo các node checkpoint không có tenant_id rỗng hoặc null
+        cypher_fix_null = """
+        MATCH (cp:IngestionCheckpoint)
+        WHERE cp.tenant_id IS NULL OR cp.tenant_id = ''
+        SET cp.tenant_id = 'default'
+        """
+        cypher_dedup = """
+        MATCH (cp:IngestionCheckpoint)
+        WITH cp
+        ORDER BY cp.updated_at DESC
+        WITH cp.tenant_id AS tenant_id, cp.source_type AS source_type, cp.stream_id AS stream_id, collect(cp) AS nodes
+        WHERE size(nodes) > 1
+        UNWIND tail(nodes) AS dup
+        DETACH DELETE dup
+        RETURN count(dup) AS deleted_count
+        """
+        async with driver.session(database=self.neo4j_client.database) as session:
+            await session.run(cypher_fix_null)
+            result = await session.run(cypher_dedup)
+            row = await result.single()
+            if row and row.get("deleted_count") is not None:
+                return int(row["deleted_count"])
+            return 0

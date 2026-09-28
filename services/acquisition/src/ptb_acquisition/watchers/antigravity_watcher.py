@@ -28,34 +28,55 @@ class AntigravityWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        """Xác định đường dẫn lưu trữ brain logs của Antigravity IDE."""
+        """Xác định đường dẫn lưu trữ brain logs của Antigravity sử dụng platformdirs."""
         paths = []
+        try:
+            import platformdirs
+            data_brain = os.path.join(platformdirs.user_data_dir("antigravity", appauthor=False), "brain")
+            data_ide_brain = os.path.join(platformdirs.user_data_dir("antigravity-ide", appauthor=False), "brain")
+            for p in (data_brain, data_ide_brain):
+                if p not in paths:
+                    paths.append(p)
+        except Exception as e:
+            logger.debug(f"platformdirs resolution error for Antigravity: {e}")
+
         home = os.path.expanduser("~")
-        p = os.path.join(home, ".gemini", "antigravity-ide", "brain")
-        if os.path.isdir(p):
-            paths.append(p)
-        return paths
+        std_antigravity = os.path.join(home, ".gemini", "antigravity", "brain")
+        std_antigravity_ide = os.path.join(home, ".gemini", "antigravity-ide", "brain")
+        for p in (std_antigravity, std_antigravity_ide):
+            if p not in paths:
+                paths.append(p)
+
+        existing = [p for p in paths if os.path.isdir(p)]
+        return existing if existing else paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét tất cả các thư mục session trong brain/ và trích xuất."""
         all_records: List[RawAgentSessionRecord] = []
-        for brain_dir in self.base_paths:
-            if not os.path.isdir(brain_dir):
-                continue
-            for sid in os.listdir(brain_dir):
-                session_dir = os.path.join(brain_dir, sid)
-                if not os.path.isdir(session_dir):
+        try:
+            for brain_dir in self.base_paths:
+                if not os.path.isdir(brain_dir):
                     continue
+                try:
+                    for sid in os.listdir(brain_dir):
+                        session_dir = os.path.join(brain_dir, sid)
+                        if not os.path.isdir(session_dir):
+                            continue
 
-                log_dir = os.path.join(session_dir, ".system_generated", "logs")
-                transcript_path = os.path.join(log_dir, "transcript_full.jsonl")
-                if not os.path.isfile(transcript_path):
-                    transcript_path = os.path.join(log_dir, "transcript.jsonl")
-                if not os.path.isfile(transcript_path):
+                        log_dir = os.path.join(session_dir, ".system_generated", "logs")
+                        transcript_path = os.path.join(log_dir, "transcript_full.jsonl")
+                        if not os.path.isfile(transcript_path):
+                            transcript_path = os.path.join(log_dir, "transcript.jsonl")
+                        if not os.path.isfile(transcript_path):
+                            continue
+
+                        records = self.extract_from_transcript(transcript_path, session_id=sid, session_dir=session_dir)
+                        all_records.extend(records)
+                except Exception as dir_err:
+                    logger.debug(f"Error accessing brain dir {brain_dir}: {dir_err}")
                     continue
-
-                records = self.extract_from_transcript(transcript_path, session_id=sid, session_dir=session_dir)
-                all_records.extend(records)
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Antigravity sessions: {e}")
         return all_records
 
     def extract_from_transcript(self, transcript_path: str, session_id: str, session_dir: str = "") -> List[RawAgentSessionRecord]:

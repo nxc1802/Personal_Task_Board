@@ -10,6 +10,7 @@ from ptb_contracts.l2_processing import (
     CommitmentRecord,
     EvidenceRecord,
     EvidenceType,
+    MergeAuditRecord,
     ReviewQueueItem,
     StatusTransitionAuditRecord,
     TaskStatus,
@@ -91,14 +92,24 @@ class TaskDomainRepository:
         now_iso: str,
         evidences_data: List[Dict[str, Any]],
     ) -> None:
-        # 1. Upsert UnifiedTask
+        created_at_val = (
+            task.created_at.isoformat()
+            if getattr(task, "created_at", None) and hasattr(task.created_at, "isoformat")
+            else (str(task.created_at) if getattr(task, "created_at", None) else now_iso)
+        )
+
+        # 1. Upsert UnifiedTask: Task mới được set created_at, update chỉ đổi updated_at
         upsert_task_cypher = """
         MERGE (t:UnifiedTask {id: $id})
+        ON CREATE SET t.created_at = $created_at
         SET t.title = $title,
             t.description = $description,
             t.status = $status,
             t.inferred_status = $inferred_status,
+            t.status_authoritative = $status_authoritative,
             t.priority_score = $priority_score,
+            t.priority_override = $priority_override,
+            t.inferred_priority_score = $inferred_priority_score,
             t.due_date = $due_date,
             t.explicit_deadline = $explicit_deadline,
             t.project_key = $project_key,
@@ -106,6 +117,11 @@ class TaskDomainRepository:
             t.extraction_confidence = $extraction_confidence,
             t.correlation_confidence = $correlation_confidence,
             t.review_status = $review_status,
+            t.candidate_task_ids = $candidate_task_ids,
+            t.winning_task_id = $winning_task_id,
+            t.correlation_score = $correlation_score,
+            t.deterministic_anchors = $deterministic_anchors,
+            t.merge_reason = $merge_reason,
             t.updated_at = $updated_at
         """
         task_params = {
@@ -114,7 +130,10 @@ class TaskDomainRepository:
             "description": task.description,
             "status": status_val,
             "inferred_status": task.inferred_status,
+            "status_authoritative": getattr(task, "status_authoritative", False),
             "priority_score": task.priority_score,
+            "priority_override": getattr(task, "priority_override", None),
+            "inferred_priority_score": getattr(task, "inferred_priority_score", None),
             "due_date": due_date_val,
             "explicit_deadline": task.explicit_deadline,
             "project_key": task.project_key,
@@ -122,16 +141,23 @@ class TaskDomainRepository:
             "extraction_confidence": task.extraction_confidence,
             "correlation_confidence": task.correlation_confidence,
             "review_status": task.review_status,
+            "candidate_task_ids": getattr(task, "candidate_task_ids", []) or [],
+            "winning_task_id": getattr(task, "winning_task_id", None),
+            "correlation_score": getattr(task, "correlation_score", None),
+            "deterministic_anchors": getattr(task, "deterministic_anchors", []) or [],
+            "merge_reason": getattr(task, "merge_reason", None),
+            "created_at": created_at_val,
             "updated_at": now_iso,
         }
         await runner.run(upsert_task_cypher, task_params)
 
-        # 2. Liên kết Owner (:Person)-[:ASSIGNED_TO]->(:UnifiedTask) nếu có
+        # 2. Liên kết Owner (:Person)-[:ASSIGNED_TO]->(:UnifiedTask) nếu có (thống nhất Person.canonical_id)
         if task.owner_canonical_id:
             owner_cypher = """
             MATCH (t:UnifiedTask {id: $task_id})
             MERGE (p:Person {canonical_id: $owner_canonical_id})
-            ON CREATE SET p.canonical_name = $owner_name
+            ON CREATE SET p.canonical_name = $owner_name, p.id = $owner_canonical_id
+            SET p.id = coalesce(p.id, $owner_canonical_id)
             MERGE (p)-[:ASSIGNED_TO]->(t)
             """
             await runner.run(owner_cypher, {
@@ -140,12 +166,13 @@ class TaskDomainRepository:
                 "owner_name": task.owner_name,
             })
 
-        # 3. Liên kết Requester (:Person)-[:REQUESTED]->(:UnifiedTask) nếu có
+        # 3. Liên kết Requester (:Person)-[:REQUESTED]->(:UnifiedTask) nếu có (thống nhất Person.canonical_id)
         if task.requester_canonical_id:
             req_cypher = """
             MATCH (t:UnifiedTask {id: $task_id})
             MERGE (req:Person {canonical_id: $requester_canonical_id})
-            ON CREATE SET req.canonical_name = $requester_name
+            ON CREATE SET req.canonical_name = $requester_name, req.id = $requester_canonical_id
+            SET req.id = coalesce(req.id, $requester_canonical_id)
             MERGE (req)-[:REQUESTED]->(t)
             """
             await runner.run(req_cypher, {
@@ -209,6 +236,32 @@ class TaskDomainRepository:
             task_dict["review_status"] = "auto_approved"
         if "explicit_deadline" not in task_dict or task_dict["explicit_deadline"] is None:
             task_dict["explicit_deadline"] = False
+        if "priority_override" in task_dict and task_dict["priority_override"] is not None:
+            try:
+                task_dict["priority_override"] = float(task_dict["priority_override"])
+            except Exception:
+                task_dict["priority_override"] = None
+        else:
+            task_dict["priority_override"] = None
+
+        if "status_authoritative" in task_dict and task_dict["status_authoritative"] is not None:
+            task_dict["status_authoritative"] = bool(task_dict["status_authoritative"])
+        else:
+            task_dict["status_authoritative"] = False
+
+        if "inferred_priority_score" in task_dict and task_dict["inferred_priority_score"] is not None:
+            try:
+                task_dict["inferred_priority_score"] = float(task_dict["inferred_priority_score"])
+            except Exception:
+                task_dict["inferred_priority_score"] = None
+        else:
+            task_dict["inferred_priority_score"] = None
+
+        task_dict["candidate_task_ids"] = row.get("candidate_task_ids") or task_dict.get("candidate_task_ids") or []
+        task_dict["winning_task_id"] = row.get("winning_task_id") or task_dict.get("winning_task_id")
+        task_dict["correlation_score"] = row.get("correlation_score") or task_dict.get("correlation_score")
+        task_dict["deterministic_anchors"] = row.get("deterministic_anchors") or task_dict.get("deterministic_anchors") or []
+        task_dict["merge_reason"] = row.get("merge_reason") or task_dict.get("merge_reason")
 
         for dt_field in ["due_date", "created_at", "updated_at"]:
             if dt_field in task_dict and isinstance(task_dict[dt_field], str):
@@ -545,3 +598,176 @@ class TaskDomainRepository:
             if row and row["id"]:
                 return str(row["id"])
             return audit_id
+
+    async def record_merge_audit(self, audit: MergeAuditRecord) -> str:
+        """Ghi lại quan hệ MergeAudit liên kết với (:UnifiedTask)."""
+        driver = self._get_driver()
+        audit_id = audit.id or str(uuid4())
+        created_at_val = (
+            audit.created_at.isoformat()
+            if hasattr(audit.created_at, "isoformat")
+            else str(audit.created_at)
+        )
+        cypher = """
+        MATCH (t:UnifiedTask {id: $winning_task_id})
+        CREATE (a:MergeAudit {
+            id: $id,
+            winning_task_id: $winning_task_id,
+            candidate_task_ids: $candidate_task_ids,
+            correlation_score: $correlation_score,
+            deterministic_anchors: $deterministic_anchors,
+            semantic_score: $semantic_score,
+            merge_reason: $merge_reason,
+            processor_version: $processor_version,
+            created_at: $created_at
+        })
+        CREATE (t)-[:MERGE_AUDIT]->(a)
+        RETURN a.id AS id
+        """
+        params = {
+            "id": audit_id,
+            "winning_task_id": audit.winning_task_id,
+            "candidate_task_ids": audit.candidate_task_ids,
+            "correlation_score": audit.correlation_score,
+            "deterministic_anchors": audit.deterministic_anchors,
+            "semantic_score": audit.semantic_score,
+            "merge_reason": audit.merge_reason,
+            "processor_version": audit.processor_version,
+            "created_at": created_at_val,
+        }
+        async with driver.session(database=self.neo4j_client.database) as session:
+            result = await session.run(cypher, params)
+            row = await result.single()
+            if row and row.get("id"):
+                return str(row["id"])
+            return audit_id
+
+    async def split_task(
+        self,
+        original_task_id: str,
+        evidence_ids_to_detach: list[str],
+        new_task_title: Optional[str] = None,
+    ) -> UnifiedTaskCandidate:
+        """Tách các evidence chỉ định khỏi original_task_id và tạo một UnifiedTask mới.
+
+        1. Detach các Evidence chỉ định khỏi original_task_id (DELETE [r:HAS_EVIDENCE]).
+        2. Tạo một (:UnifiedTask) mới với id = uuid4(), title = new_task_title or f"Split: {original_task.title}".
+        3. Gắn các Evidence đã detach vào Task mới (MERGE (:UnifiedTask)-[:HAS_EVIDENCE]->(:Evidence)).
+        4. Bảo toàn 100% Provenance: Mỗi Evidence vẫn giữ nguyên liên kết [:DERIVED_FROM]->(:RawEvent).
+        5. Cập nhật updated_at cho cả 2 tasks.
+        """
+        driver = self._get_driver()
+        original_task = await self.get_task_by_id(original_task_id)
+        if not original_task:
+            raise ValueError(f"Original task {original_task_id} not found")
+
+        detached_evidences = [e for e in original_task.evidences if e.id in evidence_ids_to_detach]
+        if not detached_evidences:
+            raise ValueError(
+                f"None of the specified evidence IDs {evidence_ids_to_detach} belong to task {original_task_id}"
+            )
+
+        new_task_id = str(uuid4())
+        title = new_task_title or f"Split: {original_task.title}"
+        now_utc = datetime.now(timezone.utc)
+        now_iso = now_utc.isoformat()
+
+        status_val = (
+            original_task.status.value
+            if hasattr(original_task.status, "value")
+            else str(original_task.status)
+        )
+        due_date_val = (
+            original_task.due_date.isoformat()
+            if original_task.due_date and hasattr(original_task.due_date, "isoformat")
+            else (str(original_task.due_date) if original_task.due_date else None)
+        )
+
+        cypher = """
+        MATCH (orig:UnifiedTask {id: $original_task_id})
+        SET orig.updated_at = $now_iso
+
+        CREATE (new_t:UnifiedTask {
+            id: $new_task_id,
+            title: $title,
+            description: $description,
+            status: $status,
+            inferred_status: $inferred_status,
+            priority_score: $priority_score,
+            due_date: $due_date,
+            explicit_deadline: $explicit_deadline,
+            project_key: $project_key,
+            customer_id: $customer_id,
+            extraction_confidence: $extraction_confidence,
+            correlation_confidence: $correlation_confidence,
+            review_status: $review_status,
+            created_at: $now_iso,
+            updated_at: $now_iso
+        })
+
+        WITH orig, new_t
+        MATCH (orig)-[r:HAS_EVIDENCE]->(e:Evidence)
+        WHERE e.id IN $evidence_ids_to_detach
+        DELETE r
+        SET e.task_id = $new_task_id
+        MERGE (new_t)-[:HAS_EVIDENCE]->(e)
+        RETURN new_t.id AS id
+        """
+
+        params = {
+            "original_task_id": original_task_id,
+            "new_task_id": new_task_id,
+            "title": title,
+            "description": original_task.description,
+            "status": status_val,
+            "inferred_status": original_task.inferred_status,
+            "priority_score": original_task.priority_score,
+            "due_date": due_date_val,
+            "explicit_deadline": original_task.explicit_deadline,
+            "project_key": original_task.project_key,
+            "customer_id": original_task.customer_id,
+            "extraction_confidence": original_task.extraction_confidence,
+            "correlation_confidence": original_task.correlation_confidence,
+            "review_status": original_task.review_status,
+            "now_iso": now_iso,
+            "evidence_ids_to_detach": evidence_ids_to_detach,
+        }
+
+        async with driver.session(database=self.neo4j_client.database) as session:
+            if hasattr(session, "begin_transaction"):
+                async with session.begin_transaction() as tx:
+                    await tx.run(cypher, params)
+                    await tx.commit()
+            else:
+                await session.run(cypher, params)
+
+        created_task = await self.get_task_by_id(new_task_id)
+        if created_task:
+            return created_task
+
+        return UnifiedTaskCandidate(
+            id=new_task_id,
+            title=title,
+            description=original_task.description,
+            status=original_task.status,
+            inferred_status=original_task.inferred_status,
+            status_authoritative=original_task.status_authoritative,
+            owner_canonical_id=original_task.owner_canonical_id,
+            owner_name=original_task.owner_name,
+            requester_canonical_id=original_task.requester_canonical_id,
+            requester_name=original_task.requester_name,
+            project_key=original_task.project_key,
+            customer_id=original_task.customer_id,
+            due_date=original_task.due_date,
+            explicit_deadline=original_task.explicit_deadline,
+            priority_score=original_task.priority_score,
+            priority_override=original_task.priority_override,
+            inferred_priority_score=original_task.inferred_priority_score,
+            extraction_confidence=original_task.extraction_confidence,
+            correlation_confidence=original_task.correlation_confidence,
+            review_status=original_task.review_status,
+            created_at=now_utc,
+            updated_at=now_utc,
+            evidences=[e.model_copy(update={"task_id": new_task_id}) for e in detached_evidences],
+        )
+

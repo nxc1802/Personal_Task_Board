@@ -84,6 +84,11 @@ Hãy phân tích nội dung được cung cấp và trích xuất thông tin tas
 CHỈ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ, KHÔNG KÈM TEXT GIẢI THÍCH."""
 
 
+class LLMExtractionError(RuntimeError):
+    """Lỗi phát sinh khi gọi LLM thất bại và cấu hình không cho phép heuristic fallback."""
+    pass
+
+
 class LLMStructuredExtractor:
     """Bộ trích xuất cấu trúc sử dụng LLM hoặc Fallback Rule-based / Mock."""
 
@@ -94,12 +99,32 @@ class LLMStructuredExtractor:
         model: Optional[str] = None,
         mock_mode: bool = False,
         timeout: float = 30.0,
+        allow_heuristic_fallback: Optional[bool] = None,
     ) -> None:
-        self.base_url = (base_url or os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
-        self.api_key = api_key if api_key is not None else os.getenv("LLM_API_KEY", "")
-        self.model = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
+        self.base_url = (
+            base_url
+            or os.getenv("OPENAI_BASE_URL")
+            or os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
+        ).rstrip("/")
+        self.api_key = (
+            api_key
+            if api_key is not None
+            else (os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY", ""))
+        )
+        self.model = (
+            model
+            or os.getenv("PTB_EXTRACTION_MODEL")
+            or os.getenv("LLM_MODEL", "gpt-4o-mini")
+        )
         self.mock_mode = mock_mode
         self.timeout = timeout
+        if allow_heuristic_fallback is not None:
+            self.allow_heuristic_fallback = allow_heuristic_fallback
+        else:
+            self.allow_heuristic_fallback = (
+                os.getenv("PTB_ALLOW_HEURISTIC_FALLBACK", "false").lower()
+                in ("true", "1", "yes")
+            )
         self._mock_handler: Optional[Callable[[str], Optional[LLMExtractedSchema]]] = None
 
     def set_mock_handler(self, handler: Optional[Callable[[str], Optional[LLMExtractedSchema]]]) -> None:
@@ -213,15 +238,28 @@ class LLMStructuredExtractor:
         if self._mock_handler:
             extracted_schema = self._mock_handler(combined_prompt)
 
-        # 2. Nếu mock_mode hoặc không có API key -> dùng Fallback Rule-based
+        # 2. Nếu mock_mode hoặc cần trích xuất
         if extracted_schema is None:
-            if self.mock_mode or not self.api_key:
+            if self.mock_mode:
                 extracted_schema = self._fallback_rule_based_extract(
                     text=actual_text or quoted_text,
                     quoted_author=quoted_author,
                     quoted_content=quoted_text,
                     actual_author=actual_author,
                 )
+            elif not self.api_key:
+                if self.allow_heuristic_fallback:
+                    logger.warning("No API key configured, falling back to rule-based heuristic")
+                    extracted_schema = self._fallback_rule_based_extract(
+                        text=actual_text or quoted_text,
+                        quoted_author=quoted_author,
+                        quoted_content=quoted_text,
+                        actual_author=actual_author,
+                    )
+                else:
+                    raise LLMExtractionError(
+                        "OPENAI_API_KEY is not configured and PTB_ALLOW_HEURISTIC_FALLBACK is False"
+                    )
             else:
                 try:
                     res_json = self._call_openai_completion(combined_prompt)
@@ -229,13 +267,19 @@ class LLMStructuredExtractor:
                     data = json.loads(msg_content)
                     extracted_schema = LLMExtractedSchema.model_validate(data)
                 except Exception as e:
-                    logger.warning("LLM API call failed, falling back to rule-based: %s", e)
-                    extracted_schema = self._fallback_rule_based_extract(
-                        text=actual_text or quoted_text,
-                        quoted_author=quoted_author,
-                        quoted_content=quoted_text,
-                        actual_author=actual_author,
-                    )
+                    if self.allow_heuristic_fallback:
+                        logger.warning("LLM API call failed, falling back to rule-based: %s", e)
+                        extracted_schema = self._fallback_rule_based_extract(
+                            text=actual_text or quoted_text,
+                            quoted_author=quoted_author,
+                            quoted_content=quoted_text,
+                            actual_author=actual_author,
+                        )
+                    else:
+                        logger.error(
+                            "LLM API call failed and heuristic fallback is disabled: %s", e
+                        )
+                        raise LLMExtractionError(f"LLM extraction failed: {e}") from e
 
         # 3. Phân loại review_status
         confidence = extracted_schema.extraction_confidence

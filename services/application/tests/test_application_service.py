@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 import pytest
 
 from ptb_contracts.l1_acquisition import (
@@ -55,6 +56,28 @@ class MockTaskDomainRepository:
     async def record_status_transition_audit(self, audit: StatusTransitionAuditRecord) -> str:
         self.audits.append(audit)
         return audit.id
+
+    async def split_task(
+        self,
+        original_task_id: str,
+        evidence_ids_to_detach: list[str],
+        new_task_title: Optional[str] = None,
+    ) -> UnifiedTaskCandidate:
+        orig = self.tasks.get(original_task_id)
+        if not orig:
+            raise ValueError(f"Task {original_task_id} not found")
+        detached = [e for e in orig.evidences if e.id in evidence_ids_to_detach]
+        if not detached:
+            raise ValueError(f"None of {evidence_ids_to_detach} found in task")
+        orig.evidences = [e for e in orig.evidences if e.id not in evidence_ids_to_detach]
+        new_task = UnifiedTaskCandidate(
+            id=str(uuid4()),
+            title=new_task_title or f"Split: {orig.title}",
+            status=orig.status,
+            evidences=detached,
+        )
+        self.tasks[new_task.id] = new_task
+        return new_task
 
     async def list_tasks(self, filters: Optional[dict] = None) -> list[UnifiedTaskCandidate]:
         tasks = list(self.tasks.values())
@@ -609,3 +632,27 @@ async def test_execute_task_action_invalid_action(app_service: ApplicationServic
     )
     assert res.success is False
     assert "Unsupported action" in res.message
+
+
+@pytest.mark.asyncio
+async def test_application_service_split_task(app_service: ApplicationService):
+    """Kiểm tra ApplicationService.split_task tách đúng evidence và cập nhật domain."""
+    orig = await app_service.task_repo.get_task_by_id("task-1")
+    assert len(orig.evidences) == 1
+    assert orig.evidences[0].id == "ev-1"
+
+    new_task = await app_service.split_task(
+        task_id="task-1",
+        evidence_ids=["ev-1"],
+        new_title="Split: Migrated token work",
+    )
+
+    assert new_task.title == "Split: Migrated token work"
+    assert len(new_task.evidences) == 1
+    assert new_task.evidences[0].id == "ev-1"
+    assert new_task.evidences[0].raw_event_id == "raw-1"
+
+    # Original task now has 0 evidences
+    orig_updated = await app_service.task_repo.get_task_by_id("task-1")
+    assert len(orig_updated.evidences) == 0
+

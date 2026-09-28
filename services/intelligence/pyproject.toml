@@ -9,6 +9,7 @@ dependencies = [
     "ptb-database",
     "ptb-graph-memory",
     "pydantic>=2.7.0",
+    "pyyaml>=6.0.0",
 ]
 
 [tool.uv.sources]

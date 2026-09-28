@@ -12,19 +12,31 @@ from ptb_processing.correlation import (
 )
 from ptb_processing.extractor import (
     HeuristicCandidateFilter,
+    LLMExtractedSchema,
+    LLMExtractionError,
     LLMStructuredExtractor,
+    classify_review_status,
 )
 from ptb_processing.identity import (
     IdentityResolutionResult,
     IdentityResolver,
 )
 from ptb_processing.parsers import TeamsQuoteReplyParser
+from ptb_processing.pipeline import (
+    PipelineResult,
+    ProcessingPipeline,
+)
 from ptb_processing.validator import (
     AttributionReport,
     AttributionValidator,
 )
+from ptb_processing.worker import ProcessingWorker
 
 __all__ = [
+    # Worker & Pipeline
+    "ProcessingWorker",
+    "ProcessingPipeline",
+    "PipelineResult",
     # Correlation & Merge
     "TaskCandidateMatcher",
     "DeterministicAnchor",
@@ -38,6 +50,9 @@ __all__ = [
     "TeamsQuoteReplyParser",
     "HeuristicCandidateFilter",
     "LLMStructuredExtractor",
+    "LLMExtractionError",
+    "LLMExtractedSchema",
+    "classify_review_status",
     "IdentityResolver",
     "IdentityResolutionResult",
     "AttributionValidator",

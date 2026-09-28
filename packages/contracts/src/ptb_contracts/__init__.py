@@ -17,6 +17,7 @@ from ptb_contracts.l2_processing import (
     EvidenceType,
     ExtractedCommitment,
     InferredStatus,
+    MergeAuditRecord,
     ParsedMessageContent,
     ReviewQueueItem,
     StatusTransitionAuditRecord,
@@ -80,6 +81,7 @@ __all__ = [
     "CommitmentRecord",
     "ExtractedCommitment",
     "UnifiedTaskCandidate",
+    "MergeAuditRecord",
     "StatusTransitionAuditRecord",
     "ReviewQueueItem",
     # L3

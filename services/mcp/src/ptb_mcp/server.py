@@ -2,6 +2,9 @@
 
 Exposes exactly 10 read-only query tools v1 for coding agents (Cursor, Claude Code,
 Antigravity, Codex) and OpenWebUI integrations via stdio or HTTP/SSE transport.
+
+Port canonical: 127.0.0.1:8001 (SSE transport)
+Server name: "ptb-mcp"
 """
 
 import argparse
@@ -21,11 +24,19 @@ from ptb_application.service import ApplicationService
 
 logger = logging.getLogger("ptb.mcp.server")
 
+DEFAULT_MCP_HOST = "127.0.0.1"
+DEFAULT_MCP_PORT = 8001
+
 
 def create_mcp_server(app_service: Optional[ApplicationService] = None) -> FastMCP:
     """Khởi tạo và cấu hình FastMCP Server với chính xác 10 read-only query tools v1."""
     service = app_service or ApplicationService()
     server = FastMCP("ptb-mcp")
+
+    @server.custom_route("/health", methods=["GET"])
+    async def mcp_health(request: Any) -> Any:
+        from starlette.responses import JSONResponse
+        return JSONResponse({"status": "healthy", "service": "ptb-mcp"})
 
     # =========================================================================
     # TOOL 1: get_today_tasks
@@ -125,13 +136,13 @@ def create_mcp_server(app_service: Optional[ApplicationService] = None) -> FastM
 
 
 async def run_sse_server(
-    host: str = "0.0.0.0",
-    port: int = 8000,
+    host: str = DEFAULT_MCP_HOST,
+    port: int = DEFAULT_MCP_PORT,
     app_service: Optional[ApplicationService] = None,
 ) -> None:
     """Chạy FastMCP Server qua HTTP / SSE transport."""
     server = create_mcp_server(app_service=app_service)
-    logger.info("Starting PTB FastMCP Server (SSE) on %s:%d ...", host, port)
+    logger.info("Starting PTB FastMCP Server (SSE) on http://%s:%d ...", host, port)
     await server.run_sse_async(host=host, port=port)
 
 
@@ -140,6 +151,15 @@ async def run_stdio_server(app_service: Optional[ApplicationService] = None) -> 
     server = create_mcp_server(app_service=app_service)
     logger.info("Starting PTB FastMCP Server (stdio) ...")
     await server.run_stdio_async()
+
+
+def run_mcp_server(
+    host: str = DEFAULT_MCP_HOST,
+    port: int = DEFAULT_MCP_PORT,
+    app_service: Optional[ApplicationService] = None,
+) -> None:
+    """Khởi chạy FastMCP Server độc lập qua SSE transport trên host 127.0.0.1:8001."""
+    asyncio.run(run_sse_server(host=host, port=port, app_service=app_service))
 
 
 def main() -> None:
@@ -151,14 +171,14 @@ def main() -> None:
         default="sse",
         help="Transport protocol (sse or stdio, default: sse)",
     )
-    parser.add_argument("--host", default="0.0.0.0", help="Host address for SSE server")
-    parser.add_argument("--port", type=int, default=8000, help="Port for SSE server")
+    parser.add_argument("--host", default=DEFAULT_MCP_HOST, help="Host address for SSE server (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=DEFAULT_MCP_PORT, help="Port for SSE server (default: 8001)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
     if args.transport == "sse":
-        asyncio.run(run_sse_server(host=args.host, port=args.port))
+        run_mcp_server(host=args.host, port=args.port)
     else:
         asyncio.run(run_stdio_server())
 

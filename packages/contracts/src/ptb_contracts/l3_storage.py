@@ -7,13 +7,20 @@ from ptb_contracts.l2_processing import TaskStatus
 
 
 class CanonicalPersonRecord(BaseModel):
-    id: str = Field(description="UUID v4 của person")
+    canonical_id: str = Field(default="", description="Canonical ID của Person (duy nhất trên ontology)")
+    id: Optional[str] = Field(default=None, description="UUID v4 hoặc alias của Person")
     workspace_id: Optional[str] = None
     canonical_name: str
     primary_email: str
     avatar_url: Optional[str] = None
     is_current_user: bool = False
     created_at: Optional[datetime] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.canonical_id and self.id:
+            object.__setattr__(self, "canonical_id", self.id)
+        elif not self.id and self.canonical_id:
+            object.__setattr__(self, "id", self.canonical_id)
 
 
 class SourceIdentityRecord(BaseModel):

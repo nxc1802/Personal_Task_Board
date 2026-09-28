@@ -29,6 +29,9 @@ logger = logging.getLogger("ptb.acquisition.pipeline")
 class RawEventRepositoryProtocol(Protocol):
     """Protocol định nghĩa interface của RawEventRepository lưu vào Neo4j."""
 
+    async def persist_raw_event(self, record: RawEventRecord) -> Any:
+        ...
+
     async def save_raw_event(self, record: RawEventRecord) -> bool:
         ...
 
@@ -58,11 +61,38 @@ class InMemoryRawEventRepository:
         self._events[record.id] = record
         return True
 
+    async def persist_raw_event(self, record: RawEventRecord) -> str:
+        self._events[record.id] = record
+        return record.id
+
     async def get_by_id(self, event_id: str) -> Optional[RawEventRecord]:
         return self._events.get(event_id)
 
     async def get_all(self) -> List[RawEventRecord]:
         return list(self._events.values())
+
+    async def get_pending_raw_events(self, limit: int = 50) -> List[RawEventRecord]:
+        from ptb_contracts.l1_acquisition import ProcessingStatus
+        res = []
+        for ev in self._events.values():
+            if getattr(ev, "processing_status", None) in (ProcessingStatus.PENDING, ProcessingStatus.RETRY):
+                res.append(ev)
+                if len(res) >= limit:
+                    break
+        return res
+
+    async def mark_event_status(self, event_id: str, status: Any, **kwargs) -> bool:
+        if event_id in self._events:
+            ev = self._events[event_id]
+            try:
+                object.__setattr__(ev, "processing_status", status)
+            except Exception:
+                pass
+            return True
+        return False
+
+    async def record_processing_attempt(self, attempt_record: Any) -> bool:
+        return True
 
     @property
     def count(self) -> int:
@@ -162,22 +192,26 @@ class AcquisitionPipeline:
 
         try:
             # Hỗ trợ linh hoạt các tên hàm repository
-            if hasattr(self.raw_event_repo, "save_raw_event"):
-                fn = self.raw_event_repo.save_raw_event
-            elif hasattr(self.raw_event_repo, "persist_raw_event"):
+            if hasattr(self.raw_event_repo, "persist_raw_event"):
                 fn = self.raw_event_repo.persist_raw_event
+            elif hasattr(self.raw_event_repo, "save_raw_event"):
+                fn = self.raw_event_repo.save_raw_event
             elif hasattr(self.raw_event_repo, "save"):
                 fn = self.raw_event_repo.save
             elif hasattr(self.raw_event_repo, "insert"):
                 fn = self.raw_event_repo.insert
             else:
-                logger.warning("raw_event_repo không có phương thức save_raw_event / persist_raw_event / save / insert")
+                logger.warning("raw_event_repo không có phương thức persist_raw_event / save_raw_event / save / insert")
                 return False
 
             if inspect.iscoroutinefunction(fn):
-                await fn(record)
+                res = await fn(record)
             else:
-                fn(record)
+                res = fn(record)
+
+            if res is False:
+                self._stats["errors"] += 1
+                return False
 
             self._stats["persisted"] += 1
             return True
@@ -187,7 +221,11 @@ class AcquisitionPipeline:
             return False
 
     async def ingest_event(self, record: RawEventRecord) -> bool:
-        """Đưa RawEventRecord vào pipeline xử lý: chuẩn hóa, deduplicate và lưu trữ."""
+        """Đưa RawEventRecord vào pipeline: chuẩn hóa, deduplicate và lưu trữ bền vững (Persist-First).
+        
+        Ưu tiên ghi trực tiếp vào RawEventRepository (Neo4j), sau khi ghi thành công mới
+        chuyển tiếp qua worker queue nếu có.
+        """
         # 1. Bổ sung các trường chuẩn hóa nếu thiếu
         now_utc = datetime.now(timezone.utc)
         if record.captured_at is None:
@@ -203,24 +241,34 @@ class AcquisitionPipeline:
                 record.normalized_text.encode("utf-8")
             ).hexdigest()
 
-        # 2. Khử trùng lặp (Deduplication) qua Queue hoặc internal set
-        if self.queue is not None:
-            pushed = await self.queue.put(record)
-            if not pushed:
-                self._stats["deduplicated"] += 1
-                logger.debug(f"Bỏ qua event trùng lặp qua queue: {record.idempotency_key}")
+        # 2. Khử trùng lặp (Deduplication)
+        is_dup = False
+        if record.idempotency_key in self._internal_seen_keys:
+            is_dup = True
+        elif self.queue is not None and self.queue.is_seen(record.idempotency_key):
+            is_dup = True
+
+        if is_dup:
+            self._stats["deduplicated"] += 1
+            logger.debug(f"Bỏ qua event trùng lặp trong pipeline: {record.idempotency_key}")
+            return False
+
+        self._internal_seen_keys.add(record.idempotency_key)
+
+        # 3. Ưu tiên ghi trực tiếp vào RawEventRepository (Neo4j Durable Persist-First)
+        if self.raw_event_repo is not None:
+            persisted = await self._persist_raw_event(record)
+            if not persisted:
+                logger.error(f"Ghi thất bại vào RawEventRepository: {record.id}")
                 return False
         else:
-            if record.idempotency_key in self._internal_seen_keys:
-                self._stats["deduplicated"] += 1
-                logger.debug(f"Bỏ qua event trùng lặp trong pipeline: {record.idempotency_key}")
-                return False
-            self._internal_seen_keys.add(record.idempotency_key)
+            self._stats["persisted"] += 1
 
         self._stats["ingested"] += 1
 
-        # 3. Lưu bền bỉ vào Neo4j RawEventRepository nếu có
-        await self._persist_raw_event(record)
+        # 4. Sau khi lưu bền vững thành công, mới chuyển tiếp qua worker queue nếu cần
+        if self.queue is not None:
+            await self.queue.put(record)
 
         return True
 

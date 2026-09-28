@@ -27,30 +27,47 @@ class ClaudeCodeWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        """Đường dẫn ~/.claude/projects/ hoặc ~/.claude/."""
+        """Xác định đường dẫn lưu trữ Claude Code theo hệ điều hành sử dụng platformdirs."""
         paths = []
+        try:
+            import platformdirs
+            cfg_proj = os.path.join(platformdirs.user_config_dir("claude", appauthor=False), "projects")
+            data_proj = os.path.join(platformdirs.user_data_dir("claude", appauthor=False), "projects")
+            for p in (cfg_proj, data_proj):
+                if p not in paths:
+                    paths.append(p)
+        except Exception as e:
+            logger.debug(f"platformdirs resolution error for Claude: {e}")
+
         home = os.path.expanduser("~")
-        claude_dir = os.path.join(home, ".claude", "projects")
-        if os.path.isdir(claude_dir):
-            paths.append(claude_dir)
-        else:
-            base_claude = os.path.join(home, ".claude")
-            if os.path.isdir(base_claude):
-                paths.append(base_claude)
-        return paths
+        std_claude_proj = os.path.join(home, ".claude", "projects")
+        std_claude_base = os.path.join(home, ".claude")
+        for p in (std_claude_proj, std_claude_base):
+            if p not in paths:
+                paths.append(p)
+
+        existing = [p for p in paths if os.path.isdir(p)]
+        return existing if existing else paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét tất cả các file transcript trong thư mục projects của Claude Code."""
         all_records: List[RawAgentSessionRecord] = []
-        for base_dir in self.base_paths:
-            if not os.path.isdir(base_dir):
-                continue
-            for root, _, files in os.walk(base_dir):
-                for file_name in files:
-                    if file_name.endswith(".jsonl") or "transcript" in file_name.lower():
-                        file_path = os.path.join(root, file_name)
-                        records = self.extract_from_transcript_file(file_path)
-                        all_records.extend(records)
+        try:
+            for base_dir in self.base_paths:
+                if not os.path.isdir(base_dir):
+                    continue
+                try:
+                    for root, _, files in os.walk(base_dir):
+                        for file_name in files:
+                            if file_name.endswith(".jsonl") or "transcript" in file_name.lower():
+                                file_path = os.path.join(root, file_name)
+                                records = self.extract_from_transcript_file(file_path)
+                                all_records.extend(records)
+                except Exception as walk_err:
+                    logger.debug(f"Error walking dir {base_dir}: {walk_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Claude Code sessions: {e}")
         return all_records
 
     def extract_from_transcript_file(self, file_path: str) -> List[RawAgentSessionRecord]:

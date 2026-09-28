@@ -18,7 +18,7 @@ export type SourceType =
   | "confluence"
   | "git";
 
-export type ProcessingStatus = "pending" | "processing" | "processed" | "failed" | "skipped";
+export type ProcessingStatus = "pending" | "processing" | "processed" | "retry" | "failed" | "skipped";
 
 export interface RawEventRecord {
   id: string;
@@ -36,6 +36,11 @@ export interface RawEventRecord {
   processing_status: ProcessingStatus;
   retry_count: number;
   last_error?: string | null;
+  processing_attempt_count?: number;
+  last_processing_error?: string | null;
+  next_retry_at?: string | null;
+  processed_at?: string | null;
+  processor_version?: string | null;
   created_at?: string | null;
 }
 
@@ -66,7 +71,7 @@ export interface SyncCheckpointState {
 // Layer 2: Data Processing
 // ==========================================
 
-export type TaskStatus = "open" | "in_progress" | "likely_done" | "done" | "blocked" | "dismissed";
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE" | "DISMISSED";
 
 export type EvidenceType =
   | "chat_commitment"
@@ -137,11 +142,10 @@ export interface ReviewQueueItem {
 // Layer 3: Storage & Knowledge Graph
 // ==========================================
 
-export type GraphActionType = "upsert_node" | "upsert_edge" | "invalidate_edge";
-
 export interface CanonicalPersonRecord {
-  id: string;
-  workspace_id: string;
+  canonical_id: string;
+  id?: string | null;
+  workspace_id?: string | null;
   canonical_name: string;
   primary_email: string;
   avatar_url?: string | null;
@@ -157,22 +161,6 @@ export interface SourceIdentityRecord {
   external_id: string;
   external_username?: string | null;
   external_display_name?: string | null;
-}
-
-export interface GraphOutboxEventPayload {
-  outbox_id?: string | null;
-  aggregate_type: string;
-  aggregate_id: string;
-  action: GraphActionType;
-  node_label?: string | null;
-  node_properties?: Record<string, unknown> | null;
-  edge_type?: string | null;
-  source_canonical_id?: string | null;
-  target_canonical_id?: string | null;
-  edge_properties?: Record<string, unknown> | null;
-  valid_at: string;
-  confidence: number;
-  evidence_id?: string | null;
 }
 
 // ==========================================

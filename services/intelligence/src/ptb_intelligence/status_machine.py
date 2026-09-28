@@ -70,6 +70,35 @@ class StatusInferenceMachine:
         "đã merge", "merged", "đã gửi", "shipped"
     ]
 
+    def infer_status(
+        self,
+        candidate: Union[TaskWithContext, UnifiedTaskCandidate],
+        context: Optional[TaskWithContext] = None,
+        now: Optional[datetime] = None,
+    ) -> TransitionResult:
+        """Infer task status and evaluate state transition.
+
+        Args:
+            candidate: UnifiedTaskCandidate or TaskWithContext.
+            context: Optional TaskWithContext for graph relation information.
+            now: Optional reference timestamp.
+
+        Returns:
+            TransitionResult with old/new status, inferred_status, transition_occurred, audit_record.
+        """
+        task_input: Union[TaskWithContext, UnifiedTaskCandidate] = candidate
+        if context is not None:
+            if isinstance(candidate, UnifiedTaskCandidate):
+                context.task = candidate
+            task_input = context
+
+        return self.evaluate_transition(
+            task_input=task_input,
+            is_authoritative=False,
+            actor="SYSTEM",
+            now=now,
+        )
+
     def evaluate_transition(
         self,
         task_input: Union[TaskWithContext, UnifiedTaskCandidate],

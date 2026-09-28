@@ -34,6 +34,7 @@ class GraphOntologyValidator:
         "Document": ("doc_id", "id"),
         "Incident": ("incident_id", "id"),
         "StatusTransitionAudit": ("id", "audit_id"),
+        "MergeAudit": ("id", "audit_id"),
     }
 
     @classmethod

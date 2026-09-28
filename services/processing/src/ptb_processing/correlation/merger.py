@@ -7,8 +7,10 @@ from uuid import uuid4
 
 from ptb_contracts.l2_processing import (
     EvidenceRecord,
+    MergeAuditRecord,
     UnifiedTaskCandidate,
 )
+from ptb_processing.correlation.candidate_matcher import TaskCandidateMatcher
 from ptb_processing.correlation.scoring import CorrelationScoreResult
 
 logger = logging.getLogger("ptb.processing.correlation.merger")
@@ -17,15 +19,23 @@ logger = logging.getLogger("ptb.processing.correlation.merger")
 class TaskMerger:
     """Merges candidate task into target UnifiedTask while preserving 100% evidence provenance.
 
-    Responsibilities according to docs/v1.md:
+    Responsibilities according to docs/v1.md and Phase R6:
     1. Append new Evidence to target task (:HAS_EVIDENCE).
     2. Update updated_at and extend/refine deadline if candidate has a more specific or later deadline.
     3. Retain full provenance for every Evidence (pointing to original RawEvent) to support future Split-Task.
-    4. Persist merged task atomically via TaskDomainRepository if available.
+    4. Record and return complete audit trail metadata:
+       - candidate_task_ids
+       - winning_task_id
+       - correlation_score
+       - deterministic_anchors
+       - merge_reason
+       - merge_audit
+    5. Persist merged task and MergeAudit record via TaskDomainRepository if available.
     """
 
     def __init__(self, task_repo: Optional[Any] = None) -> None:
         self.task_repo = task_repo
+        self.last_audit: Optional[MergeAuditRecord] = None
 
     async def merge(
         self,
@@ -33,8 +43,9 @@ class TaskMerger:
         candidate: UnifiedTaskCandidate,
         score_result: Optional[CorrelationScoreResult] = None,
         persist: bool = True,
+        candidate_task_ids: Optional[List[str]] = None,
     ) -> UnifiedTaskCandidate:
-        """Merge candidate into target_task and return the updated task."""
+        """Merge candidate into target_task and return the updated task with audit metadata."""
         # Deep copy target task to prevent mutating original in-place unexpectedly
         merged = target_task.model_copy(deep=True)
 
@@ -116,13 +127,57 @@ class TaskMerger:
         now_utc = datetime.now(timezone.utc)
         merged.updated_at = now_utc
 
-        # 8. Atomically persist via TaskDomainRepository if available
+        # 8. Compute and attach Audit Trail Metadata (Phase R6)
+        cand_ids = candidate_task_ids if candidate_task_ids is not None else ([candidate.id] if candidate.id else [])
+        winning_id = target_task.id
+        
+        if score_result is not None:
+            corr_score = score_result.correlation_confidence
+            matching_anchors = list(score_result.matching_anchors)
+            sem_score = score_result.semantic_similarity
+            reason = score_result.reason
+        else:
+            matcher = TaskCandidateMatcher()
+            cand_anchors = matcher.extract_anchors(candidate)
+            target_anchors = matcher.extract_anchors(target_task)
+            common_anchors = cand_anchors & target_anchors
+            matching_anchors = sorted([f"{a.anchor_type}:{a.value}" for a in common_anchors])
+            corr_score = candidate.correlation_confidence or target_task.correlation_confidence or (0.90 if matching_anchors else 0.75)
+            sem_score = 0.0
+            if matching_anchors:
+                reason = f"Deterministic anchor matched: {', '.join(matching_anchors)} -> AUTO-MERGE"
+            else:
+                reason = f"Auto-merged candidate {candidate.id} into target task {target_task.id}"
+
+        audit_record = MergeAuditRecord(
+            id=str(uuid4()),
+            winning_task_id=winning_id,
+            candidate_task_ids=cand_ids,
+            correlation_score=corr_score,
+            deterministic_anchors=matching_anchors,
+            semantic_score=sem_score,
+            merge_reason=reason,
+            processor_version="v1.1",
+            created_at=now_utc,
+        )
+
+        merged.candidate_task_ids = cand_ids
+        merged.winning_task_id = winning_id
+        merged.correlation_score = corr_score
+        merged.deterministic_anchors = matching_anchors
+        merged.merge_reason = reason
+        merged.merge_audit = audit_record
+        self.last_audit = audit_record
+
+        # 9. Atomically persist via TaskDomainRepository if available
         if persist and self.task_repo is not None:
             if hasattr(self.task_repo, "upsert_task_atomic"):
                 await self.task_repo.upsert_task_atomic(merged)
+            if hasattr(self.task_repo, "record_merge_audit"):
+                await self.task_repo.record_merge_audit(audit_record)
 
         logger.info(
             f"Successfully merged candidate {candidate.id} into target task {target_task.id}. "
-            f"Total evidences: {len(merged.evidences)}."
+            f"Total evidences: {len(merged.evidences)}, correlation_score={corr_score}."
         )
         return merged

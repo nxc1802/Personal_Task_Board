@@ -25,6 +25,7 @@ ALLOWED_NODES: Set[str] = {
     "Incident",
     "Document",
     "StatusTransitionAudit",
+    "MergeAudit",
 }
 
 # Edge Types với ma trận Source -> Target được phép
@@ -47,6 +48,7 @@ ALLOWED_EDGES: Dict[str, Tuple[Union[str, Tuple[str, ...]], Union[str, Tuple[str
     "FROM_IDENTITY": ("RawEvent", "SourceIdentity"),
     "PROCESSING_ATTEMPT": ("RawEvent", "ProcessingAttempt"),
     "STATUS_AUDIT": ("UnifiedTask", "StatusTransitionAudit"),
+    "MERGE_AUDIT": ("UnifiedTask", "MergeAudit"),
     "WAITING_FOR": (("Person", "UnifiedTask"), "Person"),
     "SUPERSEDES": ("Decision", "Decision"),
     # Backwards compatibility aliases
