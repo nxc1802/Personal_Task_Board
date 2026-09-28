@@ -57,3 +57,6 @@ pnpm-debug.log*
 out/
 .turbo/
 
+# Local data & Playwright sessions
+data/
+*.db

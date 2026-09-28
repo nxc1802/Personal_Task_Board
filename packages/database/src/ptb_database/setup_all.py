@@ -31,13 +31,13 @@ def load_env_file():
 
 
 async def setup_supabase():
-    """Kết nối và nạp schema + seed lên Supabase PostgreSQL."""
+    """Kết nối và nạp schema + seed lên Supabase PostgreSQL (Legacy/Optional)."""
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
-        print("  [!] Bỏ qua Supabase: Chưa cấu hình biến DATABASE_URL trong .env")
+        print("  [i] Bỏ qua Supabase: Kiến trúc Local-First Lean Edition sử dụng Single-Store Neo4j duy nhất.")
         return False
 
-    print("\n[1/2] ĐANG THIẾT LẬP SUPABASE POSTGRESQL...")
+    print("\n[Optional] THIẾT LẬP SUPABASE POSTGRESQL (LEGACY DUAL-STORE)...")
     print(f"  Connecting to: {db_url.split('@')[-1] if '@' in db_url else '...'}")
 
     # Đọc consolidated schema và seed script
@@ -120,31 +120,32 @@ async def main():
     load_env_file()
     
     print("=" * 70)
-    print("PERSONAL TASK BOARD: AUTOMATED FULL STACK SETUP (PHASE 0 & 1)")
+    print("PERSONAL TASK BOARD: SINGLE-STORE LOCAL NEO4J SETUP")
     print("=" * 70)
 
-    supa_ok = False
     neo4j_ok = False
+    supa_ok = False
+
+    try:
+        neo4j_ok = await setup_neo4j()
+    except Exception as e:
+        print(f"  [ERROR] Lỗi thiết lập Neo4j: {e}", file=sys.stderr)
 
     try:
         supa_ok = await setup_supabase()
     except Exception as e:
         print(f"  [ERROR] Lỗi thiết lập Supabase: {e}", file=sys.stderr)
 
-    try:
-        neo4j_ok = await setup_neo4j()
-    except Exception as e:
-        print(f"  [ERROR] Lỗi thiết lập Neo4j AuraDB: {e}", file=sys.stderr)
-
     print("\n" + "=" * 70)
-    print("KẾT QUẢ THIẾT LẬP NỀN TẢNG (LAYER 3 / PHASE 0 & 1):")
-    print(f"  • Supabase PostgreSQL : {'[THÀNH CÔNG]' if supa_ok else '[CHƯA HOÀN TẤT / THIẾU ENV]'}")
-    print(f"  • Neo4j AuraDB        : {'[THÀNH CÔNG]' if neo4j_ok else '[CHƯA HOÀN TẤT / THIẾU ENV]'}")
+    print("KẾT QUẢ THIẾT LẬP NỀN TẢNG (SINGLE-STORE NEO4J):")
+    print(f"  • Neo4j Single-Store  : {'[THÀNH CÔNG]' if neo4j_ok else '[CHƯA HOÀN TẤT / KIỂM TRA DOCKER]'}")
+    if os.getenv("DATABASE_URL"):
+        print(f"  • Supabase (Legacy)   : {'[THÀNH CÔNG]' if supa_ok else '[THẤT BÀI]'}")
     print("=" * 70)
 
-    if supa_ok and neo4j_ok:
-        print("\n>>> CHÚC MỪNG: Toàn bộ nền tảng Layer 3 đã sẵn sàng 100%!")
-        print(">>> Bạn có thể bắt đầu triển khai Phase 2 & Phase 3 ngay lập tức.")
+    if neo4j_ok:
+        print("\n>>> Nền tảng Single-Store Neo4j (Layer 3) đã sẵn sàng 100%!")
+        print(">>> Hệ thống hoạt động hoàn toàn ở chế độ Local-First Lean Edition.")
 
 
 if __name__ == "__main__":

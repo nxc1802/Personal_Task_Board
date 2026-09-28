@@ -1,156 +1,131 @@
-## ✅ Checklist lấy `.env`
+# Hướng Dẫn Thiết Lập & Vận Hành (Local-First Lean Edition)
 
-### 1. Supabase
-
-Vào **Supabase Dashboard → chọn Project**
-
-* [ ] **`SUPABASE_URL`**
-
-  * `Project Settings → API`
-  * Copy **Project URL**
-  * Dạng: `https://xxxxx.supabase.co`
-
-* [ ] **`SUPABASE_ANON_KEY`**
-
-  * `Project Settings → API Keys`
-  * Copy **anon / anon public key**
-
-* [ ] **`SUPABASE_SERVICE_ROLE_KEY`**
-
-  * `Project Settings → API Keys`
-  * Copy **service_role key**
-  * ⚠️ Chỉ dùng backend, không đưa lên frontend/GitHub.
-
-* [ ] **`DATABASE_URL`**
-
-  * Nhấn **Connect** trong project
-  * Chọn **Database / Connection string**
-  * Copy PostgreSQL connection string
-  * Dạng:
-
-    ```env
-    postgresql://postgres:PASSWORD@db.PROJECT-REF.supabase.co:5432/postgres
-    ```
-  * Nếu quên DB password → **Project Settings → Database → reset password**
+Tài liệu hướng dẫn cài đặt, cấu hình môi trường và vận hành hệ thống **Personal Task Board** theo kiến trúc **Local-First Lean Edition** (Single-Store Neo4j, Layer 1A Playwright, Layer 1B Coding Agent Watchers).
 
 ---
 
-### 2. Neo4j AuraDB
+## 1. Cấu Hình Môi Trường (.env)
 
-Vào **Neo4j Aura Console → chọn Instance**
+Hệ thống hoạt động hoàn toàn cục bộ, không phụ thuộc vào Supabase hay Neo4j Aura Cloud.
 
-* [ ] **`NEO4J_URI`**
+Tạo file `.env` từ `.env.example`:
 
-  * Lấy từ **Connection details**
-  * Dạng:
+```bash
+cp .env.example .env
+```
 
-    ```env
-    neo4j+s://INSTANCE-ID.databases.neo4j.io
-    ```
-
-* [ ] **`NEO4J_USERNAME`**
-
-  * Thường là:
-
-    ```env
-    neo4j
-    ```
-
-* [ ] **`NEO4J_PASSWORD`**
-
-  * Lấy password lúc tạo AuraDB instance / credentials file
-  * Nếu mất → xử lý/reset credential trong Aura Console
-
----
-
-### 3. `.env` hoàn chỉnh
-
+Các biến môi trường cơ bản:
 ```env
-# Supabase
-DATABASE_URL=postgresql://postgres:PASSWORD@db.PROJECT-REF.supabase.co:5432/postgres
-SUPABASE_URL=https://PROJECT-REF.supabase.co
-SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
-
-# Neo4j AuraDB
-NEO4J_URI=neo4j+s://INSTANCE-ID.databases.neo4j.io
+# Neo4j Single-Store (Khởi chạy bằng Docker Compose)
+NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=...
+NEO4J_PASSWORD=personal_task_board_secret_2026
+
+# LLM Local (Ollama) hoặc OpenAI-compatible API
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_API_KEY=ollama
+LLM_MODEL=qwen2.5:7b
 ```
-
-### 🔐 Trước khi chạy
-
-* [ ] `.env` nằm trong `.gitignore`
-* [ ] Không commit `.env`
-* [ ] Không gửi `SERVICE_ROLE_KEY`, DB password, Neo4j password lên GitHub
-* [ ] Frontend **không được** chứa `SERVICE_ROLE_KEY` hoặc `NEO4J_PASSWORD`
-
-**Tổng cộng cần lấy: 7 biến** → **4 Supabase + 3 Neo4j**.
 
 ---
 
-## 🚀 Các Câu Lệnh Thực Thi Setup
+## 2. Khởi Động Neo4j Single-Store Bằng Docker
 
-### Bước 1: Cài đặt Dependencies (nếu chưa chạy)
-
-Khởi tạo môi trường ảo và cài đặt các package trong Monorepo:
+Khởi chạy container Neo4j Community (đã tích hợp APOC plugin):
 
 ```bash
-# 1. Tạo virtual environment
+docker compose up -d
+```
+
+* Neo4j Browser UI: [http://localhost:7474](http://localhost:7474) (User: `neo4j` / Password: `personal_task_board_secret_2026`)
+* Bolt Protocol: `bolt://localhost:7687`
+
+---
+
+## 3. Cài Đặt Dependencies & Khởi Tạo Schema
+
+### 3.1 Cài đặt packages trong Monorepo
+```bash
+# Cài đặt virtual environment và packages
 uv venv
+source .venv/bin/activate  # Trên macOS/Linux
+# hoặc: .venv\Scripts\activate  # Trên Windows
 
-# 2. Cài đặt các package nội bộ và công cụ test
-uv pip install -e packages/contracts -e packages/database pytest pytest-asyncio
+# Cài đặt các package nội bộ ở chế độ editable
+uv pip install -e packages/contracts -e packages/database -e services/acquisition pytest pytest-asyncio
 ```
 
----
-
-### Bước 2: Chạy Thiết Lập Tự Động Toàn Bộ (One-Click Setup - Khuyến Nghị)
-
-Sau khi đã điền đầy đủ 7 biến môi trường vào file `.env`, chạy lệnh duy nhất này để tự động nạp toàn bộ schema lên Supabase và Neo4j AuraDB:
-
-```bash
-uv run python -m ptb_database.setup_all
-```
-
-*Lệnh trên sẽ tự động:*
-1. Kết nối tới **Supabase PostgreSQL** qua `DATABASE_URL`.
-2. Tạo 15 bảng, triggers cập nhật `updated_at`, trigger ghi lịch sử status và RLS policies (`consolidated_schema.sql`).
-3. Nạp dữ liệu seed ban đầu: workspace, user hiện tại (`Cuong`), teammate (`Huy`, `Mai`), và ánh xạ tài khoản (`001_dev_seed.sql`).
-4. Kết nối tới **Neo4j AuraDB** qua `NEO4J_URI` (`neo4j+s://`).
-5. Áp dụng 11 Uniqueness Constraints và 4 Indexes cho Fixed Ontology (`001_constraints.cypher`).
-6. Kiểm tra và in danh sách bảng Supabase + constraints Neo4j đã hoạt động.
-
----
-
-### Bước 3: Chạy Thiết Lập Riêng Lẻ (Tùy Chọn)
-
-Nếu bạn muốn chạy từng dịch vụ riêng biệt:
-
-#### 3.1 Chỉ thiết lập Neo4j AuraDB qua script:
+### 3.2 Khởi tạo Constraints & Seed Data trên Neo4j
 ```bash
 uv run python -m ptb_database.init_neo4j
 ```
 
-#### 3.2 Chạy thủ công trên giao diện Web (nếu không dùng script):
-* **Supabase**:
-  * Mở **Supabase Dashboard → SQL Editor**.
-  * Chạy file: `packages/database/supabase/consolidated_schema.sql` (tạo 15 bảng).
-  * Chạy tiếp file: `packages/database/supabase/seeds/001_dev_seed.sql` (nạp seed data).
-* **Neo4j AuraDB**:
-  * Mở **Neo4j Aura Console → Open Query**.
-  * Chạy file: `packages/database/neo4j/consolidated_schema.cypher` (tạo 11 constraints & 4 indexes).
-  * Chạy tiếp file: `packages/database/neo4j/seeds/001_dev_seed.cypher` (nạp seed nodes Person, Project, Identities).
+Lệnh trên sẽ:
+1. Kiểm tra kết nối tới container Neo4j cục bộ.
+2. Thiết lập 11 Uniqueness Constraints & 4 Indexes cho Fixed Ontology (`UnifiedTask`, `Person`, `Evidence`, `Decision`...).
+3. Xác minh tính sẵn sàng của cơ sở dữ liệu.
 
 ---
 
-### Bước 4: Kiểm Tra & Xác Minh (Test Verification)
+## 4. Vận Hành Layer 1 (Data Acquisition)
 
-Chạy bộ unit test để xác minh 100% contracts và validator đều hoạt động chuẩn:
+### 4.1 Layer 1B: Local Coding Agent Logs Ingestion
+Thu thập lịch sử hội thoại, các cam kết kỹ thuật và quyết định kiến trúc từ các Coding Agent đang chạy trên máy của bạn:
+
+```python
+from ptb_acquisition.watchers import CursorWatcher, ClaudeCodeWatcher, AntigravityWatcher
+
+# Quét Cursor
+cursor_records = CursorWatcher().scan_sessions()
+print(f"Trích xuất {len(cursor_records)} turn từ Cursor.")
+
+# Quét Claude Code
+claude_records = ClaudeCodeWatcher().scan_sessions()
+print(f"Trích xuất {len(claude_records)} turn từ Claude Code.")
+
+# Quét Antigravity IDE
+antigravity_records = AntigravityWatcher().scan_sessions()
+print(f"Trích xuất {len(antigravity_records)} turn từ Antigravity.")
+```
+
+### 4.2 Layer 1A: Playwright Network Interceptor (Teams & Outlook Web)
+Bắt trực tiếp các gói tin JSON nội bộ từ Teams Web và Outlook Web:
+
+* **Bước 1: Đăng nhập lần đầu (Interactive Login)**
+  ```python
+  import asyncio
+  from ptb_acquisition.playwright import PlaywrightOrchestrator
+
+  async def login():
+      orch = PlaywrightOrchestrator(headless=False)
+      await orch.login_interactive()
+
+  asyncio.run(login())
+  ```
+  Trình duyệt Chromium sẽ mở ra để bạn đăng nhập tài khoản và hoàn tất MFA. Sau khi xong, cookie và token sẽ được lưu vào file `data/playwright/storage_state.json`.
+
+* **Bước 2: Chạy Daemon bắt tin nhắn ngầm (Headless Mode)**
+  ```python
+  import asyncio
+  from ptb_acquisition.queue import LocalIngestionQueue
+  from ptb_acquisition.playwright import PlaywrightOrchestrator
+
+  async def run():
+      queue = LocalIngestionQueue()
+      orch = PlaywrightOrchestrator(queue=queue, headless=True)
+      await orch.start_interceptor()
+
+  asyncio.run(run())
+  ```
+
+---
+
+## 5. Kiểm Thử Hệ Thống (Test Verification)
+
+Chạy bộ test suite toàn trình trên toàn bộ packages và services:
 
 ```bash
 uv run pytest
 ```
 
-*Kết quả kỳ vọng:* **22/22 tests passed** (Contracts tests, Tier 2 Ontology Validator, Outbox Worker, Neo4j Client).
-
+Kỳ vọng: **31/31 tests passed** (Contracts C12-C5Ext, Ontology Validator, Neo4j Client, Layer 1B Agent Watchers, Layer 1A Playwright Network Interceptors).

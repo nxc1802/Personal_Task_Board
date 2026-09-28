@@ -1,7 +1,9 @@
 """Shared contracts and data transfer objects for Personal Task Board."""
 
 from ptb_contracts.l1_acquisition import (
+    AgentType,
     ProcessingStatus,
+    RawAgentSessionRecord,
     RawEventRecord,
     SourceConnectionConfig,
     SourceType,
@@ -48,8 +50,10 @@ from ptb_contracts.l5_experience import (
 __all__ = [
     # L1
     "SourceType",
+    "AgentType",
     "ProcessingStatus",
     "RawEventRecord",
+    "RawAgentSessionRecord",
     "SourceConnectionConfig",
     "SyncCheckpointState",
     # L2

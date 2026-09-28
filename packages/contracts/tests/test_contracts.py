@@ -80,3 +80,29 @@ def test_mock_generator():
     task = create_mock_unified_task(title="Fix bug")
     assert task.title == "Fix bug"
     assert len(task.evidences) == 1
+
+
+def test_raw_agent_session_record():
+    from datetime import datetime, timezone
+    from ptb_contracts import RawAgentSessionRecord, AgentType
+    import hashlib
+
+    session_id = "sess-123"
+    turn_index = 1
+    role = "user"
+    key = hashlib.sha256(f"{session_id}:{turn_index}:{role}".encode("utf-8")).hexdigest()
+
+    record = RawAgentSessionRecord(
+        session_id=session_id,
+        agent_type=AgentType.CURSOR,
+        workspace_path="/workspace/project",
+        turn_index=turn_index,
+        message_role=role,
+        content="Refactor authentication layer",
+        tool_invocations=[{"tool": "run_command", "args": {"cmd": "ls"}}],
+        timestamp=datetime.now(timezone.utc),
+        idempotency_key=key,
+    )
+    assert record.agent_type == AgentType.CURSOR
+    assert record.turn_index == 1
+    assert len(record.tool_invocations) == 1
