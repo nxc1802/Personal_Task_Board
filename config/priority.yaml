@@ -1,0 +1,94 @@
+# ==============================================================================
+# PERSONAL TASK BOARD (PTB) - DETERMINISTIC PRIORITY CONFIGURATION
+# ==============================================================================
+# Trọng số công thức tính điểm ưu tiên (Layer 4 Intelligence)
+# Công thức chuẩn v1:
+#   Score = DeadlineScore (0-35)
+#         + CustomerImpact (0-25)
+#         + ProductionImpact (0-20)
+#         + CommitmentWeight (0-10)
+#         + StaleAge (0-10)
+#         - WaitingPenalty (0-10)
+#         - UncertaintyPenalty (0-15)
+
+weights:
+  # Điểm số tối đa dựa trên khoảng cách tới deadline
+  deadline_weight: 35.0
+
+  # Điểm số tối đa cho các task có liên quan đến khách hàng, đối tác, VIP
+  customer_impact_weight: 25.0
+
+  # Điểm số tối đa cho các sự cố production, crash, security, bug critical
+  production_impact_weight: 20.0
+
+  # Trọng số cho các cam kết trực tiếp (hội thoại chat hoặc direct promise)
+  commitment_weight: 10.0
+
+  # Trọng số cho task tồn đọng lâu chưa giải quyết
+  stale_age_weight: 10.0
+
+  # Điểm phạt trừ khi task bị blocked hoặc đang chờ người khác
+  waiting_penalty: 5.0
+
+  # Điểm phạt trừ tối đa nếu độ tin cậy trích xuất (extraction confidence) thấp
+  uncertainty_penalty_max: 15.0
+
+thresholds:
+  # Tự động phê duyệt (auto-approved) nếu độ tin cậy trích xuất >= ngưỡng này
+  auto_approve_confidence: 0.65
+
+  # Đưa vào hàng chờ xét duyệt (pending_review) nếu confidence nằm trong [0.40, 0.65)
+  review_confidence_min: 0.40
+
+  # Bỏ qua không tạo task nếu confidence < 0.40
+  ignore_confidence_max: 0.40
+
+  # Số ngày không cập nhật để cảnh báo tồn đọng (Stale Warning)
+  stale_days_warning: 3
+
+  # Số ngày không cập nhật để gắn nhãn tồn đọng nghiêm trọng (Stale Critical)
+  stale_days_critical: 7
+
+keywords:
+  # Từ khóa xác định sự cố Production / Severity-1
+  prod_high:
+    - "production"
+    - "prod"
+    - "hotfix"
+    - "outage"
+    - "p0"
+    - "sev-1"
+    - "sev1"
+    - "down"
+    - "data loss"
+    - "crash"
+    - "incident"
+    - "security breach"
+    - "vulnerability"
+
+  # Từ khóa xác định lỗi Staging / Defect / Bug thông thường
+  prod_medium:
+    - "staging"
+    - "uat"
+    - "bug"
+    - "defect"
+    - "p1"
+    - "sev-2"
+    - "sev2"
+    - "exception"
+    - "error"
+    - "failure"
+    - "broken"
+    - "regression"
+
+  # Từ khóa xác định tác động đến khách hàng / đối tác
+  customer:
+    - "customer"
+    - "client"
+    - "khách hàng"
+    - "partner"
+    - "vip"
+    - "tenant"
+    - "enterprise"
+    - "sla"
+    - "contract"

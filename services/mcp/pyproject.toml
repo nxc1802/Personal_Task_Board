@@ -1,0 +1,24 @@
+[project]
+name = "ptb-mcp"
+version = "0.1.0"
+description = "Layer 5: FastMCP Read-Only Server for Personal Task Board"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ptb-contracts",
+    "ptb-application",
+    "pydantic>=2.7.0",
+    "mcp>=1.0.0",
+]
+
+[tool.uv.sources]
+ptb-contracts = { workspace = true }
+ptb-application = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

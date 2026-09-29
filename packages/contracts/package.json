@@ -1,0 +1,10 @@
+{
+  "name": "@ptb/contracts",
+  "version": "0.1.0",
+  "description": "Shared TypeScript types and contracts for Personal Task Board",
+  "main": "src/types.ts",
+  "types": "src/types.ts",
+  "scripts": {
+    "lint": "echo 'No linting configured for contracts yet'"
+  }
+}

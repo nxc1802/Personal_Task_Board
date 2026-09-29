@@ -1,0 +1,37 @@
+{
+  "id": "raw-88-jira-ops",
+  "tenant_id": "tenant-fpt-internal",
+  "source_type": "jira",
+  "external_id": "OPS-88",
+  "parent_external_id": null,
+  "idempotency_key": "b47c04a298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b999",
+  "event_timestamp": "2026-09-17T14:00:00Z",
+  "author_external_id": "huy.nguyen_jira",
+  "author_display_name": "Nguyen Van Huy",
+  "conversation_or_project_id": "OPS",
+  "deep_link": "https://fpt-corp.atlassian.net/browse/OPS-88",
+  "raw_payload": {
+    "key": "OPS-88",
+    "fields": {
+      "summary": "Deployment failed on staging environment",
+      "status": {
+        "name": "In Progress"
+      },
+      "priority": {
+        "name": "High"
+      },
+      "assignee": {
+        "accountId": "cuong.dam_jira",
+        "displayName": "Dam Quang Cuong"
+      },
+      "reporter": {
+        "accountId": "huy.nguyen_jira",
+        "displayName": "Nguyen Van Huy"
+      },
+      "duedate": "2026-09-18"
+    }
+  },
+  "processing_status": "pending",
+  "retry_count": 0,
+  "created_at": "2026-09-17T14:01:00Z"
+}

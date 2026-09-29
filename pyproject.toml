@@ -1,0 +1,34 @@
+[project]
+name = "personal-task-board"
+version = "0.1.0"
+description = "Personal Intelligence System for unified task management across Teams, Outlook, Jira, and Shortcut"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "platformdirs>=4.12.1",
+    "pyyaml>=6.0.3",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "services/*",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["packages", "services", "integrations", "tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests for isolated domain logic and components without live external services",
+    "contract: Contract, schema, and anti-fallback static/runtime validation tests",
+    "fixture_e2e: End-to-end vertical slice tests using sanitized fixtures and test doubles",
+    "runtime_smoke: Process supervisor and server runtime smoke tests with injected test repositories",
+    "external_integration: Integration tests requiring live external Docker/Neo4j/OpenWebUI infrastructure",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

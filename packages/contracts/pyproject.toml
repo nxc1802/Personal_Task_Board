@@ -1,0 +1,16 @@
+[project]
+name = "ptb-contracts"
+version = "0.1.0"
+description = "Shared Pydantic data contracts, schemas, and DTOs for Personal Task Board"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

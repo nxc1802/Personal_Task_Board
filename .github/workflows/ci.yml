@@ -1,0 +1,68 @@
+name: CI Matrix
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+
+    env:
+      UV_LINK_MODE: copy
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-suffix: ${{ matrix.os }}-${{ matrix.python-version }}
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-packages
+
+      - name: Run Anti-Fallback & Contract Tests
+        run: uv run pytest -m "contract" -v
+
+      - name: Run Unit Tests
+        run: uv run pytest -m "unit" -q
+
+      - name: Run Fixture E2E Tests
+        run: uv run pytest -m "fixture_e2e" -v
+
+      - name: Run Runtime Smoke Tests
+        run: uv run pytest -m "runtime_smoke" -v
+
+      - name: Run Full Non-Docker Suite
+        run: uv run pytest -m "not external_integration" -q
+
+      - name: Verify CLI Help & Doctor Syntax
+        run: uv run python scripts/ptb_cli.py --help

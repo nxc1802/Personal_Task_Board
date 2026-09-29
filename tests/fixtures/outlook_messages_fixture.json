@@ -1,0 +1,58 @@
+{
+  "value": [
+    {
+      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA3",
+      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD1",
+      "subject": "[URGENT] Review kiến trúc Personal Task Board v1.0",
+      "receivedDateTime": "2026-09-29T07:15:00Z",
+      "createdDateTime": "2026-09-29T07:14:50Z",
+      "hasAttachments": true,
+      "from": {
+        "emailAddress": {
+          "name": "PM Huy Nguyen",
+          "address": "huy.nguyen@partner.com"
+        }
+      },
+      "sender": {
+        "emailAddress": {
+          "name": "PM Huy Nguyen",
+          "address": "huy.nguyen@partner.com"
+        }
+      },
+      "toRecipients": [
+        {
+          "emailAddress": {
+            "name": "Dam Quang Cuong",
+            "address": "cuong.dam@company.com"
+          }
+        }
+      ],
+      "bodyPreview": "Nhờ anh Cường review giúp em phần contract và kiến trúc Personal Task Board trước 17:00 ngày 30/09/2026.",
+      "body": {
+        "contentType": "html",
+        "content": "<html><body><p>Chào anh Cường,</p><p>Nhờ anh Cường review giúp em phần contract và kiến trúc Personal Task Board trước 17:00 ngày 30/09/2026 để kịp nộp báo cáo cho khách hàng.</p><p>Trân trọng,<br>Huy</p></body></html>"
+      },
+      "importance": "high"
+    },
+    {
+      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA4",
+      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD2",
+      "subject": "Newsletter: Cập nhật công nghệ tuần 39/2026",
+      "receivedDateTime": "2026-09-29T06:00:00Z",
+      "createdDateTime": "2026-09-29T06:00:00Z",
+      "hasAttachments": false,
+      "from": {
+        "emailAddress": {
+          "name": "Tech Digest",
+          "address": "newsletter@techdigest.io"
+        }
+      },
+      "bodyPreview": "Tổng hợp các tin tức nổi bật về AI và phần mềm trong tuần qua.",
+      "body": {
+        "contentType": "text",
+        "content": "Tổng hợp các tin tức nổi bật về AI và phần mềm trong tuần qua. Chúc bạn một tuần tốt lành."
+      },
+      "importance": "normal"
+    }
+  ]
+}

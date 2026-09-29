@@ -1,0 +1,103 @@
+{
+  "messages": [
+    {
+      "id": "1727599200000",
+      "sequenceId": 1727599200000,
+      "type": "Message",
+      "messageType": "RichText/Html",
+      "version": "1727599200000",
+      "conversationId": "19:devops_core_team@thread.v2",
+      "conversationLink": "https://teams.microsoft.com/l/channel/19%3Adevops_core_team%40thread.v2/General",
+      "threadId": "19:devops_core_team@thread.v2",
+      "parentMessageId": "1727598800000",
+      "composeTime": "2026-09-29T08:30:00.000Z",
+      "originalArrivalTime": "2026-09-29T08:30:00.500Z",
+      "from": {
+        "id": "user-cuong-001",
+        "displayName": "Dam Quang Cuong",
+        "userPrincipalName": "cuong.dam@company.com"
+      },
+      "imdisplayname": "Dam Quang Cuong",
+      "content": "<blockquote><strong itemprop=\"author\">Tran Van Lead</strong>: Nhờ Cuong kiểm tra giùm lỗi OPS-88 trên production trước chiều nay nhé.</blockquote><p><span class=\"mention\" itemid=\"user-lead-002\">@Tran Van Lead</span> Vâng anh, để em fix bug này trước 5h chiều nhé.</p><attachment id=\"att-001\" name=\"error_trace.log\"></attachment>",
+      "body": {
+        "contentType": "html",
+        "content": "<blockquote><strong itemprop=\"author\">Tran Van Lead</strong>: Nhờ Cuong kiểm tra giùm lỗi OPS-88 trên production trước chiều nay nhé.</blockquote><p><span class=\"mention\" itemid=\"user-lead-002\">@Tran Van Lead</span> Vâng anh, để em fix bug này trước 5h chiều nhé.</p><attachment id=\"att-001\" name=\"error_trace.log\"></attachment>"
+      },
+      "properties": {
+        "imdisplayname": "Dam Quang Cuong",
+        "mentions": [
+          {
+            "id": 0,
+            "mentionText": "Tran Van Lead",
+            "mentioned": {
+              "user": {
+                "displayName": "Tran Van Lead",
+                "id": "user-lead-002"
+              }
+            }
+          }
+        ],
+        "attachments": [
+          {
+            "id": "att-001",
+            "contentType": "application/vnd.microsoft.teams.file.download.info",
+            "name": "error_trace.log",
+            "contentUrl": "https://company.sharepoint.com/sites/DevOps/Shared%20Documents/error_trace.log"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1727598800000",
+      "sequenceId": 1727598800000,
+      "type": "Message",
+      "messageType": "RichText/Html",
+      "version": "1727598800000",
+      "conversationId": "19:devops_core_team@thread.v2",
+      "conversationLink": "https://teams.microsoft.com/l/channel/19%3Adevops_core_team%40thread.v2/General",
+      "threadId": "19:devops_core_team@thread.v2",
+      "composeTime": "2026-09-29T08:25:00.000Z",
+      "originalArrivalTime": "2026-09-29T08:25:01.000Z",
+      "from": {
+        "id": "user-lead-002",
+        "displayName": "Tran Van Lead",
+        "userPrincipalName": "lead.tran@company.com"
+      },
+      "imdisplayname": "Tran Van Lead",
+      "content": "<p>Nhờ Cuong kiểm tra giùm lỗi OPS-88 trên production trước chiều nay nhé.</p>",
+      "body": {
+        "contentType": "html",
+        "content": "<p>Nhờ Cuong kiểm tra giùm lỗi OPS-88 trên production trước chiều nay nhé.</p>"
+      },
+      "properties": {
+        "imdisplayname": "Tran Van Lead"
+      }
+    },
+    {
+      "id": "1727599500000",
+      "sequenceId": 1727599500000,
+      "type": "Message",
+      "messageType": "RichText/Html",
+      "version": "1727599500000",
+      "conversationId": "19:general_announcements@thread.v2",
+      "conversationLink": "https://teams.microsoft.com/l/channel/19%3Ageneral_announcements%40thread.v2/General",
+      "threadId": "19:general_announcements@thread.v2",
+      "composeTime": "2026-09-29T08:35:00.000Z",
+      "originalArrivalTime": "2026-09-29T08:35:00.200Z",
+      "from": {
+        "id": "user-hr-003",
+        "displayName": "HR Dept",
+        "userPrincipalName": "hr@company.com"
+      },
+      "imdisplayname": "HR Dept",
+      "content": "<p>Chúc cả nhà buổi sáng vui vẻ và tràn đầy năng lượng! (smile) (coffee)</p>",
+      "body": {
+        "contentType": "html",
+        "content": "<p>Chúc cả nhà buổi sáng vui vẻ và tràn đầy năng lượng! (smile) (coffee)</p>"
+      },
+      "properties": {
+        "imdisplayname": "HR Dept"
+      }
+    }
+  ]
+}

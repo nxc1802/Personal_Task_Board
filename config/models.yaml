@@ -1,0 +1,79 @@
+# ==============================================================================
+# PERSONAL TASK BOARD (PTB) - MODELS & EMBEDDINGS CONFIGURATION
+# ==============================================================================
+# Cấu hình LLM & Embedding Provider cho Layer 2 Processing, Layer 3 Graphiti Memory
+# và Layer 4 Intelligence.
+# Không hard-code API key hoặc secret thật; sử dụng biến môi trường và 127.0.0.1 cho local.
+
+default_llm_provider: "openai_compatible"
+default_embedding_provider: "openai_compatible"
+
+providers:
+  # ----------------------------------------------------------------------------
+  # 1. OpenAI-Compatible API (Cloud hoặc Local Inference Gateway)
+  # ----------------------------------------------------------------------------
+  openai_compatible:
+    base_url: "${LLM_BASE_URL:-https://api.openai.com/v1}"
+    api_key: "${LLM_API_KEY:-}"
+
+    # Model trích xuất cấu trúc (Entity extraction, Task Candidates)
+    extraction_model: "${LLM_MODEL:-gpt-4o-mini}"
+    extraction_temperature: 0.1
+    extraction_max_tokens: 2048
+
+    # Model lập kế hoạch & reasoning (Planner, Priority explanation)
+    planning_model: "gpt-4o"
+    planning_temperature: 0.2
+    planning_max_tokens: 4096
+
+    # Embeddings cho Semantic Graph Vector Index
+    embedding_model: "text-embedding-3-small"
+    embedding_dimensions: 1536
+    timeout_seconds: 45
+
+  # ----------------------------------------------------------------------------
+  # 2. Ollama Local Provider (127.0.0.1 Local Inference)
+  # ----------------------------------------------------------------------------
+  ollama:
+    base_url: "${OLLAMA_BASE_URL:-http://127.0.0.1:11434/v1}"
+    api_key: "${LLM_API_KEY:-}"
+
+    # Model trích xuất cấu trúc local
+    extraction_model: "qwen2.5-coder:7b"
+    extraction_temperature: 0.1
+    extraction_max_tokens: 2048
+
+    # Model lập kế hoạch local
+    planning_model: "llama3.1:8b"
+    planning_temperature: 0.2
+    planning_max_tokens: 4096
+
+    # Model vector embedding local
+    embedding_model: "nomic-embed-text"
+    embedding_dimensions: 768
+    timeout_seconds: 60
+
+  # ----------------------------------------------------------------------------
+  # 3. Google Gemini Provider (OpenAI-compatible endpoint)
+  # ----------------------------------------------------------------------------
+  gemini:
+    base_url: "${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}"
+    api_key: "${GEMINI_API_KEY:-}"
+
+    extraction_model: "gemini-2.0-flash"
+    extraction_temperature: 0.1
+    extraction_max_tokens: 2048
+
+    planning_model: "gemini-2.5-pro"
+    planning_temperature: 0.2
+    planning_max_tokens: 4096
+
+    embedding_model: "text-embedding-004"
+    embedding_dimensions: 768
+    timeout_seconds: 45
+
+# Cấu hình Vector Search trên Neo4j Community (GDS / Vector Index)
+neo4j_vector_index:
+  index_name: "unified_task_embeddings"
+  dimensions: 1536
+  similarity_function: "cosine"
