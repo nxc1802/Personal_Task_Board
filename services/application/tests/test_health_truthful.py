@@ -167,6 +167,7 @@ def test_a_mixed_state():
             }
         },
         runtime_statuses={"ms_teams": "auth_required"},
+        playwright_status="healthy",
     )
     import asyncio
     res = asyncio.run(service.get_sources_health())

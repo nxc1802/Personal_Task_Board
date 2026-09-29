@@ -235,6 +235,9 @@ def test_all_watchers_default_paths_exist_check_safe(monkeypatch):
 
 def test_cross_platform_platformdirs_resolution(monkeypatch):
     """Kiểm tra BaseAgentWatcher.resolve_platform_paths trên các hệ điều hành mô phỏng (Windows, macOS, Linux)."""
+    # Đảm bảo môi trường kiểm thử không bị ảnh hưởng bởi các thư mục cài đặt thực tế trên máy host
+    monkeypatch.setattr(os.path, "exists", lambda p: False)
+
     # 1. macOS (darwin)
     monkeypatch.setattr("sys.platform", "darwin")
     mac_paths = BaseAgentWatcher.resolve_platform_paths(["Cursor"], sub_path="User/workspaceStorage")

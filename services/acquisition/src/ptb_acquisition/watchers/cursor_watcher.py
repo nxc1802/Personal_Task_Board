@@ -61,6 +61,7 @@ class CursorWatcher(BaseAgentWatcher):
     def extract_from_db(self, db_path: str, workspace_id: str = "unknown") -> List[RawAgentSessionRecord]:
         """Mở kết nối SQLite readonly và đọc dữ liệu chat/composer."""
         records: List[RawAgentSessionRecord] = []
+        conn = None
         try:
             conn = sqlite3.connect(f"file:{os.path.abspath(db_path)}?mode=ro", uri=True)
             cursor = conn.cursor()
@@ -124,9 +125,14 @@ class CursorWatcher(BaseAgentWatcher):
                 except Exception as e:
                     logger.debug(f"Lỗi parse aiService.prompts in {db_path}: {e}")
 
-            conn.close()
         except Exception as e:
             logger.warning(f"Không thể đọc file SQLite Cursor tại {db_path}: {e}")
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception as close_err:
+                    logger.debug("Error closing cursor sqlite: %s", close_err)
 
         return records
 

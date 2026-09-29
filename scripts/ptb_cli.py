@@ -1098,8 +1098,18 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
     COLOR_BOLD = "\033[1m"
     COLOR_RESET = "\033[0m"
 
-    PASS_SYM = f"{COLOR_GREEN}[✓] PASS{COLOR_RESET}"
-    FAIL_SYM = f"{COLOR_RED}[✗] FAIL{COLOR_RESET}"
+    # Safe characters based on stdout encoding
+    can_unicode = True
+    try:
+        "\u2713\u2717".encode(getattr(sys.stdout, "encoding", "utf-8") or "utf-8")
+    except Exception:
+        can_unicode = False
+
+    CHECK_CHAR = "✓" if can_unicode else "OK"
+    CROSS_CHAR = "✗" if can_unicode else "FAIL"
+
+    PASS_SYM = f"{COLOR_GREEN}[{CHECK_CHAR}] PASS{COLOR_RESET}"
+    FAIL_SYM = f"{COLOR_RED}[{CROSS_CHAR}] FAIL{COLOR_RESET}"
     WARN_SYM = f"{COLOR_YELLOW}[!] WARN{COLOR_RESET}"
 
     checks = []
@@ -1121,7 +1131,7 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
     docker_detail = ""
     if docker_bin:
         try:
-            res = subprocess.run([docker_bin, "info"], capture_output=True, text=True, timeout=4)
+            res = subprocess.run([docker_bin, "info"], capture_output=True, text=True, timeout=4, shell=(sys.platform == "win32"))
             if res.returncode == 0:
                 docker_running = True
                 docker_detail = "Docker daemon is active and responsive"

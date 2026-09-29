@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 from pathlib import Path
+import socket
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -100,17 +101,20 @@ async def test_cmd_doctor_all_pass():
     """Verify cmd_doctor reports [✓] PASS when dependencies are operational."""
     args = argparse.Namespace()
 
+    mock_pw_cm = MagicMock()
+    mock_p = MagicMock()
+    mock_p.chromium.executable_path = "/usr/bin/chromium"
+    mock_pw_cm.__aenter__ = AsyncMock(return_value=mock_p)
+    mock_pw_cm.__aexit__ = AsyncMock(return_value=None)
+
     with patch("shutil.which", return_value="/usr/local/bin/docker"), \
          patch("subprocess.run") as mock_subproc, \
-         patch("socket.socket") as mock_socket:
+         patch.object(socket.socket, "connect", return_value=None), \
+         patch("playwright.async_api.async_playwright", return_value=mock_pw_cm), \
+         patch("ptb_graph_memory.adapter.GraphitiAdapter.is_available", True):
 
         # Mock docker info & docker ps
         mock_subproc.return_value = MagicMock(returncode=0, stdout="ptb_neo4j\n")
-
-        # Mock socket connections (Neo4j Bolt 7687 and OpenWebUI 3000)
-        sock_instance = MagicMock()
-        sock_instance.connect.return_value = None
-        mock_socket.return_value = sock_instance
 
         # Mock playwright chromium check
         with patch("os.path.exists", return_value=True):
@@ -124,11 +128,7 @@ async def test_cmd_doctor_with_failures():
     args = argparse.Namespace()
 
     with patch("shutil.which", return_value=None), \
-         patch("socket.socket") as mock_socket:
-
-        sock_instance = MagicMock()
-        sock_instance.connect.side_effect = ConnectionRefusedError("Connection refused")
-        mock_socket.return_value = sock_instance
+         patch.object(socket.socket, "connect", side_effect=ConnectionRefusedError("Connection refused")):
 
         exit_code = await cmd_doctor(args)
         assert exit_code == 1
@@ -422,14 +422,18 @@ async def test_cmd_doctor_llm_readiness_and_deep_check(monkeypatch, capsys):
     for key_var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "LLM_API_KEY"):
         monkeypatch.delenv(key_var, raising=False)
 
+    mock_pw_cm = MagicMock()
+    mock_p = MagicMock()
+    mock_p.chromium.executable_path = "/usr/bin/chromium"
+    mock_pw_cm.__aenter__ = AsyncMock(return_value=mock_p)
+    mock_pw_cm.__aexit__ = AsyncMock(return_value=None)
+
     with patch("shutil.which", return_value="/usr/local/bin/docker"), \
          patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ptb_neo4j\n")), \
-         patch("socket.socket") as mock_socket, \
+         patch.object(socket.socket, "connect", return_value=None), \
+         patch("playwright.async_api.async_playwright", return_value=mock_pw_cm), \
+         patch("ptb_graph_memory.adapter.GraphitiAdapter.is_available", True), \
          patch("os.path.exists", return_value=True):
-
-        sock_instance = MagicMock()
-        sock_instance.connect.return_value = None
-        mock_socket.return_value = sock_instance
 
         # 1. Missing API key -> logs PTB_LLM_001 and prints WARN details
         with patch("scripts.ptb_cli.log_bug") as mock_log_bug:

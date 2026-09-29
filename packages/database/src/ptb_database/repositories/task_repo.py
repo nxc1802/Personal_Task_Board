@@ -1,6 +1,7 @@
 """TaskDomainRepository: Repository for managing UnifiedTask, Evidence, and Person relationships in Neo4j."""
 
 from datetime import datetime, timezone
+import inspect
 import logging
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -84,16 +85,22 @@ class TaskDomainRepository:
             })
 
         async with driver.session(database=self.neo4j_client.database) as session:
-            if hasattr(session, "begin_transaction"):
-                async with session.begin_transaction() as tx:
-                    await self._execute_upsert_task(
-                        tx, task_id, task, status_val, due_date_val, now_iso, evidences_data
-                    )
-                    await tx.commit()
-            else:
+            tx_obj = session.begin_transaction()
+            tx = await tx_obj if inspect.isawaitable(tx_obj) else tx_obj
+            try:
                 await self._execute_upsert_task(
-                    session, task_id, task, status_val, due_date_val, now_iso, evidences_data
+                    tx, task_id, task, status_val, due_date_val, now_iso, evidences_data
                 )
+                if hasattr(tx, "commit") and callable(tx.commit):
+                    c_res = tx.commit()
+                    if inspect.isawaitable(c_res):
+                        await c_res
+            except Exception:
+                if hasattr(tx, "rollback") and callable(tx.rollback):
+                    rb_res = tx.rollback()
+                    if inspect.isawaitable(rb_res):
+                        await rb_res
+                raise
         return task_id
 
     async def _execute_upsert_task(
@@ -775,12 +782,20 @@ class TaskDomainRepository:
         }
 
         async with driver.session(database=self.neo4j_client.database) as session:
-            if hasattr(session, "begin_transaction"):
-                async with session.begin_transaction() as tx:
-                    await tx.run(cypher, params)
-                    await tx.commit()
-            else:
-                await session.run(cypher, params)
+            tx_obj = session.begin_transaction()
+            tx = await tx_obj if inspect.isawaitable(tx_obj) else tx_obj
+            try:
+                await tx.run(cypher, params)
+                if hasattr(tx, "commit") and callable(tx.commit):
+                    c_res = tx.commit()
+                    if inspect.isawaitable(c_res):
+                        await c_res
+            except Exception:
+                if hasattr(tx, "rollback") and callable(tx.rollback):
+                    rb_res = tx.rollback()
+                    if inspect.isawaitable(rb_res):
+                        await rb_res
+                raise
 
         created_task = await self.get_task_by_id(new_task_id)
         if created_task:
