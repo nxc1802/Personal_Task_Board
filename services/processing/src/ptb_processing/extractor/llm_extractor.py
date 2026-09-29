@@ -144,7 +144,6 @@ class LLMStructuredExtractor:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            "response_format": {"type": "json_object"},
             "temperature": 0.1,
         }
 
@@ -157,6 +156,49 @@ class LLMStructuredExtractor:
         with urllib.request.urlopen(req, timeout=self.timeout) as response:
             res_body = response.read().decode("utf-8")
             return json.loads(res_body)
+
+    @staticmethod
+    def _parse_json_from_llm_response(text: str) -> Dict[str, Any]:
+        """Robust JSON extraction from LLM response.
+
+        Handles responses that include:
+        - Raw JSON
+        - Markdown code fences (```json ... ```)
+        - Thinking tags (<think>...</think>) before JSON
+        - Extra text before/after JSON object
+        """
+        if not text or not text.strip():
+            raise ValueError("Empty LLM response")
+
+        cleaned = text.strip()
+
+        # Remove <think>...</think> blocks (Qwen thinking mode)
+        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
+
+        # Try direct JSON parse first
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # Try extracting from markdown code fence
+        fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", cleaned, re.DOTALL)
+        if fence_match:
+            try:
+                return json.loads(fence_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # Try finding first { ... } block
+        brace_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", cleaned, re.DOTALL)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError(f"Could not extract valid JSON from LLM response: {cleaned[:200]}")
+
 
     def _fallback_rule_based_extract(
         self,
@@ -264,7 +306,7 @@ class LLMStructuredExtractor:
                 try:
                     res_json = self._call_openai_completion(combined_prompt)
                     msg_content = res_json["choices"][0]["message"]["content"]
-                    data = json.loads(msg_content)
+                    data = self._parse_json_from_llm_response(msg_content)
                     extracted_schema = LLMExtractedSchema.model_validate(data)
                 except Exception as e:
                     if self.allow_heuristic_fallback:
