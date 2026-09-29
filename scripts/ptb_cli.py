@@ -1121,7 +1121,7 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
     docker_detail = ""
     if docker_bin:
         try:
-            res = subprocess.run([docker_bin, "info"], capture_output=True, text=True, timeout=4)
+            res = subprocess.run([docker_bin, "info"], capture_output=True, text=True, timeout=4, shell=(sys.platform == "win32"))
             if res.returncode == 0:
                 docker_running = True
                 docker_detail = "Docker daemon is active and responsive"

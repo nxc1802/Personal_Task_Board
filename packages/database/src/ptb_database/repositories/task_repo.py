@@ -84,16 +84,15 @@ class TaskDomainRepository:
             })
 
         async with driver.session(database=self.neo4j_client.database) as session:
-            if hasattr(session, "begin_transaction"):
-                async with session.begin_transaction() as tx:
-                    await self._execute_upsert_task(
-                        tx, task_id, task, status_val, due_date_val, now_iso, evidences_data
-                    )
-                    await tx.commit()
-            else:
+            tx = await session.begin_transaction()
+            try:
                 await self._execute_upsert_task(
-                    session, task_id, task, status_val, due_date_val, now_iso, evidences_data
+                    tx, task_id, task, status_val, due_date_val, now_iso, evidences_data
                 )
+                await tx.commit()
+            except Exception:
+                await tx.rollback()
+                raise
         return task_id
 
     async def _execute_upsert_task(
@@ -219,17 +218,23 @@ class TaskDomainRepository:
                 e.graph_sync_status = coalesce(e.graph_sync_status, ev.graph_sync_status, "PENDING"),
                 e.graph_sync_attempts = coalesce(e.graph_sync_attempts, ev.graph_sync_attempts, 0)
             MERGE (t)-[:HAS_EVIDENCE]->(e)
-            WITH e, ev
-            CALL {
-                WITH e, ev
-                WITH e, ev WHERE ev.source_event_id IS NOT NULL OR ev.raw_event_id IS NOT NULL
-                MATCH (re:RawEvent {id: coalesce(ev.source_event_id, ev.raw_event_id)})
-                MERGE (e)-[:DERIVED_FROM]->(re)
-                RETURN count(re) AS _re_cnt
-            }
+            RETURN count(e) AS evidence_count
             """
             await runner.run(evidences_cypher, {
                 "task_id": task_id,
+                "evidences": evidences_data,
+            })
+
+            # Link Evidence -> RawEvent (separate query for compatibility)
+            link_cypher = """
+            UNWIND $evidences AS ev
+            WITH ev WHERE ev.source_event_id IS NOT NULL OR ev.raw_event_id IS NOT NULL
+            MATCH (e:Evidence {id: ev.id})
+            MATCH (re:RawEvent {id: coalesce(ev.source_event_id, ev.raw_event_id)})
+            MERGE (e)-[:DERIVED_FROM]->(re)
+            RETURN count(*) AS linked
+            """
+            await runner.run(link_cypher, {
                 "evidences": evidences_data,
             })
 
@@ -775,12 +780,13 @@ class TaskDomainRepository:
         }
 
         async with driver.session(database=self.neo4j_client.database) as session:
-            if hasattr(session, "begin_transaction"):
-                async with session.begin_transaction() as tx:
-                    await tx.run(cypher, params)
-                    await tx.commit()
-            else:
-                await session.run(cypher, params)
+            tx = await session.begin_transaction()
+            try:
+                await tx.run(cypher, params)
+                await tx.commit()
+            except Exception:
+                await tx.rollback()
+                raise
 
         created_task = await self.get_task_by_id(new_task_id)
         if created_task:
