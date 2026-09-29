@@ -65,8 +65,8 @@ class BaseAgentWatcher(ABC):
                         target = os.path.join(base, sub_path) if sub_path else base
                         if target not in paths:
                             paths.append(target)
-                    except Exception:
-                        pass
+                    except Exception as err:
+                        logger.debug("Could not resolve platformdir for %s: %s", app, err)
         except Exception as e:
             logger.debug(f"platformdirs resolution error for {app_names}: {e}")
 
@@ -143,8 +143,8 @@ class BaseAgentWatcher(ABC):
                         target = os.path.join(base, sub_path) if sub_path else base
                         if target not in paths:
                             paths.append(target)
-                    except Exception:
-                        pass
+                    except Exception as err:
+                        logger.debug("Could not resolve config dir for %s: %s", app, err)
         except Exception as e:
             logger.debug(f"platformdirs resolution error for {apps}: {e}")
 

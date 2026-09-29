@@ -347,6 +347,9 @@ def mock_service() -> ApplicationService:
         task_repo=task_repo,
         checkpoint_repo=checkpoint_repo,
         graph_memory=graph_memory,
+        processing_worker_status="healthy",
+        llm_status="healthy",
+        playwright_status="healthy"
     )
 
 

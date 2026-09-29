@@ -58,7 +58,7 @@ class CheckpointRepository:
                 if dt_field in data and isinstance(data[dt_field], str):
                     try:
                         data[dt_field] = datetime.fromisoformat(data[dt_field])
-                    except Exception:
+                    except ValueError:
                         pass
             if not data.get("id"):
                 data["id"] = hashlib.sha256(f"{tid_val}:{st_val}:{stream_id}".encode("utf-8")).hexdigest()
@@ -125,7 +125,7 @@ class CheckpointRepository:
                         if dt_field in data and isinstance(data[dt_field], str):
                             try:
                                 data[dt_field] = datetime.fromisoformat(data[dt_field])
-                            except Exception:
+                            except ValueError:
                                 pass
                     if not data.get("id"):
                         tid_val = data.get("tenant_id") or "default"

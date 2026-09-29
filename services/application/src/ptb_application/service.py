@@ -7,7 +7,7 @@ import os
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from ptb_contracts.l1_acquisition import IngestionCheckpointRecord
+from ptb_contracts.l1_acquisition import IngestionCheckpointRecord, SourceSyncState
 from ptb_contracts.l2_processing import (
     CommitmentRecord,
     EvidenceRecord,
@@ -193,33 +193,41 @@ class ApplicationService:
                 graphiti_state = "degraded"
 
         # 3. Kiểm tra processing_worker
-        processing_worker_state = "healthy"
+        processing_worker_state = "not_ready"
         if getattr(self, "processing_worker_status", None) is not None:
             processing_worker_state = str(self.processing_worker_status).strip().lower()
         elif self.processing_pipeline is not None:
+            pipe_health_status = getattr(self.processing_pipeline, "health_status", None)
             pipe_status = getattr(self.processing_pipeline, "status", None)
             pipe_healthy = getattr(self.processing_pipeline, "is_healthy", None)
-            if isinstance(pipe_status, str) and pipe_status.strip():
+            
+            if isinstance(pipe_health_status, str) and pipe_health_status.strip():
+                processing_worker_state = pipe_health_status.strip().lower()
+            elif isinstance(pipe_status, str) and pipe_status.strip():
                 processing_worker_state = pipe_status.strip().lower()
             elif pipe_healthy is False:
                 processing_worker_state = "degraded"
+            elif pipe_healthy is True:
+                processing_worker_state = "healthy"
 
         # 4. Kiểm tra llm
-        llm_state = "healthy"
+        llm_state = "not_ready"
         if getattr(self, "llm_status", None) is not None:
             llm_state = str(self.llm_status).strip().lower()
         elif self.processing_pipeline is not None:
             extractor = getattr(self.processing_pipeline, "llm_extractor", None)
             if extractor is not None:
                 ext_healthy = getattr(extractor, "is_healthy", None)
+                has_key = bool(getattr(extractor, "api_key", None)) if hasattr(extractor, "api_key") else True
+                is_mock = bool(getattr(extractor, "mock_mode", False))
+                allow_fb = bool(getattr(extractor, "allow_heuristic_fallback", False))
+                
                 if ext_healthy is False:
                     llm_state = "degraded"
-                elif hasattr(extractor, "api_key"):
-                    has_key = bool(getattr(extractor, "api_key", None))
-                    is_mock = bool(getattr(extractor, "mock_mode", False))
-                    allow_fb = bool(getattr(extractor, "allow_heuristic_fallback", False))
-                    if not (has_key or is_mock or allow_fb) and (has_real_repo or client_overridden):
-                        llm_state = "degraded"
+                elif hasattr(extractor, "api_key") and not (has_key or is_mock or allow_fb) and (has_real_repo or client_overridden):
+                    llm_state = "degraded"
+                else:
+                    llm_state = "healthy"
 
         # 5. Kiểm tra playwright
         if getattr(self, "playwright_status", None) is not None:
@@ -439,11 +447,22 @@ class ApplicationService:
         tenants_status: list[CoverageTenantStatus] = []
         has_error = False
         has_warning = False
+        has_never_synced = False
+        
+        playwright_state = "unconfigured"
+        if getattr(self, "playwright_status", None) is not None:
+            playwright_state = str(self.playwright_status).strip().lower()
+        else:
+            try:
+                from ptb_acquisition.playwright.session import SessionManager
+                playwright_state = SessionManager().validate_session().value.lower()
+            except Exception as e:
+                logger.debug("Could not validate playwright session: %s", e)
 
         if checkpoints:
             for cp in checkpoints:
                 st = cp.source_type.value if hasattr(cp.source_type, "value") else str(cp.source_type)
-                status = "healthy"
+                status = SourceSyncState.HEALTHY.value.lower()
                 error_msg = None
                 last_sync = cp.last_event_timestamp or cp.updated_at
 
@@ -451,8 +470,11 @@ class ApplicationService:
                     last_sync_utc = last_sync if last_sync.tzinfo else last_sync.replace(tzinfo=timezone.utc)
                     age_seconds = (now - last_sync_utc).total_seconds()
                     if age_seconds > (7 * 86400):
-                        status = "warning"
+                        status = SourceSyncState.DEGRADED.value.lower()
                         has_warning = True
+                else:
+                    status = SourceSyncState.NEVER_SYNCED.value.lower()
+                    has_never_synced = True
 
                 tenants_status.append(CoverageTenantStatus(
                     tenant_id=cp.tenant_id,
@@ -470,19 +492,33 @@ class ApplicationService:
                 ("jira", "Jira Cloud"),
                 ("shortcut", "Shortcut Stories"),
             ]:
+                if src in ("ms_teams", "ms_outlook"):
+                    if playwright_state == "auth_required":
+                        status = SourceSyncState.AUTH_REQUIRED.value.lower()
+                    elif playwright_state in ("unconfigured", "not_installed"):
+                        status = SourceSyncState.UNCONFIGURED.value.lower()
+                    else:
+                        status = SourceSyncState.NEVER_SYNCED.value.lower()
+                else:
+                    status = SourceSyncState.NEVER_SYNCED.value.lower()
+                
                 tenants_status.append(CoverageTenantStatus(
                     tenant_id=f"tenant-{src}",
                     tenant_name=name,
                     source_type=src,
-                    status="healthy",
-                    last_successful_sync=now,
+                    status=status,
+                    last_successful_sync=None,
                     items_synced_total=0,
                     error_message=None,
                 ))
 
-        if has_error:
+        if not tenants_status:
+            overall = "not_ready"
+        elif any(t.status == SourceSyncState.ERROR.value.lower() for t in tenants_status) or has_error:
             overall = "critical"
-        elif has_warning:
+        elif all(t.status == SourceSyncState.NEVER_SYNCED.value.lower() for t in tenants_status):
+            overall = "not_ready"
+        elif any(t.status in (SourceSyncState.DEGRADED.value.lower(), SourceSyncState.NEVER_SYNCED.value.lower(), SourceSyncState.AUTH_REQUIRED.value.lower(), SourceSyncState.UNCONFIGURED.value.lower()) for t in tenants_status):
             overall = "degraded"
         else:
             overall = "healthy"

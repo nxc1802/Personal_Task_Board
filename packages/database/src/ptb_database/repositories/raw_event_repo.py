@@ -159,7 +159,8 @@ class RawEventRepository:
                     if data.get("payload_json"):
                         try:
                             data["raw_payload"] = json.loads(data["payload_json"])
-                        except Exception:
+                        except Exception as e:
+                            logger.warning(f"Failed to parse payload_json: {e}. Fallback to empty dict.")
                             data["raw_payload"] = {}
                     else:
                         data["raw_payload"] = {}
@@ -174,7 +175,7 @@ class RawEventRepository:
                     if dt_field in data and isinstance(data[dt_field], str):
                         try:
                             data[dt_field] = datetime.fromisoformat(data[dt_field])
-                        except Exception:
+                        except ValueError:
                             pass
                 if "processing_attempt_count" not in data or data["processing_attempt_count"] is None:
                     data["processing_attempt_count"] = data.get("retry_count", 0)

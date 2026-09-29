@@ -187,8 +187,8 @@ async def verify_authenticated_session(
                 res = page.close()
                 if inspect.iscoroutine(res):
                     await res
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to close page in finally block: %s", e)
 
 
 class SessionManager:

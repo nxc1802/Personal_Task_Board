@@ -294,7 +294,7 @@ async def test_acquisition_pipeline_ingest_and_deduplication():
 async def test_acquisition_pipeline_automatic_checkpoint_resumption():
     raw_repo = InMemoryRawEventRepository()
     ckpt_repo = InMemoryCheckpointRepository()
-    pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo)
+    pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="tenant-test")
 
     # Tạo dummy adapter với 3 events theo thứ tự thời gian
     t0 = datetime(2026, 9, 28, 8, 0, 0, tzinfo=timezone.utc)
@@ -333,7 +333,7 @@ async def test_acquisition_pipeline_automatic_checkpoint_resumption():
     assert raw_repo.count == 2
 
     # Kiểm tra checkpoint đã được lưu tự động sau đợt backfill
-    ckpt1 = await ckpt_repo.get_checkpoint(SourceType.CODING_AGENT.value, "dummy-stream")
+    ckpt1 = await ckpt_repo.get_checkpoint(SourceType.CODING_AGENT.value, "dummy-stream", tenant_id="tenant-test")
     assert ckpt1 is not None
     assert ckpt1.last_event_timestamp == t1
     assert ckpt1.last_external_id == "ext-1"
@@ -364,7 +364,7 @@ async def test_acquisition_pipeline_automatic_checkpoint_resumption():
     assert raw_repo.count == 3
 
     # Checkpoint được tự động cập nhật lên t2
-    ckpt2 = await ckpt_repo.get_checkpoint(SourceType.CODING_AGENT.value, "dummy-stream")
+    ckpt2 = await ckpt_repo.get_checkpoint(SourceType.CODING_AGENT.value, "dummy-stream", tenant_id="tenant-test")
     assert ckpt2.last_event_timestamp == t2
     assert ckpt2.last_external_id == "ext-2"
 

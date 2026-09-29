@@ -166,7 +166,8 @@ class TaskCandidateMatcher:
                 return None
             clean_path = parsed.path.rstrip("/")
             return f"{parsed.netloc.lower()}{clean_path}"
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to normalize url {url}: {e}. Fallback to strip.")
             return url.strip().rstrip("/").lower()
 
     @staticmethod
@@ -256,7 +257,8 @@ class TaskCandidateMatcher:
                     if "status" in task_dict and isinstance(task_dict["status"], str):
                         try:
                             task_dict["status"] = TaskStatus(task_dict["status"])
-                        except Exception:
+                        except Exception as e:
+                            logger.warning(f"Failed to parse status {task_dict['status']}: {e}. Fallback to TODO.")
                             task_dict["status"] = TaskStatus.TODO
                     if "priority_score" not in task_dict or task_dict["priority_score"] is None:
                         task_dict["priority_score"] = 0.0
@@ -269,7 +271,7 @@ class TaskCandidateMatcher:
                         if dt_field in task_dict and isinstance(task_dict[dt_field], str):
                             try:
                                 task_dict[dt_field] = datetime.fromisoformat(task_dict[dt_field])
-                            except Exception:
+                            except ValueError:
                                 pass
 
                     evidences: List[EvidenceRecord] = []
@@ -279,7 +281,7 @@ class TaskCandidateMatcher:
                             if "timestamp" in ev_data and isinstance(ev_data["timestamp"], str):
                                 try:
                                     ev_data["timestamp"] = datetime.fromisoformat(ev_data["timestamp"])
-                                except Exception:
+                                except ValueError:
                                     pass
                             if "confidence" not in ev_data or ev_data["confidence"] is None:
                                 ev_data["confidence"] = 1.0

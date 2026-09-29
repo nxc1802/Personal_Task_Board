@@ -50,6 +50,9 @@ GUARD_PATTERNS = {
     "in_memory_fallback": re.compile(
         r"\bInMemory(?:RawEvent|Checkpoint|TaskDomain)Repository\b"
     ),
+    "silent_except_pass": re.compile(r"except\s+Exception:\s*(?:\n\s*)?pass\b"),
+    "fabricated_health": re.compile(r"\bfabricat(?:ed|e)?[\s_-]*health\b", re.IGNORECASE),
+    "default_dummy": re.compile(r"\bdefault[\s_-]*dummy", re.IGNORECASE),
 }
 
 
@@ -342,6 +345,23 @@ def test_guard_regex_detection_effectiveness():
     assert pat_inmem.search("self.repo = InMemoryTaskDomainRepository()") is not None
     assert pat_inmem.search("self.repo = Neo4jRawEventRepository(client)") is None
 
+    # 7. silent_except_pass
+    pat_silent = GUARD_PATTERNS["silent_except_pass"]
+    assert pat_silent.search("except Exception:\n    pass") is not None
+    assert pat_silent.search("except Exception: pass") is not None
+    assert pat_silent.search("except Exception as e:\n    logger.error(e)") is None
+
+    # 8. fabricated_health
+    pat_fab = GUARD_PATTERNS["fabricated_health"]
+    assert pat_fab.search("fabricated_health = True") is not None
+    assert pat_fab.search("fabricateHealth()") is not None
+    assert pat_fab.search("real_health_check()") is None
+
+    # 9. default_dummy
+    pat_dummy = GUARD_PATTERNS["default_dummy"]
+    assert pat_dummy.search("default_dummy_value") is not None
+    assert pat_dummy.search("DEFAULT_DUMMY = {}") is not None
+    assert pat_dummy.search("default_value = {}") is None
 
 def test_whitelist_hygiene_and_contract_integrity():
     """Verify integrity of the temporary whitelist for Wave 1 and Wave 4.

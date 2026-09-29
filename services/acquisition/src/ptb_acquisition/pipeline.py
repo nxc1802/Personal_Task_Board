@@ -41,7 +41,7 @@ class CheckpointRepositoryProtocol(Protocol):
     """Protocol định nghĩa interface của CheckpointRepository lưu vào Neo4j."""
 
     async def get_checkpoint(
-        self, source_type: str, stream_id: str
+        self, source_type: str, stream_id: str, tenant_id: str = "default"
     ) -> Optional[IngestionCheckpointRecord]:
         ...
 
@@ -98,9 +98,17 @@ class AcquisitionPipeline:
         src_str = source_type.value if hasattr(source_type, "value") else str(source_type)
         if hasattr(self.checkpoint_repo, "get_checkpoint"):
             fn = self.checkpoint_repo.get_checkpoint
+            kwargs = {}
+            try:
+                sig = inspect.signature(fn)
+                if "tenant_id" in sig.parameters:
+                    kwargs["tenant_id"] = self.tenant_id
+            except (ValueError, TypeError):
+                pass
+            
             if inspect.iscoroutinefunction(fn):
-                return await fn(src_str, stream_id)
-            return fn(src_str, stream_id)
+                return await fn(src_str, stream_id, **kwargs)
+            return fn(src_str, stream_id, **kwargs)
         return None
 
     async def save_checkpoint(

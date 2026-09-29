@@ -236,7 +236,8 @@ class TaskDomainRepository:
         if "status" in task_dict and isinstance(task_dict["status"], str):
             try:
                 task_dict["status"] = TaskStatus(task_dict["status"])
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to parse status: {e}. Fallback to TODO.")
                 task_dict["status"] = TaskStatus.TODO
         if "priority_score" not in task_dict or task_dict["priority_score"] is None:
             task_dict["priority_score"] = 0.0
@@ -249,7 +250,8 @@ class TaskDomainRepository:
         if "priority_override" in task_dict and task_dict["priority_override"] is not None:
             try:
                 task_dict["priority_override"] = float(task_dict["priority_override"])
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to parse priority_override: {e}. Fallback to None.")
                 task_dict["priority_override"] = None
         else:
             task_dict["priority_override"] = None
@@ -262,7 +264,8 @@ class TaskDomainRepository:
         if "inferred_priority_score" in task_dict and task_dict["inferred_priority_score"] is not None:
             try:
                 task_dict["inferred_priority_score"] = float(task_dict["inferred_priority_score"])
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to parse inferred_priority_score: {e}. Fallback to None.")
                 task_dict["inferred_priority_score"] = None
         else:
             task_dict["inferred_priority_score"] = None
@@ -277,7 +280,7 @@ class TaskDomainRepository:
             if dt_field in task_dict and isinstance(task_dict[dt_field], str):
                 try:
                     task_dict[dt_field] = datetime.fromisoformat(task_dict[dt_field])
-                except Exception:
+                except ValueError:
                     pass
 
         evidences: List[EvidenceRecord] = []
@@ -287,7 +290,7 @@ class TaskDomainRepository:
                 if "timestamp" in ev_data and isinstance(ev_data["timestamp"], str):
                     try:
                         ev_data["timestamp"] = datetime.fromisoformat(ev_data["timestamp"])
-                    except Exception:
+                    except ValueError:
                         pass
                 if "confidence" not in ev_data or ev_data["confidence"] is None:
                     ev_data["confidence"] = 1.0
@@ -558,7 +561,7 @@ class TaskDomainRepository:
                         if dt_field in data and isinstance(data[dt_field], str):
                             try:
                                 data[dt_field] = datetime.fromisoformat(data[dt_field])
-                            except Exception:
+                            except ValueError:
                                 pass
                     commitments.append(CommitmentRecord.model_validate(data))
         return commitments

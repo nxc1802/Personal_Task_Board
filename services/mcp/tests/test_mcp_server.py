@@ -237,6 +237,10 @@ def mock_app_service() -> ApplicationService:
         task_repo=task_repo,
         checkpoint_repo=checkpoint_repo,
         graph_memory=graph_memory,
+        neo4j_client=task_repo.neo4j_client,
+        processing_worker_status="healthy",
+        llm_status="healthy",
+        playwright_status="healthy",
     )
 
 

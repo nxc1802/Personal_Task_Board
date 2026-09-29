@@ -16,8 +16,11 @@ from typing import Any, Dict, Optional
 import urllib.error
 import urllib.parse
 import urllib.request
+import logging
 
 from ptb_contracts.logging import BugCode, log_bug
+
+logger = logging.getLogger(__name__)
 
 try:
     import yaml
@@ -119,7 +122,8 @@ def _load_yaml_config(config_path: Optional[str]) -> Dict[str, Any]:
         content = candidate_path.read_text(encoding="utf-8")
         loaded = yaml.safe_load(content)
         return loaded if isinstance(loaded, dict) else {}
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to read/parse models config at {candidate_path}: {e}")
         return {}
 
 

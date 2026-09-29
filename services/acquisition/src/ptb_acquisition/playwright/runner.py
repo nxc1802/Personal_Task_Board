@@ -142,8 +142,8 @@ class PlaywrightOrchestrator:
                     if hasattr(page, "wait_for_selector"):
                         await page.wait_for_selector(sel, timeout=2000)
                         break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Selector {sel} not found/timeout: {e}")
 
             for step in range(max_scrolls):
                 if not self._running or self.health_state == SessionHealthState.AUTH_EXPIRED:
@@ -194,8 +194,8 @@ class PlaywrightOrchestrator:
                     if hasattr(page, "wait_for_selector"):
                         await page.wait_for_selector(sel, timeout=2000)
                         break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Selector {sel} not found/timeout: {e}")
 
             for step in range(max_scrolls):
                 if not self._running or self.health_state == SessionHealthState.AUTH_EXPIRED:

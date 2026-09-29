@@ -859,8 +859,8 @@ class PTBProcessSupervisor:
         if self.neo4j_client:
             try:
                 await self.neo4j_client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Lỗi khi đóng neo4j_client lúc tắt: %s", e)
 
         print("[✓] Đã tắt an toàn toàn bộ services.")
 
@@ -960,8 +960,8 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
             )
             if "ptb_neo4j" in res_c.stdout:
                 neo4j_container_running = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Lỗi khi kiểm tra docker ps cho neo4j: %s", e)
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

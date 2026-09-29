@@ -115,8 +115,8 @@ class WindsurfWatcher(BaseAgentWatcher):
                                 )
                             )
                             turn_idx += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Lỗi parse row trong sqlite windsurf: %s", e)
             conn.close()
         except Exception as e:
             logger.debug(f"Lỗi đọc sqlite Windsurf tại {db_path}: {e}")
@@ -148,6 +148,6 @@ class WindsurfWatcher(BaseAgentWatcher):
                                     )
                                 )
                                 turn_idx += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Lỗi đọc file log windsurf %s: %s", fp, e)
         return records

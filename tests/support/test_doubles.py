@@ -197,18 +197,6 @@ class InMemoryCheckpointRepository:
         if key in self.checkpoints:
             return self.checkpoints[key].model_copy(deep=True)
 
-        # Fallback for legacy 2-arg callers (where tenant_id defaulted to "default")
-        # only if there is a single unambiguous checkpoint for (source_type, stream_id).
-        if tenant_id == "default":
-            _, s_val, _ = key
-            matches = [
-                cp
-                for (_, s, strm), cp in self.checkpoints.items()
-                if s == s_val and strm == stream_id
-            ]
-            if len(matches) == 1:
-                return matches[0].model_copy(deep=True)
-
         return None
 
     async def save_checkpoint(self, checkpoint: IngestionCheckpointRecord) -> None:

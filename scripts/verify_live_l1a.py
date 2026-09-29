@@ -82,8 +82,8 @@ async def main():
                         for r in recs:
                             teams_interceptor.captured_records.append(r)
                             await queue.put(r)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Lỗi parse payload Teams: %s", e)
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(

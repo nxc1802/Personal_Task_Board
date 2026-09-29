@@ -73,13 +73,13 @@ class GraphMemorySyncWorker:
         if self._neo4j_client is not None and hasattr(self._neo4j_client, "get_driver"):
             try:
                 return self._neo4j_client.get_driver()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to get driver from _neo4j_client: {e}")
         if self.memory_client is not None and hasattr(self.memory_client, "get_driver"):
             try:
                 return self.memory_client.get_driver()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to get driver from memory_client: {e}")
         return None
 
     def _make_key(self, item_type: str, item_id: str) -> str:

@@ -491,9 +491,9 @@ async def test_acquisition_pipeline_with_all_new_adapters(
     assert pipeline.stats["errors"] == 0
 
     # Verify checkponts saved
-    ckpt_jira = await ckpt_repo.get_checkpoint(SourceType.JIRA.value, "all")
-    ckpt_sc = await ckpt_repo.get_checkpoint(SourceType.SHORTCUT.value, "all")
-    ckpt_git = await ckpt_repo.get_checkpoint(SourceType.GIT.value, "all")
+    ckpt_jira = await ckpt_repo.get_checkpoint(SourceType.JIRA.value, "all", tenant_id="e2e-user")
+    ckpt_sc = await ckpt_repo.get_checkpoint(SourceType.SHORTCUT.value, "all", tenant_id="e2e-user")
+    ckpt_git = await ckpt_repo.get_checkpoint(SourceType.GIT.value, "all", tenant_id="e2e-user")
 
     assert ckpt_jira is not None
     assert ckpt_sc is not None

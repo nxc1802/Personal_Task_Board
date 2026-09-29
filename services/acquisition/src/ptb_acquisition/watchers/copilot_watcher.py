@@ -116,8 +116,8 @@ class CopilotWatcher(BaseAgentWatcher):
                                 )
                             )
                             turn_idx += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Lỗi parse row trong sqlite copilot: %s", e)
 
             conn.close()
         except Exception as e:
