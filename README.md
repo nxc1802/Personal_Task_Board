@@ -1,4 +1,4 @@
-# Personal Task Board (PTB) v1.2
+# Personal Task Board (PTB) v1.3
 
 > **Local-First Personal Intelligence System** tự động hợp nhất tasks, commitments và tri thức kỹ thuật từ **Microsoft Teams, Outlook, Jira, Shortcut, Local Git** và các **Coding Agents (Cursor, Claude Code, Antigravity, Codex, Windsurf, Copilot, Continue, Aider, Cline)** vào một đồ thị tri thức duy nhất trên **Neo4j Single-Store**.
 
@@ -35,8 +35,8 @@ Trong môi trường làm việc kỹ thuật hiện đại, công việc và ca
 
 **Personal Task Board (PTB)** giải quyết bài toán này với triết lý **Local-First, Fail-Fast & Zero Manual Input**:
 - **Bắt tự động, không cần nhập liệu**: Lắng nghe network responses qua Playwright và quét session logs cục bộ từ các Coding Agents cùng Git, Jira, Shortcut.
-- **Neo4j Single-Store làm chân lý duy nhất (Authoritative Store)**: Mọi sự kiện thô (`RawEvent`), con trỏ đồng bộ (`IngestionCheckpoint` với định danh tất định `sha256(tenant_id|source_type|stream_id)`), thực thể công việc (`UnifiedTask`), bằng chứng (`Evidence`), quyết định (`Decision`) và bài học (`Lesson`) đều được lưu trữ bền bỉ trong một Graph DB duy nhất.
-- **Chuỗi Xử Lý Tự Động Khép Kín (Vertical Slice)**: Khi `RawEvent` được ghi nhận, `ProcessingWorker` tự động trích xuất và hợp nhất thành `UnifiedTask`, kích hoạt `TaskIntelligenceLifecycle` tính toán điểm ưu tiên và trạng thái suy luận, đồng thời đồng bộ bất đồng bộ sang **Graphiti Temporal Memory** qua `GraphMemoryWorker`.
+- **Neo4j Single-Store làm chân lý duy nhất (Authoritative Store)**: Mọi sự kiện thô (`RawEvent`), con trỏ đồng bộ (`IngestionCheckpoint` với định danh tất định `sha256(tenant_id:source_type:stream_id)` dựa trên composite key 3 thành phần `(tenant_id, source_type, stream_id)`), thực thể công việc (`UnifiedTask`), bằng chứng (`Evidence`), quyết định (`Decision`) và bài học (`Lesson`) đều được lưu trữ bền bỉ trong một Graph DB duy nhất.
+- **Chuỗi Xử Lý Tự Động Khép Kín (Vertical Slice)**: Khi `RawEvent` được ghi nhận, `ProcessingWorker` tự động trích xuất và hợp nhất thành `UnifiedTask`, kích hoạt `TaskIntelligenceLifecycle` tính toán điểm ưu tiên và trạng thái suy luận, đồng thời đồng bộ bất đồng bộ sang **Graphiti Temporal Memory** qua `GraphMemorySyncWorker` (theo dõi `GraphSyncStatus`: PENDING -> SYNCING -> SYNCED / RETRY / FAILED mà không khóa hay rollback giao dịch Neo4j).
 - **Shared Runtime Dependency Graph**: `PTBProcessSupervisor` khởi tạo một đồ thị phụ thuộc dùng chung duy nhất (`Neo4jClient` → `Repositories` → `ProcessingPipeline` → `TaskIntelligenceLifecycle` → `GraphitiMemoryClient` → `ApplicationService`) và tiêm trực tiếp vào cả **FastAPI REST API** (`http://127.0.0.1:8000`) và **FastMCP Server** (`http://127.0.0.1:8001`).
 
 ---
@@ -59,7 +59,7 @@ Trong môi trường làm việc kỹ thuật hiện đại, công việc và ca
  ┌────────────────────────────────────────────────────────────────────────┐
  │ Layer 2: Authoritative Single-Store (Neo4j Community + APOC)           │
  │  • RawEvent (PENDING -> PROCESSING -> PROCESSED / RETRY / FAILED)      │
- │  • IngestionCheckpoint (sha256(tenant_id|source_type|stream_id))       │
+ │  • IngestionCheckpoint (sha256(tenant_id:source_type:stream_id))       │
  │  • UnifiedTask, Evidence, Commitment, Person, Project, Customer        │
  │  • Decision, LessonLearned, StatusTransitionAudit, MergeAudit          │
  └──────────────────┬─────────────────────────────────┬───────────────────┘
@@ -67,8 +67,8 @@ Trong môi trường làm việc kỹ thuật hiện đại, công việc và ca
                     ▼                                 ▼
  ┌────────────────────────────────────┐ ┌─────────────────────────────────┐
  │ Layer 3: Processing & Intelligence │ │ Graphiti Memory Engine          │
- │  • ProcessingWorker & Pipeline     │ │  • GraphMemoryWorker (Async)    │
- │  • LLM Structured Extraction       │ │  • GraphSyncState (PENDING ->   │
+ │  • ProcessingWorker & Pipeline     │ │  • GraphMemorySyncWorker (Async)│
+ │  • LLM Structured Extraction       │ │  • GraphSyncStatus (PENDING ->  │
  │  • Task Correlation & Merge        │ │    SYNCING -> SYNCED / RETRY)   │
  │  • Auto-Wired IntelligenceLifecycle│ │  • Temporal Knowledge Episodes  │
  │  • Priority & Status Inference     │ │  • Semantic Search & Context    │
@@ -93,7 +93,8 @@ Trong môi trường làm việc kỹ thuật hiện đại, công việc và ca
  ┌────────────────────────────────────┐ ┌─────────────────────────────────┐
  │ OpenWebUI Board (:3000)            │ │ Coding Agents                   │
  │  • 8 Live-Only Views & Dashboards  │ │  • Cursor IDE, Claude Code      │
- │  • Bind Mount ./data/openwebui     │ │  • Google Antigravity, Codex    │
+ │  • Self-Contained Plugins (PTB-001)│ │  • Google Antigravity, Codex    │
+ │  • host.docker.internal:8000       │ │  • Windsurf, Copilot, etc.      │
  └────────────────────────────────────┘ └─────────────────────────────────┘
 ```
 
@@ -181,7 +182,16 @@ Personal Task Board vận hành theo nguyên tắc **Fail-Fast & Truthful Health
    - `DEGRADED`: Khi nguồn Microsoft được cấu hình bắt buộc (`strict_required: true`) mà chưa có phiên hợp lệ, hoặc khi một phân hệ phụ trợ bị suy giảm.
    - `NOT_READY`: Khi Neo4j không thể kết nối hoặc REST/MCP/Worker không vượt qua kiểm tra khởi động — Supervisor lập tức hủy khởi chạy với mã thoát `exit != 0`.
 3. **Trạng Thái Nguồn Thu Thập (`/api/sources` & `get_source_health`)**:
-   - Phản ánh trung thực 8 trạng thái chuẩn: `DISABLED`, `UNCONFIGURED`, `NEVER_SYNCED`, `STARTING`, `HEALTHY`, `DEGRADED`, `AUTH_REQUIRED`, `ERROR` (và `NOT_INSTALLED` đối với các Coding Agent không cài đặt trên máy).
+   - Phản ánh trung thực 9 trạng thái chuẩn hóa của `SourceSyncState`:
+     - `NEVER_SYNCED`: Nguồn đã bật nhưng chưa từng có checkpoint nào được lưu (tuyệt đối không báo `HEALTHY` giả tạo khi chưa có dữ liệu).
+     - `UNCONFIGURED`: Nguồn chưa được cung cấp thông tin cấu hình hoặc API token cần thiết.
+     - `AUTH_REQUIRED`: Phiên làm việc Microsoft Teams/Outlook chưa được xác thực hoặc đã hết hạn (cần chạy `ptb login microsoft`).
+     - `DEGRADED`: Nguồn gặp sự cố tạm thời hoặc đang trong chu kỳ exponential backoff sau khi ghi nhận `PTB-L1-002`.
+     - `HEALTHY`: Nguồn hoạt động ổn định và có checkpoint hợp lệ được cập nhật trong ngưỡng thời gian cho phép.
+     - `DISABLED`: Nguồn bị tắt trong cấu hình `config/sources.yaml`.
+     - `NOT_INSTALLED`: Coding Agent không tìm thấy đường dẫn cài đặt trên máy cục bộ (tránh tạo false positive lỗi).
+     - `STARTING`: Nguồn đang trong quá trình khởi tạo kết nối ban đầu.
+     - `ERROR`: Nguồn gặp lỗi nghiêm trọng không thể tự phục hồi sau các lượt retry.
 
 ### 4.2 Bảng 10 Mã Lỗi Chuẩn Hóa (`BugCode`)
 
@@ -216,6 +226,13 @@ Sau khi khởi chạy, truy cập [http://127.0.0.1:3000](http://127.0.0.1:3000)
 | 6 | **Decisions** | `💡 #tab-decisions` | Tra cứu tri thức quyết định kỹ thuật | Tìm kiếm các quyết định kiến trúc, công nghệ và quy trình trích xuất từ hội thoại và phiên làm việc (`/api/decisions`). |
 | 7 | **Lessons** | `📖 #tab-lessons` | Sổ tay bài học kinh nghiệm | Tổng hợp bài học đúc kết sau các sự cố hoặc quá trình gỡ lỗi kỹ thuật (`/api/lessons`). |
 | 8 | **Sources / Health** | `🩺 #tab-health` | Giám sát hạ tầng & kết nối | Dashboard giám sát trạng thái thực của từng nguồn dữ liệu (`/api/sources`) và sức khỏe hệ thống (`/health`). Khi mất kết nối tới backend, hiển thị cảnh báo `APPLICATION SERVICE OFFLINE` (`PTB-OWUI-001`). |
+
+### 5.1 Kiến Trúc Plugins Tự Chứa (Self-Contained Plugins)
+- **Không phụ thuộc Monorepo**: Các plugins tích hợp (`integrations/openwebui/tools/ptb_tools.py` và `integrations/openwebui/functions/ptb_board_action.py`) được đóng gói hoàn toàn **self-contained**, không `import ptb_contracts` hay bất kỳ thư viện nội bộ nào của dự án, cho phép nạp và chạy trơn tru trong container Python độc lập của OpenWebUI.
+- **Structured Error Logging**: Ghi nhận sự cố trực tiếp ra standard error có cấu trúc kèm mã lỗi chuẩn `[PTB-OWUI-001]` khi không kết nối được tới backend.
+- **Định tuyến mạng nhất quán**:
+  - OpenWebUI Plugins chạy trong Docker container kết nối tới Application Service qua `http://host.docker.internal:8000`.
+  - Giao diện Board chạy phía trình duyệt người dùng kết nối qua `http://127.0.0.1:8000`.
 
 ---
 
@@ -297,16 +314,19 @@ Bộ kiểm thử của Personal Task Board được phân tách chuẩn hóa th
 ### Các Lệnh Chạy Kiểm Thử Chuẩn:
 
 ```bash
-# Lệnh mặc định khuyến nghị khi phát triển & trên CI (không cần Docker):
+# 1. Chạy toàn bộ test suite non-docker (370+ tests đạt 100% PASS, không cần Docker):
 uv run pytest -m "not external_integration"
 
-# Chạy riêng từng nhóm kiểm thử theo marker:
+# 2. Kiểm tra bộ 14 behavioral release freeze gates (14/14 PASS):
+uv run pytest tests/test_release_readiness.py -v
+
+# 3. Chạy riêng từng nhóm kiểm thử theo marker:
 uv run pytest -m unit
 uv run pytest -m contract
 uv run pytest -m fixture_e2e
 uv run pytest -m runtime_smoke
 
-# Chạy kiểm thử tích hợp hạ tầng thực (yêu cầu đã bật docker compose up -d):
+# 4. Chạy kiểm thử tích hợp hạ tầng thực tế (yêu cầu đã bật docker compose up -d):
 uv run pytest -m external_integration
 ```
 

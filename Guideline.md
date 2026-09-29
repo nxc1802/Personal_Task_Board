@@ -1,6 +1,6 @@
-# Cẩm Nang Kỹ Thuật & Hướng Dẫn Vận Hành (PTB v1.2)
+# Cẩm Nang Kỹ Thuật & Hướng Dẫn Vận Hành (PTB v1.3)
 
-> Tài liệu chuẩn xác duy nhất (Source-of-Truth) hướng dẫn cài đặt môi trường, cấu hình, vận hành và kiểm thử hệ thống **Personal Task Board v1.2** theo kiến trúc **Local-First Production Edition** (Neo4j Authoritative Single-Store, Playwright Layer 1A, 9 Coding Agent Watchers Layer 1B, Auto-Wired Intelligence, Graphiti-Core Async Sync, Shared `ApplicationService`, FastAPI REST `:8000`, FastMCP `:8001`, OpenWebUI Live-Only `:3000`).
+> Tài liệu chuẩn xác duy nhất (Source-of-Truth) hướng dẫn cài đặt môi trường, cấu hình, vận hành và kiểm thử hệ thống **Personal Task Board v1.3** theo kiến trúc **Local-First Production Edition** (Neo4j Authoritative Single-Store, Playwright Layer 1A, 9 Coding Agent Watchers Layer 1B, Auto-Wired Intelligence, GraphMemorySyncWorker Async Sync, Shared `ApplicationService`, FastAPI REST `:8000`, FastMCP `:8001`, OpenWebUI Live-Only `:3000`).
 
 ---
 
@@ -19,16 +19,16 @@
 ## 1. Tổng Quan Kiến Trúc Kỹ Thuật & Luồng Chuẩn Hóa 8 Bước
 
 ### 1.1 Các Nguyên Tắc Kiến Trúc Bất Biến
-Personal Task Board v1.2 được thiết kế theo triết lý **Local-First, Fail-Fast & Truthful Health**:
+Personal Task Board v1.3 được thiết kế theo triết lý **Local-First, Fail-Fast & Truthful Health**:
 - **Neo4j Authoritative Single-Store**: Nơi lưu trữ bền bỉ tập trung duy nhất cho toàn bộ hệ thống. Khi Neo4j không khả dụng, hệ thống kích hoạt **Fail-Fast** (`PTB-STORAGE-001`), chuyển trạng thái sang `NOT_READY` và dừng tiến trình thay vì âm thầm chạy trên bộ nhớ tạm.
-- **Định Danh Checkpoint Tất Định**: Mọi `IngestionCheckpoint` đều được định danh duy nhất theo khóa tổng hợp `sha256(tenant_id|source_type|stream_id)`, đảm bảo cô lập đa tenant và phục hồi chính xác sau khi khởi động lại.
+- **Định Danh Checkpoint Tất Định**: Mọi `IngestionCheckpoint` đều được định danh duy nhất theo khóa tổng hợp 3 thành phần `(tenant_id, source_type, stream_id)` và băm tất định `sha256(tenant_id:source_type:stream_id)`, đảm bảo cô lập đa tenant tuyệt đối và phục hồi chính xác sau khi khởi động lại.
 - **Chuỗi Xử Lý Dọc Khép Kín (Complete Vertical Slice)**:
   1. `RawEvent` được ghi nhận bền bỉ vào Neo4j (`PENDING` → `PROCESSING` → `PROCESSED` / `RETRY` / `FAILED`, tăng `attempt_count` đúng 1 lần cho mỗi lượt xử lý).
   2. `ProcessingWorker` trích xuất và hợp nhất thành `UnifiedTask` cùng `Evidence`.
   3. `TaskIntelligenceLifecycle` tự động được kích hoạt ngay sau khi lưu task để tính điểm ưu tiên (`DeterministicPriorityEngine`) và suy luận trạng thái (`StatusInferenceMachine`).
-  4. `GraphMemoryWorker` đồng bộ bất đồng bộ các `Evidence`, `Decision`, `Lesson` sang **Graphiti Temporal Memory** theo trạng thái `GraphSyncState` (`PENDING` → `SYNCING` → `SYNCED` / `RETRY` / `FAILED`).
+  4. `GraphMemorySyncWorker` đồng bộ bất đồng bộ các `Evidence`, `Decision`, `Lesson` sang **Graphiti Temporal Memory** theo trạng thái `GraphSyncStatus` (`PENDING` → `SYNCING` → `SYNCED` / `RETRY` / `FAILED`) mà không làm nghẽn hay rollback các giao dịch lưu trữ task cốt lõi trong Neo4j.
 - **Shared Runtime Dependency Graph**: `PTBProcessSupervisor` khởi tạo duy nhất một chuỗi phụ thuộc (`Neo4jClient` → `Repositories` → `ProcessingPipeline` → `TaskIntelligenceLifecycle` → `GraphitiMemoryClient` → `ApplicationService`) và chia sẻ cùng một instance `ApplicationService` cho cả FastAPI REST (`127.0.0.1:8000`) và FastMCP Server (`127.0.0.1:8001`).
-- **OpenWebUI Live-Only**: Giao diện bảng điều khiển (`127.0.0.1:3000`) gắn kết trực tiếp thư mục `./data/openwebui`, chỉ hiển thị dữ liệu thực và chỉ thực thi các thao tác biến đổi có REST endpoint thực.
+- **OpenWebUI Live-Only & Self-Contained Plugins**: Giao diện bảng điều khiển (`127.0.0.1:3000`) gắn kết trực tiếp thư mục `./data/openwebui`, chỉ hiển thị dữ liệu thực và chỉ thực thi các thao tác biến đổi có REST endpoint thực. Các plugin (`ptb_tools.py`, `ptb_board_action.py`) được thiết kế self-contained (không import `ptb_contracts`), ghi log lỗi qua structured stderr với `[PTB-OWUI-001]`, và kết nối qua `http://host.docker.internal:8000`.
 
 ### 1.2 Luồng Cài Đặt & Vận Hành Chính Thức (8 Bước)
 
@@ -525,7 +525,16 @@ Hệ thống báo cáo trung thực tình trạng của mọi thành phần ph�
    - `NOT_READY`: Neo4j không khả dụng hoặc dịch vụ cốt lõi không vượt qua kiểm tra sức khỏe khi khởi động — tiến trình lập tức dừng với `exit code != 0`.
 
 3. **Trạng Thái Nguồn Thu Thập (`/api/sources` & `get_source_health`)**:
-   - Bao gồm 8 trạng thái chuẩn hóa: `DISABLED`, `UNCONFIGURED`, `NEVER_SYNCED`, `STARTING`, `HEALTHY`, `DEGRADED`, `AUTH_REQUIRED`, `ERROR` (cùng trạng thái `NOT_INSTALLED` cho các Coding Agent chưa được cài đặt).
+   - Phản ánh trung thực 9 trạng thái chuẩn hóa của `SourceSyncState`:
+     - `NEVER_SYNCED`: Nguồn đã bật nhưng chưa từng có checkpoint nào được lưu (tuyệt đối không báo `HEALTHY` giả mạo khi chưa có bằng chứng đồng bộ).
+     - `UNCONFIGURED`: Nguồn chưa được cung cấp thông tin cấu hình hoặc API token bắt buộc.
+     - `AUTH_REQUIRED`: Phiên làm việc Microsoft Teams/Outlook chưa đăng nhập hoặc hết hạn (cần chạy `ptb login microsoft`).
+     - `DEGRADED`: Nguồn gặp lỗi tạm thời hoặc đang trong chu kỳ exponential backoff sau khi ghi log `PTB-L1-002`.
+     - `HEALTHY`: Nguồn hoạt động bình thường và checkpoint được cập nhật trong ngưỡng thời gian cho phép.
+     - `DISABLED`: Nguồn bị tắt trong tệp cấu hình `config/sources.yaml`.
+     - `NOT_INSTALLED`: Coding Agent không tìm thấy đường dẫn cài đặt trên máy chủ (không gây lỗi giả).
+     - `STARTING`: Nguồn đang trong quá trình khởi động hoặc bắt đầu phiên kết nối.
+     - `ERROR`: Nguồn gặp sự cố nghiêm trọng không thể tự phục hồi sau ngưỡng retry tối đa.
 
 ---
 
@@ -608,16 +617,19 @@ Hệ thống kiểm thử của Personal Task Board được phân loại chặt
 ### Các Lệnh Thực Thi Kiểm Thử:
 
 ```bash
-# 1. Chạy toàn bộ bộ kiểm thử mặc định KHÔNG CẦN DOCKER (4 markers: unit, contract, fixture_e2e, runtime_smoke)
+# 1. Chạy toàn bộ bộ kiểm thử mặc định KHÔNG CẦN DOCKER (370+ tests đạt 100% PASS):
 uv run pytest -m "not external_integration"
 
-# 2. Chạy riêng từng phân lớp kiểm thử
+# 2. Kiểm tra bộ 14 behavioral release freeze gates (14/14 PASS):
+uv run pytest tests/test_release_readiness.py -v
+
+# 3. Chạy riêng từng phân lớp kiểm thử theo marker:
 uv run pytest -m unit
 uv run pytest -m contract
 uv run pytest -m fixture_e2e
 uv run pytest -m runtime_smoke
 
-# 3. Chạy kiểm thử tích hợp với Docker/Neo4j thực tế (sau khi chạy docker compose up -d)
+# 4. Chạy kiểm thử tích hợp với Docker/Neo4j thực tế (khi có môi trường Docker):
 uv run pytest -m external_integration
 ```
 
