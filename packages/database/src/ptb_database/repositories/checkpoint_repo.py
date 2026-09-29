@@ -1,9 +1,9 @@
 """CheckpointRepository: Repository for managing IngestionCheckpoint nodes in Neo4j."""
 
 from datetime import datetime, timezone
+import hashlib
 import logging
-from typing import Optional
-from uuid import uuid4
+from typing import Optional, Union
 
 from neo4j import AsyncDriver
 from ptb_contracts.l1_acquisition import (
@@ -26,19 +26,19 @@ class CheckpointRepository:
 
     async def get_checkpoint(
         self,
-        source_type: str,
+        source_type: Union[str, SourceType],
         stream_id: str,
         tenant_id: str = "default",
     ) -> Optional[IngestionCheckpointRecord]:
-        """Tìm node (:IngestionCheckpoint {source_type: ..., stream_id: ..., tenant_id: ...})."""
+        """Tìm node (:IngestionCheckpoint {tenant_id: ..., source_type: ..., stream_id: ...})."""
         driver = self._get_driver()
         st_val = source_type.value if hasattr(source_type, "value") else str(source_type)
         tid_val = tenant_id if (tenant_id is not None and str(tenant_id).strip() != "") else "default"
         cypher = """
         MATCH (cp:IngestionCheckpoint)
-        WHERE cp.source_type = $source_type
+        WHERE cp.tenant_id = $tenant_id
+          AND cp.source_type = $source_type
           AND cp.stream_id = $stream_id
-          AND cp.tenant_id = $tenant_id
         RETURN cp
         ORDER BY cp.updated_at DESC
         LIMIT 1
@@ -60,13 +60,19 @@ class CheckpointRepository:
                         data[dt_field] = datetime.fromisoformat(data[dt_field])
                     except Exception:
                         pass
+            if not data.get("id"):
+                data["id"] = hashlib.sha256(f"{tid_val}:{st_val}:{stream_id}".encode("utf-8")).hexdigest()
             return IngestionCheckpointRecord.model_validate(data)
 
     async def save_checkpoint(self, checkpoint: IngestionCheckpointRecord) -> None:
-        """MERGE trên checkpoint id hoặc composite key, SET last_external_id, last_event_timestamp, cursor_token, updated_at."""
+        """MERGE trên composite identity (tenant_id, source_type, stream_id) và SET id bằng deterministic sha256 hash."""
         driver = self._get_driver()
         st_val = checkpoint.source_type.value if hasattr(checkpoint.source_type, "value") else str(checkpoint.source_type)
-        cp_id = checkpoint.id or f"{checkpoint.tenant_id}:{st_val}:{checkpoint.stream_id}"
+        tid_val = checkpoint.tenant_id if (checkpoint.tenant_id is not None and str(checkpoint.tenant_id).strip() != "") else "default"
+        cp_id = hashlib.sha256(f"{tid_val}:{st_val}:{checkpoint.stream_id}".encode("utf-8")).hexdigest()
+
+        # Cập nhật ID trên đối tượng in-memory thành deterministic sha256
+        checkpoint.id = cp_id
 
         last_event_timestamp = (
             checkpoint.last_event_timestamp.isoformat()
@@ -80,10 +86,8 @@ class CheckpointRepository:
         )
 
         cypher = """
-        MERGE (cp:IngestionCheckpoint {id: $id})
-        SET cp.source_type = $source_type,
-            cp.stream_id = $stream_id,
-            cp.tenant_id = $tenant_id,
+        MERGE (cp:IngestionCheckpoint {tenant_id: $tenant_id, source_type: $source_type, stream_id: $stream_id})
+        SET cp.id = $id,
             cp.last_external_id = $last_external_id,
             cp.last_event_timestamp = $last_event_timestamp,
             cp.cursor_token = $cursor_token,
@@ -93,7 +97,7 @@ class CheckpointRepository:
             "id": cp_id,
             "source_type": st_val,
             "stream_id": checkpoint.stream_id,
-            "tenant_id": checkpoint.tenant_id,
+            "tenant_id": tid_val,
             "last_external_id": checkpoint.last_external_id,
             "last_event_timestamp": last_event_timestamp,
             "cursor_token": checkpoint.cursor_token,
@@ -123,6 +127,11 @@ class CheckpointRepository:
                                 data[dt_field] = datetime.fromisoformat(data[dt_field])
                             except Exception:
                                 pass
+                    if not data.get("id"):
+                        tid_val = data.get("tenant_id") or "default"
+                        st_val = data.get("source_type", "")
+                        s_id = data.get("stream_id", "")
+                        data["id"] = hashlib.sha256(f"{tid_val}:{st_val}:{s_id}".encode("utf-8")).hexdigest()
                     checkpoints.append(IngestionCheckpointRecord.model_validate(data))
         return checkpoints
 

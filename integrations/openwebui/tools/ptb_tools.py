@@ -15,16 +15,20 @@ import urllib.error
 import urllib.request
 from pydantic import BaseModel, Field
 
+from ptb_contracts.logging import BugCode, log_bug
+
+OFFLINE_ERROR_MESSAGE = (
+    "❌ [PTB-OWUI-001] APPLICATION SERVICE OFFLINE "
+    "(Run 'ptb serve' or 'ptb run' and check port 8000): "
+    "OpenWebUI cannot reach Application API."
+)
+
 
 class Tools:
     class Valves(BaseModel):
         app_service_url: str = Field(
             default="http://localhost:8000",
             description="URL của PTB Application Service"
-        )
-        enable_mock_fallback: bool = Field(
-            default=True,
-            description="Tự động fallback về dữ liệu mẫu nếu Application Service chưa chạy"
         )
         board_html_path: str = Field(
             default="",
@@ -33,6 +37,7 @@ class Tools:
 
     def __init__(self):
         self.valves = self.Valves()
+        self._last_http_error_logged: bool = False
 
     def _http_call(
         self,
@@ -42,6 +47,7 @@ class Tools:
         timeout: float = 3.5
     ) -> Optional[Any]:
         """Thực thi HTTP request đồng bộ tới Application Service."""
+        self._last_http_error_logged = False
         url = f"{self.valves.app_service_url.rstrip('/')}{endpoint}"
         data = json.dumps(payload).encode("utf-8") if payload else None
         headers = {"Content-Type": "application/json"}
@@ -52,63 +58,51 @@ class Tools:
                 if 200 <= response.status < 300:
                     raw_content = response.read().decode("utf-8")
                     return json.loads(raw_content) if raw_content else {}
-        except Exception:
+            self._last_http_error_logged = True
+            log_bug(
+                BugCode.PTB_OWUI_001,
+                subsystem="openwebui",
+                severity="ERROR",
+                message="OpenWebUI cannot reach Application API",
+                context={"endpoint": endpoint, "method": method, "url": url},
+            )
+        except Exception as exc:
+            self._last_http_error_logged = True
+            log_bug(
+                BugCode.PTB_OWUI_001,
+                subsystem="openwebui",
+                severity="ERROR",
+                message="OpenWebUI cannot reach Application API",
+                context={"endpoint": endpoint, "method": method, "url": url},
+                exc=exc,
+            )
             return None
         return None
+
+    def _offline_error(self, endpoint: str = "") -> str:
+        """Ghi log PTB-OWUI-001 (nếu chưa ghi trong _http_call) và trả về thông báo APPLICATION SERVICE OFFLINE."""
+        if not getattr(self, "_last_http_error_logged", False):
+            log_bug(
+                BugCode.PTB_OWUI_001,
+                subsystem="openwebui",
+                severity="ERROR",
+                message="OpenWebUI cannot reach Application API",
+                context={"endpoint": endpoint} if endpoint else None,
+            )
+        self._last_http_error_logged = False
+        return OFFLINE_ERROR_MESSAGE
 
     def get_today_tasks(self, limit: int = 5) -> str:
         """
         Lấy danh sách các công việc ưu tiên cao nhất hôm nay kèm hệ số điểm (0-100), breakdown chi tiết và lý do.
         :param limit: Số lượng task tối đa cần lấy (mặc định 5).
         """
-        data = self._http_call(f"/api/today?limit={limit}")
-        if not data and self.valves.enable_mock_fallback:
-            data = {
-                "summary_headline": "Hôm nay có 2 việc cần ưu tiên, trong đó 1 lỗi deployment staging đang có người chờ.",
-                "identified_risks": ["Shortcut story 1204 sẽ đến hạn trong 48h tới nhưng chưa có commit mới"],
-                "top_tasks": [
-                    {
-                        "task_id": "task-unified-001",
-                        "title": "Investigate deployment failure on staging",
-                        "status": "TODO",
-                        "project_key": "OPS",
-                        "owner_name": "Dam Quang Cuong",
-                        "requester_name": "Nguyen Van Huy",
-                        "due_date": "Hôm nay 17:00",
-                        "priority": {
-                            "total_score": 92.5,
-                            "deadline_score": 25.0,
-                            "customer_impact_score": 20.0,
-                            "production_impact_score": 20.0,
-                            "commitment_weight": 15.0,
-                            "waiting_penalty": 15.0,
-                            "llm_explanation": "Đến hạn hôm nay, ảnh hưởng hệ thống staging và Huy đang chờ phản hồi sau cam kết trên Teams."
-                        },
-                        "primary_evidence_snippet": "Để em check nhé, chiều nay sẽ có kết quả fix cho staging."
-                    },
-                    {
-                        "task_id": "task-unified-002",
-                        "title": "Review PR #142: Graphiti temporal episode integration",
-                        "status": "IN_PROGRESS",
-                        "project_key": "CORE",
-                        "owner_name": "Dam Quang Cuong",
-                        "requester_name": "Tran Thi Mai",
-                        "due_date": "Ngày mai 12:00",
-                        "priority": {
-                            "total_score": 78.0,
-                            "deadline_score": 15.0,
-                            "customer_impact_score": 10.0,
-                            "production_impact_score": 20.0,
-                            "commitment_weight": 20.0,
-                            "waiting_penalty": 15.0,
-                            "llm_explanation": "Mai đang chờ duyệt PR để unblock nhánh processing."
-                        },
-                        "primary_evidence_snippet": "Anh Cường review giúp em PR #142 với nhé."
-                    }
-                ]
-            }
+        endpoint = f"/api/today?limit={limit}"
+        data = self._http_call(endpoint)
+        if data is None:
+            return self._offline_error(endpoint)
 
-        if not data or not data.get("top_tasks"):
+        if not data.get("top_tasks"):
             return "🎉 **Hôm nay không có task nào khẩn cấp đang chờ xử lý!**"
 
         headline = data.get("summary_headline", "")
@@ -145,23 +139,18 @@ class Tools:
         :param limit: Giới hạn số lượng trả về (mặc định 10).
         """
         params = []
-        if status: params.append(f"status={status}")
-        if project_key: params.append(f"project_key={project_key}")
-        if source: params.append(f"source={source}")
+        if status:
+            params.append(f"status={status}")
+        if project_key:
+            params.append(f"project={project_key}")
+        if source:
+            params.append(f"source={source}")
         params.append(f"limit={limit}")
-        query_str = "?" + "&".join(params)
+        endpoint = "/api/tasks?" + "&".join(params)
 
-        data = self._http_call(f"/api/tasks{query_str}")
-        if not data and self.valves.enable_mock_fallback:
-            data = [
-                {"id": "task-001", "title": "Investigate deployment failure on staging", "status": "TODO", "project_key": "OPS", "priority_score": 92.5},
-                {"id": "task-002", "title": "Review PR #142: Graphiti temporal episode", "status": "IN_PROGRESS", "project_key": "CORE", "priority_score": 78.0},
-                {"id": "task-003", "title": "Cập nhật tài liệu kiến trúc Neo4j-only v1", "status": "TODO", "project_key": "PTB", "priority_score": 65.0},
-                {"id": "task-004", "title": "Fix Neo4j APOC procedure permission", "status": "DONE", "project_key": "CORE", "priority_score": 45.0},
-                {"id": "task-005", "title": "Đợi access token cho Microsoft Teams Tenant", "status": "BLOCKED", "project_key": "OPS", "priority_score": 82.0}
-            ]
-            if status: data = [x for x in data if x.get("status") == status]
-            if project_key: data = [x for x in data if x.get("project_key") == project_key]
+        data = self._http_call(endpoint)
+        if data is None:
+            return self._offline_error(endpoint)
 
         if not data:
             return "Không tìm thấy task nào khớp với tiêu chí tìm kiếm."
@@ -178,30 +167,10 @@ class Tools:
         """
         Lấy danh sách các task trích xuất tự động (Confidence 0.40 - 0.64) đang chờ người dùng phê duyệt.
         """
-        data = self._http_call("/api/review")
-        if not data and self.valves.enable_mock_fallback:
-            data = [
-                {
-                    "id": "rev-cand-101",
-                    "reason": "Confidence trung bình 0.58; Trích xuất từ tin nhắn chat ngắn trong Teams",
-                    "candidate_task": {
-                        "id": "cand-101",
-                        "title": "Kiểm tra log lỗi đồng bộ webhook Jira",
-                        "extraction_confidence": 0.58,
-                        "evidences": [{"snippet": "Anh xem giúp em cái webhook jira sao sáng nay không thấy bắn event."}]
-                    }
-                },
-                {
-                    "id": "rev-cand-102",
-                    "reason": "Confidence 0.62; Phân tách attribution người chịu trách nhiệm cần xác nhận",
-                    "candidate_task": {
-                        "id": "cand-102",
-                        "title": "Cung cấp báo cáo audit security cho đối tác",
-                        "extraction_confidence": 0.62,
-                        "evidences": [{"snippet": "Could you please send over the latest SOC2 compliance checklist before Friday?"}]
-                    }
-                }
-            ]
+        endpoint = "/api/review"
+        data = self._http_call(endpoint)
+        if data is None:
+            return self._offline_error(endpoint)
 
         if not data:
             return "✨ **Hàng đợi duyệt (Review Queue) hiện đang trống!**"
@@ -209,10 +178,11 @@ class Tools:
         lines = ["### 📥 Hàng đợi duyệt Task Candidate:\n"]
         for it in data:
             cand = it.get("candidate_task", {})
-            evidence = cand.get("evidences", [{}])[0].get("snippet", "")
+            evidences = cand.get("evidences") or [{}]
+            evidence = evidences[0].get("snippet", "") if evidences else ""
             conf = int(cand.get("extraction_confidence", 0.5) * 100)
             lines.append(
-                f"- **ID duyệt:** `{it.get('id')}`\n"
+                f"- **ID duyệt:** `{it.get('id') or cand.get('id')}`\n"
                 f"  **Tiêu đề đề xuất:** {cand.get('title')} (Độ tin cậy: {conf}%)\n"
                 f"  **Lý do cần duyệt:** {it.get('reason')}\n"
                 f"  **Bằng chứng:** *\"{evidence}\"*\n"
@@ -224,20 +194,22 @@ class Tools:
         Phê duyệt một task candidate từ review queue đưa vào bảng công việc chính thức.
         :param review_id: Mã ID của review item cần duyệt.
         """
-        res = self._http_call(f"/api/review/{review_id}/approve", method="POST")
-        if res or self.valves.enable_mock_fallback:
-            return f"✅ **Đã phê duyệt thành công review item `{review_id}`!** Task đã được bổ sung vào Task Board với trạng thái TODO."
-        return f"❌ Không thể kết nối tới Application Service để phê duyệt `{review_id}`."
+        endpoint = f"/api/review/{review_id}/approve"
+        res = self._http_call(endpoint, method="POST", payload={"actor": "USER"})
+        if res is None:
+            return self._offline_error(endpoint)
+        return f"✅ **Đã phê duyệt thành công review item `{review_id}`!** Task đã được bổ sung vào Task Board với trạng thái TODO."
 
     def dismiss_task(self, review_id: str) -> str:
         """
         Từ chối hoặc loại bỏ một task candidate khỏi review queue.
         :param review_id: Mã ID của review item cần loại bỏ.
         """
-        res = self._http_call(f"/api/review/{review_id}/dismiss", method="POST")
-        if res or self.valves.enable_mock_fallback:
-            return f"🗑️ **Đã loại bỏ review item `{review_id}` khỏi hàng đợi.**"
-        return f"❌ Không thể kết nối tới Application Service để loại bỏ `{review_id}`."
+        endpoint = f"/api/review/{review_id}/dismiss"
+        res = self._http_call(endpoint, method="POST", payload={"actor": "USER"})
+        if res is None:
+            return self._offline_error(endpoint)
+        return f"🗑️ **Đã loại bỏ review item `{review_id}` khỏi hàng đợi.**"
 
     def update_task_status(self, task_id: str, new_status: str) -> str:
         """
@@ -250,34 +222,21 @@ class Tools:
         if status_upper not in valid_statuses:
             return f"❌ Trạng thái `{new_status}` không hợp lệ. Vui lòng chọn trong {valid_statuses}."
 
-        payload = {"new_status": status_upper}
-        res = self._http_call(f"/api/tasks/{task_id}/status", method="POST", payload=payload)
-        if res or self.valves.enable_mock_fallback:
-            return f"✅ **Đã cập nhật task `{task_id}` sang trạng thái `{status_upper}` thành công!**"
-        return f"❌ Không thể cập nhật trạng thái cho task `{task_id}`."
+        endpoint = f"/api/tasks/{task_id}/status"
+        payload = {"status": status_upper, "new_status": status_upper, "actor": "USER"}
+        res = self._http_call(endpoint, method="POST", payload=payload)
+        if res is None:
+            return self._offline_error(endpoint)
+        return f"✅ **Đã cập nhật task `{task_id}` sang trạng thái `{status_upper}` thành công!**"
 
     def get_waiting_items(self) -> str:
         """
         Lấy danh sách các việc đang bị nghẽn (BLOCKED) do chờ người khác.
         """
-        data = self._http_call("/api/waiting")
-        if not data and self.valves.enable_mock_fallback:
-            data = [
-                {
-                    "task_id": "task-005",
-                    "title": "Đợi access token cho Microsoft Teams Tenant",
-                    "waiting_for_person_name": "Nguyen Van Huy (Admin)",
-                    "waiting_days": 3,
-                    "reason": "Cần admin duyệt cấp Secret cho App Registration."
-                },
-                {
-                    "task_id": "task-002",
-                    "title": "Review PR #142: Graphiti temporal episode integration",
-                    "waiting_for_person_name": "Tran Thi Mai",
-                    "waiting_days": 1,
-                    "reason": "Đang chờ Mai cập nhật thêm unit test."
-                }
-            ]
+        endpoint = "/api/waiting"
+        data = self._http_call(endpoint)
+        if data is None:
+            return self._offline_error(endpoint)
 
         if not data:
             return "🎉 Hiện tại không có task nào đang bị nghẽn vì chờ người khác!"
@@ -295,18 +254,10 @@ class Tools:
         """
         Lấy danh sách các cam kết bằng lời hứa trong chat đã trôi quá hạn cần theo dõi (follow-up).
         """
-        data = self._http_call("/api/forgotten")
-        if not data and self.valves.enable_mock_fallback:
-            data = [
-                {
-                    "commitment_id": "comm-009",
-                    "title": "Gửi tài liệu architecture v1 cho An",
-                    "promised_to_name": "Le Hoang An",
-                    "days_stale": 4,
-                    "last_conversation_snippet": "Chiều nay anh gửi file docs nhé.",
-                    "suggested_action": "Gửi link tài liệu hoặc nhắn hẹn lại thời gian cụ thể"
-                }
-            ]
+        endpoint = "/api/forgotten"
+        data = self._http_call(endpoint)
+        if data is None:
+            return self._offline_error(endpoint)
 
         if not data:
             return "✨ Tuyệt vời! Bạn không có cam kết hoặc lời hứa nào bị quên trôi quá hạn."
@@ -327,20 +278,14 @@ class Tools:
         :param query: Từ khóa tìm kiếm
         :param knowledge_type: Loại tri thức ('decision', 'lesson', 'all')
         """
-        data = self._http_call(f"/api/knowledge?query={query}&type={knowledge_type}")
-        if not data and self.valves.enable_mock_fallback:
-            data = {
-                "decisions": [
-                    {"decision_id": "ADR-001", "summary": "Neo4j-only Architecture (Loại bỏ Postgres & SQLite)", "decided_by": "Architecture Lead"}
-                ],
-                "lessons": [
-                    {"lesson_id": "LES-001", "topic": "Neo4j APOC Configuration trên MacOS Docker", "solution": "Allowlist apoc.* trong docker-compose.yml"}
-                ]
-            }
+        endpoint = f"/api/knowledge?query={query}&type={knowledge_type}"
+        data = self._http_call(endpoint)
+        if data is None:
+            return self._offline_error(endpoint)
 
         lines = [f"### 💡 Kết quả tra cứu tri thức cho từ khóa '{query}':\n"]
-        decisions = data.get("decisions", [])
-        lessons = data.get("lessons", [])
+        decisions = data.get("decisions", []) if isinstance(data, dict) else []
+        lessons = data.get("lessons", []) if isinstance(data, dict) else []
 
         if decisions:
             lines.append("**Quyết định Kiến trúc (ADR):**")
@@ -361,25 +306,19 @@ class Tools:
         """
         Kiểm tra tình trạng hoạt động và đồng bộ của các Adapter nguồn dữ liệu (Teams, Outlook, Jira, Coding Agents).
         """
-        data = self._http_call("/api/sources/health")
-        if not data and self.valves.enable_mock_fallback:
-            data = {
-                "overall_health": "healthy",
-                "tenants": [
-                    {"tenant_name": "Microsoft Teams (Enterprise)", "source_type": "ms_teams", "status": "healthy", "items_synced_total": 1240},
-                    {"tenant_name": "Microsoft Outlook (Exchange)", "source_type": "outlook", "status": "healthy", "items_synced_total": 842},
-                    {"tenant_name": "Jira Cloud (Sprint)", "source_type": "jira", "status": "healthy", "items_synced_total": 310},
-                    {"tenant_name": "Coding Agents (Cursor / Claude / Antigravity)", "source_type": "coding_agents", "status": "healthy", "items_synced_total": 156}
-                ]
-            }
+        endpoint = "/api/sources/health"
+        data = self._http_call(endpoint)
+        if data is None:
+            return self._offline_error(endpoint)
 
         if not data:
             return "⚠️ Không thể kiểm tra tình trạng sức khỏe của các adapter nguồn."
 
-        status_icon = "🟢" if data.get("overall_health") == "healthy" else "🟡"
-        lines = [f"### 🩺 Tình trạng Đồng bộ Nguồn Dữ liệu: {status_icon} **{data.get('overall_health', '').upper()}**\n"]
+        overall = str(data.get("overall_health", "unknown")).lower()
+        status_icon = "🟢" if overall == "healthy" else "🟡"
+        lines = [f"### 🩺 Tình trạng Đồng bộ Nguồn Dữ liệu: {status_icon} **{overall.upper()}**\n"]
         for t in data.get("tenants", []):
-            st = "🟢" if t.get("status") == "healthy" else "🔴"
+            st = "🟢" if str(t.get("status", "")).lower() == "healthy" else "🔴"
             lines.append(f"- {st} **{t.get('tenant_name')}** ({t.get('source_type')}): Đã bắt {t.get('items_synced_total')} sự kiện")
         return "\n".join(lines)
 

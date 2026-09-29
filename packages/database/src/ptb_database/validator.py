@@ -7,7 +7,13 @@ hoặc quan hệ không đúng loại thực thể theo Canonical Ontology trong
 from typing import Any, Dict, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 
-from ptb_database.ontology import ALLOWED_NODES, ALLOWED_EDGES, AI_EXTRACTED_EDGES
+from ptb_database.ontology import (
+    ALLOWED_NODES,
+    ALLOWED_EDGES,
+    AI_EXTRACTED_EDGES,
+    CANONICAL_TASK_STATUSES,
+    CANONICAL_NODE_SCHEMAS,
+)
 
 
 class ValidationResult(BaseModel):
@@ -39,7 +45,7 @@ class GraphOntologyValidator:
 
     @classmethod
     def validate_node(cls, node_label: str, properties: Dict[str, Any]) -> ValidationResult:
-        """Kiểm tra nhãn node và thuộc tính định danh."""
+        """Kiểm tra nhãn node, thuộc tính định danh và vocabulary trạng thái."""
         if node_label not in ALLOWED_NODES:
             return ValidationResult(
                 is_valid=False,
@@ -53,6 +59,68 @@ class GraphOntologyValidator:
                     is_valid=False,
                     error_message=f"Node '{node_label}' bắt buộc phải có thuộc tính khóa chính trong {allowed_ids}"
                 )
+
+        # Chuẩn hóa kiểm tra TaskStatus (5 uppercase statuses)
+        if node_label == "UnifiedTask" and "status" in properties:
+            status_val = properties["status"]
+            if hasattr(status_val, "value"):
+                status_val = status_val.value
+            if status_val not in CANONICAL_TASK_STATUSES:
+                return ValidationResult(
+                    is_valid=False,
+                    error_message=f"TaskStatus '{status_val}' không hợp lệ. Phải là một trong 5 trạng thái uppercase: {sorted(CANONICAL_TASK_STATUSES)}"
+                )
+
+        if node_label == "StatusTransitionAudit":
+            for status_key in ("old_status", "new_status"):
+                if status_key in properties:
+                    s_val = properties[status_key]
+                    if hasattr(s_val, "value"):
+                        s_val = s_val.value
+                    if s_val not in CANONICAL_TASK_STATUSES:
+                        return ValidationResult(
+                            is_valid=False,
+                            error_message=f"{status_key} '{s_val}' không hợp lệ. Phải là một trong 5 trạng thái uppercase: {sorted(CANONICAL_TASK_STATUSES)}"
+                        )
+
+        return ValidationResult(is_valid=True)
+
+    @classmethod
+    def validate_canonical_schema(
+        cls,
+        node_label: str,
+        properties: Dict[str, Any],
+    ) -> ValidationResult:
+        """Kiểm tra đối soát 100% vocabulary và các trường bắt buộc của schema node theo ontology."""
+        if node_label not in CANONICAL_NODE_SCHEMAS:
+            return cls.validate_node(node_label, properties)
+
+        base_res = cls.validate_node(node_label, properties)
+        if not base_res.is_valid:
+            return base_res
+
+        required_fields = CANONICAL_NODE_SCHEMAS[node_label]
+        props = dict(properties)
+
+        # Xử lý aliases tương thích giữa Python/TypeScript/Cypher
+        if node_label == "Evidence":
+            if "raw_event_id" in props and "source_event_id" not in props:
+                props["source_event_id"] = props["raw_event_id"]
+            if "confidence" in props and "confidence_score" not in props:
+                props["confidence_score"] = props["confidence"]
+        elif node_label == "MergeAudit":
+            if "created_at" in props and "merged_at" not in props:
+                props["merged_at"] = props["created_at"]
+        elif node_label == "StatusTransitionAudit":
+            if "changed_at" in props and "timestamp" not in props:
+                props["timestamp"] = props["changed_at"]
+
+        missing = [f for f in required_fields if f not in props or props[f] is None]
+        if missing:
+            return ValidationResult(
+                is_valid=False,
+                error_message=f"Node '{node_label}' thiếu các trường schema canonical bắt buộc: {sorted(missing)}"
+            )
 
         return ValidationResult(is_valid=True)
 

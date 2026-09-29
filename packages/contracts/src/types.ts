@@ -55,6 +55,19 @@ export interface SourceConnectionConfig {
   is_active: boolean;
 }
 
+export interface IngestionCheckpointRecord {
+  id?: string | null;
+  tenant_id: string;
+  source_type: SourceType;
+  stream_id: string;
+  last_external_id?: string | null;
+  last_event_timestamp?: string | null;
+  cursor_token?: string | null;
+  updated_at?: string | null;
+}
+
+export type IngestionCheckpoint = IngestionCheckpointRecord;
+
 export interface SyncCheckpointState {
   id: string;
   connection_id: string;
@@ -91,16 +104,22 @@ export interface ParsedMessageContent {
 export interface EvidenceRecord {
   id: string;
   task_id?: string | null;
-  raw_event_id: string;
   evidence_type: EvidenceType;
-  source_type: string;
-  external_url?: string | null;
-  author_canonical_id: string;
-  timestamp: string;
   snippet: string;
-  confidence: number;
-  extraction_version: string;
+  source_type: string;
+  source_event_id?: string | null;
+  timestamp: string;
+  confidence_score: number;
+  // Backward compatibility aliases
+  raw_event_id?: string | null;
+  confidence?: number;
+  external_url?: string | null;
+  author_canonical_id?: string | null;
+  author_canonical_name?: string | null;
+  extraction_version?: string;
 }
+
+export type Evidence = EvidenceRecord;
 
 export interface ExtractedCommitment {
   title: string;
@@ -114,21 +133,68 @@ export interface ExtractedCommitment {
   raw_event_id: string;
 }
 
+export interface MergeAuditRecord {
+  id: string;
+  candidate_task_ids: string[];
+  winning_task_id: string;
+  correlation_score: number;
+  deterministic_anchors: string[];
+  merge_reason: string;
+  merged_at: string;
+  // Backward compatibility aliases
+  semantic_score?: number;
+  processor_version?: string;
+  created_at?: string | null;
+}
+
+export type MergeAudit = MergeAuditRecord;
+
+export interface StatusTransitionAuditRecord {
+  id: string;
+  task_id: string;
+  old_status: TaskStatus;
+  new_status: TaskStatus;
+  change_actor: string;
+  timestamp: string;
+  reason: string;
+  // Backward compatibility aliases
+  source_evidence_ids?: string[];
+  confidence?: number;
+  changed_at?: string | null;
+}
+
+export type StatusTransitionAudit = StatusTransitionAuditRecord;
+
 export interface UnifiedTaskCandidate {
   id: string;
   title: string;
   description?: string | null;
   status: TaskStatus;
-  owner_canonical_id: string;
+  inferred_status?: string | null;
+  owner_canonical_id?: string | null;
+  owner_name?: string | null;
   requester_canonical_id?: string | null;
+  requester_name?: string | null;
   project_key?: string | null;
   customer_id?: string | null;
   due_date?: string | null;
   explicit_deadline: boolean;
+  priority_score?: number;
   extraction_confidence: number;
+  correlation_confidence?: number | null;
   review_status: string;
+  candidate_task_ids?: string[];
+  winning_task_id?: string | null;
+  correlation_score?: number | null;
+  deterministic_anchors?: string[];
+  merge_reason?: string | null;
+  merge_audit?: MergeAuditRecord | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   evidences: EvidenceRecord[];
 }
+
+export type UnifiedTask = UnifiedTaskCandidate;
 
 export interface ReviewQueueItem {
   id: string;
@@ -153,15 +219,20 @@ export interface CanonicalPersonRecord {
   created_at?: string | null;
 }
 
+export type Person = CanonicalPersonRecord;
+
 export interface SourceIdentityRecord {
   id: string;
-  person_id: string;
+  person_id?: string | null;
+  identity_key?: string | null;
   tenant_id: string;
   source_type: string;
   external_id: string;
   external_username?: string | null;
   external_display_name?: string | null;
 }
+
+export type SourceIdentity = SourceIdentityRecord;
 
 // ==========================================
 // Layer 4: Intelligence

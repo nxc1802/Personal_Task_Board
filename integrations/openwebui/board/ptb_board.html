@@ -186,7 +186,7 @@
     }
 
     .status-dot.online { background-color: #10b981; box-shadow: 0 0 6px #10b981; }
-    .status-dot.mock { background-color: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+    .status-dot.degraded { background-color: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
     .status-dot.offline { background-color: #ef4444; }
 
     .btn {
@@ -900,9 +900,9 @@
       </div>
 
       <div class="header-controls">
-        <div id="connectionStatus" class="status-pill" onclick="toggleConnectionMode()" title="Nhấn để đổi chế độ API / Mock Data">
-          <span class="status-dot mock" id="statusDot"></span>
-          <span id="statusText">Mock Mode (Standalone)</span>
+        <div id="connectionStatus" class="status-pill" onclick="checkApiConnection(true)" title="Nhấn để kiểm tra kết nối Application Service (8000)">
+          <span class="status-dot offline" id="statusDot"></span>
+          <span id="statusText">Checking API...</span>
         </div>
 
         <button class="btn btn-sm" onclick="refreshCurrentView()" title="Tải lại dữ liệu">
@@ -1195,11 +1195,6 @@
             <div class="headline-meta">Kiểm soát tiến trình Acquisition L1: Playwright Interceptors, API Watchers và Coding Agent turn monitors.</div>
           </div>
         </div>
-        <div>
-          <button class="btn btn-sm btn-primary" onclick="syncAllSources()">
-            ⚡ Đồng bộ ngay tất cả
-          </button>
-        </div>
       </div>
 
       <div id="sourcesGrid" class="grid-3">
@@ -1253,322 +1248,12 @@
   <!-- Toast Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <!-- Application Logic & Mock Data -->
+  <!-- Application Logic (Live REST API Only) -->
   <script>
-    // --- Demo Mode & Configuration ---
-    const DEMO_MODE = new URLSearchParams(window.location.search).has('demo') || window.PTB_DEMO_MODE === true;
-
     const CONFIG = {
       apiBase: "http://127.0.0.1:8000",
-      isMockMode: DEMO_MODE,
       currentView: "today",
       taskViewMode: "kanban"
-    };
-
-    // --- Rich Realistic Mock Data (PTB Canonical v1 Schema) ---
-    const MOCK_DATA = {
-      today: {
-        generated_at: new Date().toISOString(),
-        user_id: "00000000-0000-0000-0000-000000000002",
-        summary_headline: "Hôm nay có 2 việc cần ưu tiên, trong đó 1 lỗi deployment staging đang có người chờ.",
-        identified_risks: [
-          "Shortcut story 1204 sẽ đến hạn trong 48h tới nhưng chưa có commit mới"
-        ],
-        top_tasks: [
-          {
-            task_id: "task-unified-001",
-            title: "Investigate deployment failure on staging",
-            status: "TODO",
-            project_key: "OPS",
-            owner_name: "Dam Quang Cuong",
-            requester_name: "Nguyen Van Huy",
-            due_date: new Date(Date.now() + 6 * 3600000).toISOString(),
-            priority: {
-              total_score: 92.5,
-              deadline_score: 25.0,
-              customer_impact_score: 20.0,
-              production_impact_score: 20.0,
-              commitment_weight: 15.0,
-              waiting_penalty: 15.0,
-              stale_age_score: 0.0,
-              uncertainty_deduction: 2.5,
-              llm_explanation: "Đến hạn hôm nay, ảnh hưởng hệ thống staging và Huy đang chờ phản hồi sau cam kết trên Teams."
-            },
-            primary_evidence_snippet: "Để em check nhé, chiều nay sẽ có kết quả fix cho staging.",
-            deep_link: "https://teams.microsoft.com/l/message/19:channel-devops/1726567080",
-            is_at_risk: true,
-            risk_reason: "Hạn chót chiều nay nhưng chưa bắt đầu."
-          },
-          {
-            task_id: "task-unified-002",
-            title: "Review PR #142: Graphiti temporal episode integration",
-            status: "IN_PROGRESS",
-            project_key: "CORE",
-            owner_name: "Dam Quang Cuong",
-            requester_name: "Tran Thi Mai",
-            due_date: new Date(Date.now() + 24 * 3600000).toISOString(),
-            priority: {
-              total_score: 78.0,
-              deadline_score: 15.0,
-              customer_impact_score: 10.0,
-              production_impact_score: 20.0,
-              commitment_weight: 20.0,
-              waiting_penalty: 15.0,
-              stale_age_score: 0.0,
-              uncertainty_deduction: 2.0,
-              llm_explanation: "Mai đang chờ duyệt PR để unblock nhánh processing."
-            },
-            primary_evidence_snippet: "Anh Cường review giúp em PR #142 với nhé, em đã bổ sung tests.",
-            deep_link: "https://github.com/nxc1802/Personal_Task_Board/pull/142",
-            is_at_risk: false,
-            risk_reason: null
-          },
-          {
-            task_id: "task-unified-003",
-            title: "Cập nhật tài liệu kiến trúc Neo4j-only v1",
-            status: "TODO",
-            project_key: "PTB",
-            owner_name: "Dam Quang Cuong",
-            requester_name: "Le Hoang An",
-            due_date: new Date(Date.now() + 48 * 3600000).toISOString(),
-            priority: {
-              total_score: 65.0,
-              deadline_score: 10.0,
-              customer_impact_score: 15.0,
-              production_impact_score: 10.0,
-              commitment_weight: 25.0,
-              waiting_penalty: 5.0,
-              stale_age_score: 0.0,
-              uncertainty_deduction: 0.0,
-              llm_explanation: "Cam kết đã hứa gửi cho An đầu tuần."
-            },
-            primary_evidence_snippet: "Chiều nay anh gửi file docs/v1.md nhé.",
-            deep_link: null,
-            is_at_risk: false,
-            risk_reason: null
-          }
-        ]
-      },
-      reviewQueue: [
-        {
-          id: "rev-cand-101",
-          raw_event_id: "raw-teams-9912",
-          reason: "Confidence trung bình 0.58; Trích xuất từ tin nhắn chat ngắn trong Teams",
-          candidate_task: {
-            id: "cand-101",
-            title: "Kiểm tra log lỗi đồng bộ webhook Jira",
-            project_key: "OPS",
-            owner_name: "Dam Quang Cuong",
-            requester_name: "Hoang Nam",
-            due_date: new Date(Date.now() + 12 * 3600000).toISOString(),
-            extraction_confidence: 0.58,
-            evidences: [
-              {
-                source_type: "ms_teams",
-                snippet: "Anh xem giúp em cái webhook jira sao sáng nay không thấy bắn event về server.",
-                author_canonical_name: "Hoang Nam"
-              }
-            ]
-          }
-        },
-        {
-          id: "rev-cand-102",
-          raw_event_id: "raw-outlook-4412",
-          reason: "Confidence 0.62; Phân tách attribution người chịu trách nhiệm cần xác nhận",
-          candidate_task: {
-            id: "cand-102",
-            title: "Cung cấp báo cáo audit security cho bên đối tác",
-            project_key: "CORE",
-            owner_name: "Dam Quang Cuong",
-            requester_name: "David Smith",
-            due_date: new Date(Date.now() + 72 * 3600000).toISOString(),
-            extraction_confidence: 0.62,
-            evidences: [
-              {
-                source_type: "outlook",
-                snippet: "Could you please send over the latest SOC2 compliance checklist before Friday?",
-                author_canonical_name: "David Smith"
-              }
-            ]
-          }
-        }
-      ],
-      allTasks: [
-        {
-          id: "task-unified-001",
-          title: "Investigate deployment failure on staging",
-          status: "TODO",
-          project_key: "OPS",
-          owner_name: "Dam Quang Cuong",
-          requester_name: "Nguyen Van Huy",
-          due_date: new Date(Date.now() + 6 * 3600000).toISOString(),
-          priority_score: 92.5,
-          source_type: "ms_teams",
-          evidence_snippet: "Để em check nhé, chiều nay sẽ có kết quả fix cho staging."
-        },
-        {
-          id: "task-unified-002",
-          title: "Review PR #142: Graphiti temporal episode integration",
-          status: "IN_PROGRESS",
-          project_key: "CORE",
-          owner_name: "Dam Quang Cuong",
-          requester_name: "Tran Thi Mai",
-          due_date: new Date(Date.now() + 24 * 3600000).toISOString(),
-          priority_score: 78.0,
-          source_type: "github",
-          evidence_snippet: "Anh Cường review giúp em PR #142 với nhé."
-        },
-        {
-          id: "task-unified-003",
-          title: "Cập nhật tài liệu kiến trúc Neo4j-only v1",
-          status: "TODO",
-          project_key: "PTB",
-          owner_name: "Dam Quang Cuong",
-          requester_name: "Le Hoang An",
-          due_date: new Date(Date.now() + 48 * 3600000).toISOString(),
-          priority_score: 65.0,
-          source_type: "ms_teams",
-          evidence_snippet: "Chiều nay anh gửi file docs/v1.md nhé."
-        },
-        {
-          id: "task-unified-004",
-          title: "Fix Neo4j APOC procedure permission in container",
-          status: "DONE",
-          project_key: "CORE",
-          owner_name: "Dam Quang Cuong",
-          requester_name: "Self",
-          due_date: null,
-          priority_score: 45.0,
-          source_type: "cursor",
-          evidence_snippet: "Applied apoc.* allowlist to neo4j docker environment."
-        },
-        {
-          id: "task-unified-005",
-          title: "Đợi access token cho Microsoft Teams Tenant",
-          status: "BLOCKED",
-          project_key: "OPS",
-          owner_name: "Dam Quang Cuong",
-          requester_name: "Nguyen Van Huy",
-          due_date: null,
-          priority_score: 82.0,
-          source_type: "ms_teams",
-          evidence_snippet: "Admin chưa cấp app registration secret."
-        }
-      ],
-      waiting: [
-        {
-          task_id: "task-unified-005",
-          title: "Đợi access token cho Microsoft Teams Tenant",
-          waiting_for_person_name: "Nguyen Van Huy (Admin)",
-          blocked_since: new Date(Date.now() - 3 * 86400000).toISOString(),
-          waiting_days: 3,
-          reason: "Cần admin duyệt cấp Secret cho App Registration trên Azure Portal."
-        },
-        {
-          task_id: "task-unified-002",
-          title: "Review PR #142: Graphiti temporal episode integration",
-          waiting_for_person_name: "Tran Thi Mai",
-          blocked_since: new Date(Date.now() - 1 * 86400000).toISOString(),
-          waiting_days: 1,
-          reason: "Đang chờ Mai cập nhật thêm unit test cho edge-cases."
-        }
-      ],
-      forgotten: [
-        {
-          commitment_id: "comm-009",
-          task_id: "task-unified-003",
-          title: "Gửi tài liệu architecture v1 cho An",
-          promised_to_name: "Le Hoang An",
-          promised_at: new Date(Date.now() - 4 * 86400000).toISOString(),
-          days_stale: 4,
-          last_conversation_snippet: "Chiều nay anh gửi file docs nhé.",
-          suggested_action: "Gửi link tài liệu hoặc nhắn hẹn lại thời gian cụ thể"
-        }
-      ],
-      decisions: [
-        {
-          decision_id: "ADR-001",
-          project_key: "PTB",
-          summary: "Neo4j-only Architecture (Loại bỏ PostgreSQL & SQLite)",
-          rationale: "Hợp nhất domain store, ingestion journal, checkpoints và Graphiti memory vào một database duy nhất nhằm loại bỏ dual-storage outbox desync.",
-          decided_by: "Tech Lead & Sub-Agent Alpha",
-          decided_at: "2026-09-28T14:00:00Z"
-        },
-        {
-          decision_id: "ADR-002",
-          project_key: "PTB",
-          summary: "Tách bạch Authoritative Task Status và AI Inferred Status",
-          rationale: "LLM chỉ sinh LIKELY_DONE và LIKELY_BLOCKED. Việc chuyển sang DONE đòi hỏi hành động dứt khoát của người dùng hoặc sự kiện đóng ticket rõ ràng.",
-          decided_by: "Architecture Freeze",
-          decided_at: "2026-09-28T16:30:00Z"
-        },
-        {
-          decision_id: "ADR-003",
-          project_key: "PTB",
-          summary: "OpenWebUI làm Frontend chính thức qua Custom Artifacts",
-          rationale: "Không cần duy trì dự án Next.js riêng; nhúng board trực tiếp bằng Artifacts panel của OpenWebUI và sử dụng FastMCP cho coding agents.",
-          decided_by: "Sub-Agent Eta & Lead",
-          decided_at: "2026-09-28T18:00:00Z"
-        }
-      ],
-      lessons: [
-        {
-          lesson_id: "LES-001",
-          topic: "Neo4j APOC Configuration trên MacOS Docker",
-          description: "Container báo lỗi procedure apoc.* không được load do biến môi trường bảo mật mặc định chặn chạy script APOC.",
-          solution: "Bổ sung NEO4J_dbms_security_procedures_unrestricted=apoc.* và NEO4J_dbms_security_procedures_allowlist=apoc.* vào docker-compose.yml.",
-          recorded_at: "2026-09-27T10:15:00Z"
-        },
-        {
-          lesson_id: "LES-002",
-          topic: "Playwright Session Cookie Expiration Handling",
-          description: "Khi cookie session Microsoft Teams hết hạn, interceptor bị treo silent failure mà không thông báo.",
-          solution: "Bắt sự kiện HTTP 401 trên request /api/v1/messages và kích hoạt trigger re-login tự động hoặc gửi alert lên Health View.",
-          recorded_at: "2026-09-28T09:40:00Z"
-        }
-      ],
-      sourcesHealth: {
-        overall_health: "healthy",
-        last_checked_at: new Date().toISOString(),
-        tenants: [
-          {
-            tenant_id: "t-teams-01",
-            tenant_name: "Microsoft Teams (Enterprise)",
-            source_type: "ms_teams",
-            status: "healthy",
-            last_successful_sync: new Date(Date.now() - 5 * 60000).toISOString(),
-            items_synced_total: 1240,
-            error_message: null
-          },
-          {
-            tenant_id: "t-outlook-01",
-            tenant_name: "Microsoft Outlook (Exchange)",
-            source_type: "outlook",
-            status: "healthy",
-            last_successful_sync: new Date(Date.now() - 12 * 60000).toISOString(),
-            items_synced_total: 842,
-            error_message: null
-          },
-          {
-            tenant_id: "t-jira-01",
-            tenant_name: "Jira Cloud (Sprint & Backlog)",
-            source_type: "jira",
-            status: "healthy",
-            last_successful_sync: new Date(Date.now() - 2 * 60000).toISOString(),
-            items_synced_total: 310,
-            error_message: null
-          },
-          {
-            tenant_id: "t-agents-01",
-            tenant_name: "Coding Agents (Cursor / Claude / Antigravity)",
-            source_type: "coding_agents",
-            status: "healthy",
-            last_successful_sync: new Date(Date.now() - 1 * 60000).toISOString(),
-            items_synced_total: 156,
-            error_message: null
-          }
-        ]
-      }
     };
 
     // --- Helper Functions ---
@@ -1675,20 +1360,8 @@
       `;
     }
 
-    // --- API Data Fetching (Production No-Mock, Demo-Only Fallback) ---
+    // --- API Data Fetching (PRODUCTION MODE: STRICTLY NO MOCK FALLBACK) ---
     async function apiFetch(endpoint, options = {}) {
-      if (DEMO_MODE) {
-        try {
-          const res = await fetch(`${CONFIG.apiBase}${endpoint}`, {
-            ...options,
-            headers: { "Content-Type": "application/json", ...(options.headers || {}) }
-          });
-          if (res.ok) return await res.json();
-        } catch (_) {}
-        return null; // Signals fallback to MOCK_DATA in demo mode
-      }
-
-      // PRODUCTION MODE: STRICTLY NO MOCK FALLBACK
       try {
         const res = await fetch(`${CONFIG.apiBase}${endpoint}`, {
           ...options,
@@ -1703,7 +1376,7 @@
           } catch (_) {}
 
           const detailLower = String(detail).toLowerCase();
-          if (res.status === 401 || res.status === 403 || detailLower.includes("microsoft") || detailLower.includes("login") || detailLower.includes("auth_expired")) {
+          if (res.status === 401 || res.status === 403 || detailLower.includes("microsoft") || detailLower.includes("login") || detailLower.includes("auth_expired") || detailLower.includes("auth_required")) {
             const msg = "MICROSOFT LOGIN REQUIRED (Run 'ptb login microsoft')";
             showSystemBanner(msg, "warning");
             updateStatusPill(false, "Auth Required");
@@ -1728,21 +1401,14 @@
         if (err instanceof ApiError) {
           throw err;
         }
-        const offlineMsg = "BACKEND OFFLINE (Run 'ptb serve' or 'ptb run' and check port 8000)";
+        const offlineMsg = "[PTB-OWUI-001] APPLICATION SERVICE OFFLINE (Run 'ptb serve' or 'ptb run' and check port 8000)";
         showSystemBanner(offlineMsg, "error");
-        updateStatusPill(false, "Backend Offline");
+        updateStatusPill(false, "Application Offline");
         throw new ApiError(offlineMsg, "BACKEND_OFFLINE");
       }
     }
 
     async function checkApiConnection(interactive = false) {
-      if (DEMO_MODE) {
-        updateStatusPill(false, "Demo Mode (Mock)");
-        hideSystemBanner();
-        if (interactive) showToast("Đang ở chế độ Demo Mode (?demo=1)", "info");
-        return true;
-      }
-
       try {
         const res = await fetch(`${CONFIG.apiBase}/health`, { signal: AbortSignal.timeout(2000) });
         if (res.ok) {
@@ -1754,10 +1420,11 @@
               const tenants = healthData.tenants || [];
               const authExpired = tenants.some(t => 
                 t.status === "auth_expired" || 
+                t.status === "auth_required" ||
                 t.status === "login_required" || 
                 (t.error_message && t.error_message.toLowerCase().includes("login"))
               );
-              if (authExpired || healthData.overall_health === "auth_expired") {
+              if (authExpired || healthData.overall_health === "auth_expired" || healthData.overall_health === "auth_required") {
                 const msg = "MICROSOFT LOGIN REQUIRED (Run 'ptb login microsoft')";
                 showSystemBanner(msg, "warning");
                 updateStatusPill(false, "Auth Required");
@@ -1784,10 +1451,10 @@
           return false;
         }
       } catch (err) {
-        const msg = "BACKEND OFFLINE (Run 'ptb serve' or 'ptb run' and check port 8000)";
+        const msg = "[PTB-OWUI-001] APPLICATION SERVICE OFFLINE (Run 'ptb serve' or 'ptb run' and check port 8000)";
         showSystemBanner(msg, "error");
-        updateStatusPill(false, "Backend Offline");
-        if (interactive) showToast(msg, "error");
+        updateStatusPill(false, "Application Offline");
+        if (interactive) showToast(msg, "warning");
         return false;
       }
     }
@@ -1799,45 +1466,23 @@
         dot.className = "status-dot online";
         text.innerText = customText || "API Live (8000)";
       } else {
-        if (DEMO_MODE) {
-          dot.className = "status-dot mock";
-          text.innerText = customText || "Demo Mode (Mock)";
-        } else {
-          dot.className = "status-dot offline";
-          text.innerText = customText || "Offline";
-        }
+        dot.className = "status-dot offline";
+        text.innerText = customText || "Offline";
       }
     }
 
-    function toggleConnectionMode() {
-      if (DEMO_MODE) {
-        CONFIG.isMockMode = !CONFIG.isMockMode;
-        updateStatusPill(!CONFIG.isMockMode);
-        showToast(`Đã chuyển sang chế độ: ${CONFIG.isMockMode ? "Mock Data" : "Live API (8000)"}`);
-        renderCurrentView();
-      } else {
-        checkApiConnection(true);
-        renderCurrentView();
-      }
-    }
-
-    // --- Renderers for 8 Views (Live REST API First) ---
+    // --- Renderers for 8 Views (Live REST API Only) ---
 
     // 1. TODAY VIEW
     async function renderTodayView() {
       let data = null;
       try {
-        const apiData = await apiFetch("/api/today");
-        data = apiData || (DEMO_MODE ? MOCK_DATA.today : null);
+        data = await apiFetch("/api/today");
       } catch (err) {
-        if (DEMO_MODE) {
-          data = MOCK_DATA.today;
-        } else {
-          renderErrorView("todayTasksList", err.message);
-          document.getElementById("todayHeadline").innerText = "Chưa kết nối được hệ thống backend.";
-          document.getElementById("count-today").innerText = "!";
-          return;
-        }
+        renderErrorView("todayTasksList", err.message);
+        document.getElementById("todayHeadline").innerText = "Chưa kết nối được hệ thống backend.";
+        document.getElementById("count-today").innerText = "!";
+        return;
       }
 
       if (!data) {
@@ -1921,22 +1566,21 @@
     }
 
     // 2. INBOX / REVIEW VIEW
+    let cachedReviewQueue = [];
+
     async function renderReviewView() {
       let list = null;
       try {
-        const apiData = await apiFetch("/api/review");
-        list = apiData || (DEMO_MODE ? MOCK_DATA.reviewQueue : null);
+        list = await apiFetch("/api/review");
       } catch (err) {
-        if (DEMO_MODE) {
-          list = MOCK_DATA.reviewQueue;
-        } else {
-          renderErrorView("reviewQueueList", err.message);
-          document.getElementById("count-review").innerText = "!";
-          return;
-        }
+        cachedReviewQueue = [];
+        renderErrorView("reviewQueueList", err.message);
+        document.getElementById("count-review").innerText = "!";
+        return;
       }
 
-      if (!list) list = [];
+      if (!Array.isArray(list)) list = [];
+      cachedReviewQueue = list;
       document.getElementById("count-review").innerText = list.length;
 
       const container = document.getElementById("reviewQueueList");
@@ -1998,20 +1642,16 @@
     async function renderTasksView() {
       let tasks = null;
       try {
-        const apiData = await apiFetch("/api/tasks");
-        tasks = apiData || (DEMO_MODE ? MOCK_DATA.allTasks : null);
+        tasks = await apiFetch("/api/tasks");
       } catch (err) {
-        if (DEMO_MODE) {
-          tasks = MOCK_DATA.allTasks;
-        } else {
-          renderErrorView("tasksKanbanContainer", err.message);
-          renderErrorView("tasksListContainer", err.message);
-          document.getElementById("count-tasks").innerText = "!";
-          return;
-        }
+        cachedAllTasks = [];
+        renderErrorView("tasksKanbanContainer", err.message);
+        renderErrorView("tasksListContainer", err.message);
+        document.getElementById("count-tasks").innerText = "!";
+        return;
       }
 
-      cachedAllTasks = tasks || [];
+      cachedAllTasks = Array.isArray(tasks) ? tasks : [];
       document.getElementById("count-tasks").innerText = cachedAllTasks.length;
       filteredTasks = [...cachedAllTasks];
       applyTaskFilters();
@@ -2143,19 +1783,14 @@
     async function renderWaitingView() {
       let list = null;
       try {
-        const apiData = await apiFetch("/api/waiting");
-        list = apiData || (DEMO_MODE ? MOCK_DATA.waiting : null);
+        list = await apiFetch("/api/waiting");
       } catch (err) {
-        if (DEMO_MODE) {
-          list = MOCK_DATA.waiting;
-        } else {
-          renderErrorView("waitingList", err.message);
-          document.getElementById("count-waiting").innerText = "!";
-          return;
-        }
+        renderErrorView("waitingList", err.message);
+        document.getElementById("count-waiting").innerText = "!";
+        return;
       }
 
-      if (!list) list = [];
+      if (!Array.isArray(list)) list = [];
       document.getElementById("count-waiting").innerText = list.length;
       const container = document.getElementById("waitingList");
       container.innerHTML = "";
@@ -2179,7 +1814,6 @@
             <div style="font-style: normal; margin-top: 2px;">Lý do: ${escapeHtml(item.reason)}</div>
           </div>
           <div style="display: flex; justify-content: flex-end; gap: 8px;">
-            <button class="btn btn-sm" onclick="showToast('Đã copy tin nhắn nhắc nhở cho ${escapeHtml(item.waiting_for_person_name)}')">🔔 Nhắc nhở (Nudge)</button>
             <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${item.task_id}', 'IN_PROGRESS')">✓ Đã unblock</button>
           </div>
         `;
@@ -2191,19 +1825,14 @@
     async function renderForgottenView() {
       let list = null;
       try {
-        const apiData = await apiFetch("/api/forgotten");
-        list = apiData || (DEMO_MODE ? MOCK_DATA.forgotten : null);
+        list = await apiFetch("/api/forgotten");
       } catch (err) {
-        if (DEMO_MODE) {
-          list = MOCK_DATA.forgotten;
-        } else {
-          renderErrorView("forgottenList", err.message);
-          document.getElementById("count-forgotten").innerText = "!";
-          return;
-        }
+        renderErrorView("forgottenList", err.message);
+        document.getElementById("count-forgotten").innerText = "!";
+        return;
       }
 
-      if (!list) list = [];
+      if (!Array.isArray(list)) list = [];
       document.getElementById("count-forgotten").innerText = list.length;
       const container = document.getElementById("forgottenList");
       container.innerHTML = "";
@@ -2232,10 +1861,11 @@
           <div style="font-size: 12px; color: var(--text-secondary); background: var(--bg-muted); padding: 8px; border-radius: var(--radius-sm);">
             🎯 <strong>Gợi ý:</strong> ${escapeHtml(item.suggested_action)}
           </div>
-          <div style="display: flex; justify-content: flex-end; gap: 8px;">
-            <button class="btn btn-sm" onclick="showToast('Đã chuyển thành Task khẩn cấp!')">🚀 Tạo Task xử lý ngay</button>
-            <button class="btn btn-sm btn-primary" onclick="dismissForgotten('${item.commitment_id}')">✓ Đã gửi / Đã giải quyết</button>
-          </div>
+          ${item.task_id ? `
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${item.task_id}', 'DONE')">✓ Đã gửi / Đã giải quyết</button>
+            </div>
+          ` : ""}
         `;
         container.appendChild(card);
       });
@@ -2246,18 +1876,14 @@
       let list = null;
       try {
         const apiData = await apiFetch("/api/knowledge?query=decision&limit=50");
-        list = (apiData && apiData.decisions) || (DEMO_MODE ? MOCK_DATA.decisions : null);
+        list = (apiData && apiData.decisions) ? apiData.decisions : [];
       } catch (err) {
-        if (DEMO_MODE) {
-          list = MOCK_DATA.decisions;
-        } else {
-          renderErrorView("decisionsList", err.message);
-          document.getElementById("count-decisions").innerText = "!";
-          return;
-        }
+        renderErrorView("decisionsList", err.message);
+        document.getElementById("count-decisions").innerText = "!";
+        return;
       }
 
-      if (!list) list = [];
+      if (!Array.isArray(list)) list = [];
       document.getElementById("count-decisions").innerText = list.length;
       const container = document.getElementById("decisionsList");
       container.innerHTML = "";
@@ -2292,18 +1918,14 @@
       let list = null;
       try {
         const apiData = await apiFetch("/api/knowledge?query=lesson&limit=50");
-        list = (apiData && apiData.lessons) || (DEMO_MODE ? MOCK_DATA.lessons : null);
+        list = (apiData && apiData.lessons) ? apiData.lessons : [];
       } catch (err) {
-        if (DEMO_MODE) {
-          list = MOCK_DATA.lessons;
-        } else {
-          renderErrorView("lessonsList", err.message);
-          document.getElementById("count-lessons").innerText = "!";
-          return;
-        }
+        renderErrorView("lessonsList", err.message);
+        document.getElementById("count-lessons").innerText = "!";
+        return;
       }
 
-      if (!list) list = [];
+      if (!Array.isArray(list)) list = [];
       document.getElementById("count-lessons").innerText = list.length;
       const container = document.getElementById("lessonsList");
       container.innerHTML = "";
@@ -2337,16 +1959,11 @@
     async function renderHealthView() {
       let data = null;
       try {
-        const apiData = await apiFetch("/api/sources/health");
-        data = apiData || (DEMO_MODE ? MOCK_DATA.sourcesHealth : null);
+        data = await apiFetch("/api/sources/health");
       } catch (err) {
-        if (DEMO_MODE) {
-          data = MOCK_DATA.sourcesHealth;
-        } else {
-          renderErrorView("sourcesGrid", err.message);
-          document.getElementById("count-health").innerText = "OFFLINE";
-          return;
-        }
+        renderErrorView("sourcesGrid", err.message);
+        document.getElementById("count-health").innerText = "OFFLINE";
+        return;
       }
 
       if (!data) {
@@ -2369,16 +1986,16 @@
       tenants.forEach(src => {
         const card = document.createElement("div");
         card.className = "card";
-        const st = (src.status || "healthy").toLowerCase();
+        const st = (src.status || "unknown").toLowerCase();
         const isHealthy = st === "healthy";
-        const isAuthExpired = st === "auth_expired" || st === "login_required";
+        const isAuthExpired = st === "auth_expired" || st === "login_required" || st === "auth_required" || st === "error";
         const statusBadgeClass = isHealthy ? "status-DONE" : (isAuthExpired ? "status-BLOCKED" : "status-TODO");
 
         card.innerHTML = `
           <div class="card-header">
             <span class="tag tag-source">${escapeHtml(src.source_type)}</span>
             <span class="tag tag-status ${statusBadgeClass}">
-              ${escapeHtml(src.status.toUpperCase())}
+              ${escapeHtml(String(src.status || "UNKNOWN").toUpperCase())}
             </span>
           </div>
           <div class="card-title" style="font-size: 14px;">${escapeHtml(src.tenant_name)}</div>
@@ -2387,32 +2004,18 @@
             <div>Tổng số mục đã bắt: <strong>${(src.items_synced_total || 0).toLocaleString()}</strong></div>
             ${src.error_message ? `<div style="color: var(--danger-text);">⚠️ ${escapeHtml(src.error_message)}</div>` : ""}
           </div>
-          <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
-            <button class="btn btn-sm" onclick="syncSingleSource('${src.tenant_id}')">⚡ Kích hoạt sync</button>
-          </div>
         `;
         grid.appendChild(card);
       });
     }
 
-    // --- Interactive Action Handlers (Live Mutations First) ---
+    // --- Interactive Action Handlers (Real REST API Mutations Only) ---
     async function updateTaskStatus(taskId, newStatus) {
-      if (DEMO_MODE) {
-        const t1 = MOCK_DATA.allTasks.find(x => x.id === taskId);
-        if (t1) t1.status = newStatus;
-        const t2 = MOCK_DATA.today.top_tasks.find(x => x.task_id === taskId);
-        if (t2) t2.status = newStatus;
-        showToast(`Đã chuyển task sang trạng thái ${newStatus}`, "success");
-        renderCurrentView();
-        return;
-      }
-
-      // Live REST API mutation
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}/status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: newStatus, actor: "USER" })
+          body: JSON.stringify({ status: newStatus, new_status: newStatus, actor: "USER" })
         });
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
@@ -2426,29 +2029,6 @@
     }
 
     async function approveReviewItem(revId) {
-      if (DEMO_MODE) {
-        const item = MOCK_DATA.reviewQueue.find(x => x.id === revId || x.candidate_task?.id === revId);
-        if (item) {
-          MOCK_DATA.allTasks.unshift({
-            id: item.candidate_task.id,
-            title: item.candidate_task.title,
-            status: "TODO",
-            project_key: item.candidate_task.project_key || "OPS",
-            owner_name: item.candidate_task.owner_name || "Tôi",
-            requester_name: item.candidate_task.requester_name,
-            due_date: item.candidate_task.due_date,
-            priority_score: 70.0,
-            source_type: item.candidate_task.evidences[0]?.source_type || "chat",
-            evidence_snippet: item.candidate_task.evidences[0]?.snippet || ""
-          });
-        }
-        MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId && x.candidate_task?.id !== revId);
-        showToast("Đã phê duyệt task và đưa vào TODO board!", "success");
-        renderCurrentView();
-        return;
-      }
-
-      // Live REST API
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/review/${revId}/approve`, {
           method: "POST",
@@ -2467,14 +2047,6 @@
     }
 
     async function dismissReviewItem(revId) {
-      if (DEMO_MODE) {
-        MOCK_DATA.reviewQueue = MOCK_DATA.reviewQueue.filter(x => x.id !== revId && x.candidate_task?.id !== revId);
-        showToast("Đã loại bỏ task candidate khỏi hàng đợi duyệt.");
-        renderCurrentView();
-        return;
-      }
-
-      // Live REST API
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/review/${revId}/dismiss`, {
           method: "POST",
@@ -2495,16 +2067,20 @@
     let currentEditingRevId = null;
     function openEditModal(revId) {
       currentEditingRevId = revId;
-      const list = DEMO_MODE ? MOCK_DATA.reviewQueue : cachedAllTasks;
-      const item = (MOCK_DATA.reviewQueue || []).find(x => x.id === revId || x.candidate_task?.id === revId);
-      const cand = item ? item.candidate_task : null;
+      const reviewItem = (cachedReviewQueue || []).find(
+        x => x.id === revId || x.candidate_task?.id === revId
+      );
+      const taskFromAll = (cachedAllTasks || []).find(
+        x => x.id === revId || x.task_id === revId
+      );
+      const cand = reviewItem ? reviewItem.candidate_task : taskFromAll;
 
-      document.getElementById("editTaskId").value = cand ? cand.id : revId;
-      document.getElementById("editTaskTitle").value = cand ? cand.title : "";
+      document.getElementById("editTaskId").value = (cand && (cand.id || cand.task_id)) ? (cand.id || cand.task_id) : revId;
+      document.getElementById("editTaskTitle").value = cand ? (cand.title || "") : "";
       document.getElementById("editTaskProject").value = cand ? (cand.project_key || "OPS") : "OPS";
       document.getElementById("editTaskOwner").value = cand ? (cand.owner_name || "Tôi") : "Tôi";
-      document.getElementById("editTaskDueDate").value = (cand && cand.due_date) ? cand.due_date.substring(0, 10) : "";
-      document.getElementById("editTaskEvidence").value = (cand && cand.evidences?.[0]?.snippet) || "";
+      document.getElementById("editTaskDueDate").value = (cand && cand.due_date) ? String(cand.due_date).substring(0, 10) : "";
+      document.getElementById("editTaskEvidence").value = (cand && (cand.evidences?.[0]?.snippet || cand.evidence_snippet)) || "";
 
       document.getElementById("editModal").classList.add("active");
     }
@@ -2519,56 +2095,27 @@
       const title = document.getElementById("editTaskTitle").value;
       const projectKey = document.getElementById("editTaskProject").value;
       const ownerName = document.getElementById("editTaskOwner").value;
-
-      if (DEMO_MODE) {
-        const item = MOCK_DATA.reviewQueue.find(x => x.id === currentEditingRevId || x.candidate_task?.id === currentEditingRevId);
-        if (item) {
-          item.candidate_task.title = title;
-          item.candidate_task.project_key = projectKey;
-          item.candidate_task.owner_name = ownerName;
-        }
-        closeEditModal();
-        approveReviewItem(currentEditingRevId);
-        return;
+      const dueDateVal = document.getElementById("editTaskDueDate").value;
+      const payload = { title, project_key: projectKey, owner_name: ownerName, actor: "USER" };
+      if (dueDateVal) {
+        payload.due_date = new Date(dueDateVal).toISOString();
       }
 
-      // Live patch & approve
       try {
-        await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}`, {
+        const res = await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, project_key: projectKey, owner_name: ownerName, actor: "USER" })
+          body: JSON.stringify(payload)
         });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
         closeEditModal();
         await approveReviewItem(taskId);
       } catch (err) {
         showToast(`Lỗi lưu task: ${err.message}`, "warning");
       }
-    }
-
-    async function dismissForgotten(commId) {
-      if (DEMO_MODE) {
-        MOCK_DATA.forgotten = MOCK_DATA.forgotten.filter(x => x.commitment_id !== commId);
-        showToast("Đã cập nhật cam kết hoàn tất!", "success");
-        renderCurrentView();
-        return;
-      }
-      showToast("Đã đánh dấu cam kết hoàn tất!", "success");
-      renderCurrentView();
-    }
-
-    function syncSingleSource(tenantId) {
-      showToast(`Đang kích hoạt đồng bộ adapter ${tenantId}...`, "info");
-      setTimeout(() => {
-        showToast(`Hoàn tất quét adapter ${tenantId}!`, "success");
-      }, 1000);
-    }
-
-    function syncAllSources() {
-      showToast("Đang kích hoạt đồng bộ toàn bộ nguồn...", "info");
-      setTimeout(() => {
-        showToast("Đã quét toàn bộ adapters!", "success");
-      }, 1200);
     }
 
     // --- Master Render Router ---

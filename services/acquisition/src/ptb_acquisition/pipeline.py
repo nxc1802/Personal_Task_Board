@@ -51,77 +51,6 @@ class CheckpointRepositoryProtocol(Protocol):
         ...
 
 
-class InMemoryRawEventRepository:
-    """Kho lưu trữ RawEventRecord trong bộ nhớ (phục vụ testing và fallback)."""
-
-    def __init__(self):
-        self._events: Dict[str, RawEventRecord] = {}
-
-    async def save_raw_event(self, record: RawEventRecord) -> bool:
-        self._events[record.id] = record
-        return True
-
-    async def persist_raw_event(self, record: RawEventRecord) -> str:
-        self._events[record.id] = record
-        return record.id
-
-    async def get_by_id(self, event_id: str) -> Optional[RawEventRecord]:
-        return self._events.get(event_id)
-
-    async def get_all(self) -> List[RawEventRecord]:
-        return list(self._events.values())
-
-    async def get_pending_raw_events(self, limit: int = 50) -> List[RawEventRecord]:
-        from ptb_contracts.l1_acquisition import ProcessingStatus
-        res = []
-        for ev in self._events.values():
-            if getattr(ev, "processing_status", None) in (ProcessingStatus.PENDING, ProcessingStatus.RETRY):
-                res.append(ev)
-                if len(res) >= limit:
-                    break
-        return res
-
-    async def mark_event_status(self, event_id: str, status: Any, **kwargs) -> bool:
-        if event_id in self._events:
-            ev = self._events[event_id]
-            try:
-                object.__setattr__(ev, "processing_status", status)
-            except Exception:
-                pass
-            return True
-        return False
-
-    async def record_processing_attempt(self, attempt_record: Any) -> bool:
-        return True
-
-    @property
-    def count(self) -> int:
-        return len(self._events)
-
-
-class InMemoryCheckpointRepository:
-    """Kho lưu trữ IngestionCheckpointRecord trong bộ nhớ (phục vụ testing và fallback)."""
-
-    def __init__(self):
-        self._checkpoints: Dict[str, IngestionCheckpointRecord] = {}
-
-    def _make_key(self, source_type: Any, stream_id: str) -> str:
-        s_val = source_type.value if hasattr(source_type, "value") else str(source_type)
-        return f"{s_val}:{stream_id}"
-
-    async def get_checkpoint(
-        self, source_type: str, stream_id: str
-    ) -> Optional[IngestionCheckpointRecord]:
-        key = self._make_key(source_type, stream_id)
-        return self._checkpoints.get(key)
-
-    async def save_checkpoint(
-        self, checkpoint: IngestionCheckpointRecord
-    ) -> None:
-        key = self._make_key(checkpoint.source_type, checkpoint.stream_id)
-        self._checkpoints[key] = checkpoint
-
-
 class AcquisitionPipeline:
     """Pipeline quản lý quá trình thu nạp, lưu trữ và checkpoint cho L1 Acquisition."""
 
@@ -132,7 +61,10 @@ class AcquisitionPipeline:
         checkpoint_repo: Optional[Any] = None,
         adapters: Optional[Dict[str, AcquisitionAdapter]] = None,
         tenant_id: str = "local-user",
+        require_persistence: bool = False,
     ):
+        if require_persistence and raw_event_repo is None:
+            raise ValueError("raw_event_repo must be provided when persistence is required")
         self.queue = queue
         self.raw_event_repo = raw_event_repo
         self.checkpoint_repo = checkpoint_repo
@@ -186,8 +118,9 @@ class AcquisitionPipeline:
                 fn(checkpoint)
 
     async def _persist_raw_event(self, record: RawEventRecord) -> bool:
-        """Lưu RawEventRecord vào repository được cắm (Neo4j hoặc in-memory)."""
+        """Lưu RawEventRecord vào repository được cắm (Neo4j hoặc test repository)."""
         if not self.raw_event_repo:
+            logger.error("raw_event_repo không được cấu hình, không thể lưu trữ bền vững event %s", record.id)
             return False
 
         try:

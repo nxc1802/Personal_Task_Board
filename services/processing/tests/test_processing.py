@@ -11,12 +11,14 @@ Tests:
 
 from datetime import datetime, timezone
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from ptb_contracts import (
+    EvidenceRecord,
     EvidenceType,
     ParsedMessageContent,
+    ProcessingStatus,
     RawEventRecord,
     SourceType,
     TaskStatus,
@@ -29,6 +31,8 @@ from ptb_processing import (
     IdentityResolutionResult,
     IdentityResolver,
     LLMStructuredExtractor,
+    ProcessingPipeline,
+    ProcessingWorker,
     TeamsQuoteReplyParser,
 )
 from ptb_processing.extractor.llm_extractor import LLMExtractedSchema, classify_review_status
@@ -652,3 +656,289 @@ def test_layer2_end_to_end_pipeline():
     assert validated_candidate.requester_canonical_id == "00000000-0000-0000-0000-000000000003"
     assert len(validated_candidate.evidences) == 1
     assert validated_candidate.evidences[0].raw_event_id == raw_event.id
+
+
+# ==============================================================================
+# 7. TESTS FOR INTELLIGENCE AUTO-WIRING (Sub-Agent 2A)
+# ==============================================================================
+
+class _InMemoryProcessingTaskRepo:
+    """Mock repository for TaskDomainRepository used in intelligence auto-wiring tests."""
+
+    def __init__(self, tasks=None):
+        self.tasks = {t.id: t for t in (tasks or [])}
+        self.upserted_tasks = []
+
+    async def get_task_by_id(self, task_id: str):
+        return self.tasks.get(task_id)
+
+    async def list_tasks(self, filters=None):
+        return list(self.tasks.values())
+
+    async def get_active_tasks(self):
+        return [
+            t for t in self.tasks.values()
+            if t.status in (TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED)
+        ]
+
+    async def upsert_task_atomic(self, task):
+        self.tasks[task.id] = task
+        self.upserted_tasks.append(task)
+        return task.id
+
+    async def record_merge_audit(self, audit):
+        pass
+
+
+class _InMemoryProcessingRawEventRepo:
+    """Mock repository for RawEventRepository used in intelligence auto-wiring tests."""
+
+    def __init__(self, events=None):
+        self.events = {e.id: e for e in (events or [])}
+        self.status_calls = []
+        self.attempt_records = []
+
+    async def get_pending_raw_events(self, limit=50):
+        return list(self.events.values())[:limit]
+
+    async def mark_event_status(
+        self,
+        event_id,
+        status,
+        error=None,
+        next_retry_at=None,
+        processed_at=None,
+        processor_version=None,
+    ):
+        if event_id in self.events:
+            self.events[event_id].processing_status = status
+        self.status_calls.append({"event_id": event_id, "status": status})
+
+    async def record_processing_attempt(self, attempt):
+        self.attempt_records.append(attempt)
+
+
+def _make_auto_wire_raw_event(
+    event_id="raw-auto-wire-01",
+    content="<p>Để em fix issue OPS-88 trước 5h chiều nay nhé anh.</p>",
+    author_name="Dam Quang Cuong",
+    author_email="cuong.dam@fpt.com",
+):
+    return RawEventRecord(
+        id=event_id,
+        tenant_id="tenant-auto-wire",
+        source_type=SourceType.MS_TEAMS,
+        external_id=f"ext-{event_id}",
+        idempotency_key=f"idemp-{event_id}",
+        author_external_id=author_email,
+        author_display_name=author_name,
+        conversation_or_project_id="channel-ops",
+        event_timestamp=datetime(2026, 9, 29, 10, 0, tzinfo=timezone.utc),
+        raw_payload={
+            "body": {"content": content, "contentType": "html"},
+            "from": {"user": {"displayName": author_name, "id": author_email}},
+        },
+        normalized_text="Để em fix issue OPS-88 trước 5h chiều nay nhé anh.",
+        processing_status=ProcessingStatus.PENDING,
+    )
+
+
+@pytest.mark.asyncio
+async def test_pipeline_intelligence_lifecycle_auto_wired_on_new_task():
+    """Tự động gọi intelligence_lifecycle.on_task_changed với đúng task ID khi tạo mới task."""
+    task_repo = _InMemoryProcessingTaskRepo()
+    extractor = LLMStructuredExtractor(mock_mode=True)
+    mock_lifecycle = AsyncMock()
+
+    pipeline = ProcessingPipeline(
+        task_repo=task_repo,
+        llm_extractor=extractor,
+        intelligence_lifecycle=mock_lifecycle,
+    )
+
+    raw_event = _make_auto_wire_raw_event(event_id="raw-new-task-wire")
+    result = await pipeline.process(raw_event)
+
+    assert result.status == ProcessingStatus.PROCESSED
+    assert result.merged is False
+    assert result.task_id is not None
+
+    # Task đã được lưu vào repository
+    assert len(task_repo.upserted_tasks) == 1
+    assert task_repo.upserted_tasks[0].id == result.task_id
+
+    # on_task_changed được gọi đúng 1 lần với đúng task ID
+    assert mock_lifecycle.on_task_changed.await_count == 1
+    call_args = mock_lifecycle.on_task_changed.await_args
+    assert call_args.args[0] == result.task_id
+
+
+@pytest.mark.asyncio
+async def test_pipeline_intelligence_lifecycle_auto_wired_on_merge():
+    """Tự động gọi intelligence_lifecycle.on_task_changed với đúng task ID sau khi merge thành công."""
+    existing_task = UnifiedTaskCandidate(
+        id="task-existing-anchor-ops88",
+        title="Resolve OPS-88 deployment bug",
+        status=TaskStatus.TODO,
+        owner_name="Dam Quang Cuong",
+        evidences=[
+            EvidenceRecord(
+                id="ev-01",
+                task_id="task-existing-anchor-ops88",
+                raw_event_id="raw-prev-01",
+                evidence_type=EvidenceType.JIRA_TICKET,
+                source_type="jira",
+                timestamp=datetime(2026, 9, 29, 9, 0, tzinfo=timezone.utc),
+                snippet="OPS-88: Deployment bug on production",
+            )
+        ],
+    )
+    task_repo = _InMemoryProcessingTaskRepo(tasks=[existing_task])
+    extractor = LLMStructuredExtractor(mock_mode=True)
+    mock_lifecycle = AsyncMock()
+
+    pipeline = ProcessingPipeline(
+        task_repo=task_repo,
+        llm_extractor=extractor,
+        intelligence_lifecycle=mock_lifecycle,
+    )
+
+    # Raw event thứ 2 cũng có anchor OPS-88 -> sẽ merge
+    raw_event = _make_auto_wire_raw_event(
+        event_id="raw-followup-ops88",
+        content="<p>Em đang xử lý hotfix cho OPS-88 rồi nha anh.</p>",
+    )
+    result = await pipeline.process(raw_event)
+
+    assert result.status == ProcessingStatus.PROCESSED
+    assert result.merged is True
+    assert result.target_task_id == "task-existing-anchor-ops88"
+    assert result.task_id == "task-existing-anchor-ops88"
+
+    # on_task_changed được gọi đúng 1 lần với target task ID của task được merge
+    assert mock_lifecycle.on_task_changed.await_count == 1
+    call_args = mock_lifecycle.on_task_changed.await_args
+    assert call_args.args[0] == "task-existing-anchor-ops88"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_intelligence_lifecycle_none_safe():
+    """Pipeline hoạt động hoàn toàn an toàn khi intelligence_lifecycle là None (không throw exception)."""
+    task_repo = _InMemoryProcessingTaskRepo()
+    extractor = LLMStructuredExtractor(mock_mode=True)
+
+    # intelligence_lifecycle=None tường minh
+    pipeline = ProcessingPipeline(
+        task_repo=task_repo,
+        llm_extractor=extractor,
+        intelligence_lifecycle=None,
+    )
+
+    raw_event = _make_auto_wire_raw_event(event_id="raw-none-safe")
+    result = await pipeline.process(raw_event)
+
+    assert result.status == ProcessingStatus.PROCESSED
+    assert result.task_id is not None
+    assert len(task_repo.upserted_tasks) == 1
+
+
+@pytest.mark.asyncio
+async def test_processing_worker_propagates_intelligence_lifecycle_to_pipeline():
+    """ProcessingWorker nhận intelligence_lifecycle và tự động wire vào pipeline."""
+    task_repo = _InMemoryProcessingTaskRepo()
+    extractor = LLMStructuredExtractor(mock_mode=True)
+    raw_event = _make_auto_wire_raw_event(event_id="raw-worker-wire")
+    raw_repo = _InMemoryProcessingRawEventRepo(events=[raw_event])
+
+    pipeline = ProcessingPipeline(task_repo=task_repo, llm_extractor=extractor)
+    assert pipeline.intelligence_lifecycle is None
+
+    mock_lifecycle = AsyncMock()
+    worker = ProcessingWorker(
+        raw_event_repo=raw_repo,
+        pipeline=pipeline,
+        intelligence_lifecycle=mock_lifecycle,
+    )
+
+    # Worker tự động kết nối intelligence_lifecycle vào pipeline
+    assert worker.intelligence_lifecycle is mock_lifecycle
+    assert pipeline.intelligence_lifecycle is mock_lifecycle
+
+    status = await worker.process_event(raw_event)
+    assert status == ProcessingStatus.PROCESSED
+    assert raw_repo.events["raw-worker-wire"].processing_status == ProcessingStatus.PROCESSED
+
+    # on_task_changed được gọi với đúng task ID
+    assert mock_lifecycle.on_task_changed.await_count == 1
+    saved_task_id = task_repo.upserted_tasks[0].id
+    assert mock_lifecycle.on_task_changed.await_args.args[0] == saved_task_id
+
+
+@pytest.mark.asyncio
+async def test_processing_worker_safe_when_intelligence_lifecycle_none():
+    """ProcessingWorker hoạt động an toàn khi intelligence_lifecycle là None."""
+    task_repo = _InMemoryProcessingTaskRepo()
+    extractor = LLMStructuredExtractor(mock_mode=True)
+    raw_event = _make_auto_wire_raw_event(event_id="raw-worker-none-safe")
+    raw_repo = _InMemoryProcessingRawEventRepo(events=[raw_event])
+
+    pipeline = ProcessingPipeline(task_repo=task_repo, llm_extractor=extractor)
+    worker = ProcessingWorker(
+        raw_event_repo=raw_repo,
+        pipeline=pipeline,
+        intelligence_lifecycle=None,
+    )
+
+    assert worker.intelligence_lifecycle is None
+    assert pipeline.intelligence_lifecycle is None
+
+    status = await worker.process_event(raw_event)
+    assert status == ProcessingStatus.PROCESSED
+    assert raw_repo.events["raw-worker-none-safe"].processing_status == ProcessingStatus.PROCESSED
+    assert len(task_repo.upserted_tasks) == 1
+
+
+@pytest.mark.asyncio
+async def test_pipeline_full_integration_with_real_intelligence_lifecycle():
+    """Kiểm tra tích hợp hoàn chỉnh với TaskIntelligenceLifecycle thật:
+
+    new evidence -> task persisted -> priority recomputed -> inferred status recomputed -> derived fields persisted.
+    """
+    from ptb_intelligence.lifecycle import TaskIntelligenceLifecycle
+    from ptb_intelligence.priority import DeterministicPriorityEngine
+    from ptb_intelligence.status_machine import StatusInferenceMachine
+
+    task_repo = _InMemoryProcessingTaskRepo()
+    priority_engine = DeterministicPriorityEngine()
+    status_machine = StatusInferenceMachine()
+
+    real_lifecycle = TaskIntelligenceLifecycle(
+        task_repo=task_repo,
+        priority_engine=priority_engine,
+        status_machine=status_machine,
+    )
+
+    pipeline = ProcessingPipeline(
+        task_repo=task_repo,
+        llm_extractor=LLMStructuredExtractor(mock_mode=True),
+        intelligence_lifecycle=real_lifecycle,
+    )
+
+    raw_event = _make_auto_wire_raw_event(
+        event_id="raw-real-lifecycle-01",
+        content="<blockquote><strong>Huy</strong>: Can you fix urgent bug on production?</blockquote><p>Để em xử lý ngay nhé.</p>",
+    )
+
+    result = await pipeline.process(raw_event)
+    assert result.status == ProcessingStatus.PROCESSED
+    assert result.task_id is not None
+
+    # Kiểm tra task trong repo đã được cập nhật priority và status tự động
+    persisted_task = await task_repo.get_task_by_id(result.task_id)
+    assert persisted_task is not None
+    assert persisted_task.priority_score is not None
+    assert persisted_task.priority_score > 0.0
+    assert result.candidate.priority_score == persisted_task.priority_score
+    # Inferred status hoặc status được cập nhật
+    assert persisted_task.status in (TaskStatus.TODO, TaskStatus.IN_PROGRESS)
+

@@ -25,8 +25,8 @@ from ptb_contracts import (
 )
 from ptb_acquisition.adapters.agent_adapters import AgentWatchersAdapter, CodingAgentAdapter
 from ptb_acquisition.adapters.base import AcquisitionAdapter
-from ptb_acquisition.pipeline import (
-    AcquisitionPipeline,
+from ptb_acquisition.pipeline import AcquisitionPipeline
+from tests.support.test_doubles import (
     InMemoryCheckpointRepository,
     InMemoryRawEventRepository,
 )

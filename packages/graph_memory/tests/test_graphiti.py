@@ -2,13 +2,16 @@
 
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
+from ptb_contracts.logging import BugCode
 from ptb_contracts.l3_storage import DecisionNodeRecord, EvidenceNodeRecord, LessonNodeRecord
 from ptb_graph_memory.adapter import GraphitiAdapter
 from ptb_graph_memory.client import GraphitiMemoryClient
 from ptb_graph_memory.rebuild import rebuild_graph_memory
+from ptb_graph_memory.sync_worker import GraphMemorySyncWorker, GraphSyncStatus
+
 
 
 class MockRecord:
@@ -600,3 +603,208 @@ async def test_rebuild_graph_memory_resilient_to_partial_errors():
     assert summary["total_rebuilt"] == 1
     assert len(summary["errors"]) == 1
     assert "Corrupt lesson data" in summary["errors"][0]
+
+
+# ==============================================================================
+# Graph Memory Synchronization Worker Tests
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_sync_worker_sync_episode_success(mock_driver):
+    """Test successful synchronization of episodes marks status as SYNCED with timestamp."""
+    mock_client = MagicMock()
+    mock_client.add_evidence_episode = AsyncMock(return_value="ev-101")
+    mock_client.add_decision_episode = AsyncMock(return_value="dec-101")
+    mock_client.add_lesson_episode = AsyncMock(return_value="les-101")
+    mock_client.get_driver = MagicMock(return_value=mock_driver)
+
+    worker = GraphMemorySyncWorker(memory_client=mock_client, driver=mock_driver)
+
+    # 1. Sync Evidence
+    ev_payload = {
+        "id": "ev-101",
+        "snippet": "Task completed by worker",
+        "source_type": "git",
+        "task_id": "task-001",
+    }
+    status_ev = await worker.sync_episode("evidence", "ev-101", ev_payload)
+    assert status_ev == GraphSyncStatus.SYNCED
+    assert status_ev == "SYNCED"
+    assert worker.get_sync_status("ev-101") == GraphSyncStatus.SYNCED
+    rec_ev = worker.get_sync_record("ev-101")
+    assert rec_ev is not None
+    assert rec_ev["attempts"] == 1
+    assert rec_ev["graph_synced_at"] is not None
+    assert rec_ev["last_error"] is None
+    mock_client.add_evidence_episode.assert_awaited_once()
+
+    # 2. Sync Decision
+    dec_payload = {
+        "decision_id": "dec-101",
+        "summary": "Adopt Graphiti Worker",
+        "rationale": "Asynchronous sync resilience",
+        "affects_task_id": "task-001",
+    }
+    status_dec = await worker.sync_episode("decision", "dec-101", dec_payload)
+    assert status_dec == GraphSyncStatus.SYNCED
+    assert worker.get_sync_status("dec-101") == GraphSyncStatus.SYNCED
+    rec_dec = worker.get_sync_record("dec-101")
+    assert rec_dec["graph_synced_at"] is not None
+    mock_client.add_decision_episode.assert_awaited_once()
+
+    # 3. Sync Lesson
+    les_payload = {
+        "lesson_id": "les-101",
+        "topic": "Resilience",
+        "description": "Never fail authoritative transaction",
+        "solution": "Use async sync worker with bug logging",
+    }
+    status_les = await worker.sync_episode("lesson", "les-101", les_payload)
+    assert status_les == GraphSyncStatus.SYNCED
+    assert worker.get_sync_status("les-101") == GraphSyncStatus.SYNCED
+    mock_client.add_lesson_episode.assert_awaited_once()
+
+    # Verify Neo4j update queries were executed
+    assert len(mock_driver.sessions) > 0
+    all_queries = [q for sess in mock_driver.sessions for q, _ in sess.queries]
+    assert any("graph_sync_status = $status" in q for q in all_queries)
+
+
+@pytest.mark.asyncio
+async def test_sync_worker_offline_logs_bug_and_retries_without_crashing():
+    """Test that offline Graphiti emits log_bug(PTB-GRAPH-001), transitions to RETRY, and does not crash."""
+    mock_client = MagicMock()
+    mock_client.add_evidence_episode = AsyncMock(side_effect=RuntimeError("Graphiti cluster connection refused"))
+
+    worker = GraphMemorySyncWorker(memory_client=mock_client, max_retries=3)
+
+    ev_payload = {
+        "id": "ev-err-1",
+        "snippet": "Important evidence but Graphiti is down",
+        "source_type": "teams",
+    }
+
+    with patch("ptb_graph_memory.sync_worker.log_bug") as mock_log_bug:
+        # Must NOT raise exception / crash process
+        status = await worker.sync_episode("evidence", "ev-err-1", ev_payload)
+
+        assert status == GraphSyncStatus.RETRY
+        assert status == "RETRY"
+        assert worker.get_sync_status("ev-err-1") == GraphSyncStatus.RETRY
+
+        # Verify log_bug was called with PTB_GRAPH_001
+        assert mock_log_bug.call_count == 1
+        call_kwargs = mock_log_bug.call_args[1]
+        assert call_kwargs["code"] == BugCode.PTB_GRAPH_001 or call_kwargs["code"] == "PTB-GRAPH-001"
+        assert call_kwargs["subsystem"] == "graph_memory"
+        assert call_kwargs["severity"] == "WARNING"
+        assert "Graphiti episode sync failed" in call_kwargs["message"]
+        assert "ev-err-1" in call_kwargs["message"]
+        assert isinstance(call_kwargs["exc"], RuntimeError)
+
+        rec = worker.get_sync_record("ev-err-1")
+        assert rec["attempts"] == 1
+        assert rec["graph_synced_at"] is None
+        assert "connection refused" in rec["last_error"]
+
+
+@pytest.mark.asyncio
+async def test_sync_worker_adapter_offline_detected_and_retried():
+    """Test that when GraphitiAdapter has is_available=False, worker logs PTB-GRAPH-001 and sets RETRY."""
+    mock_adapter = MagicMock()
+    mock_adapter.is_available = False
+
+    mock_client = MagicMock()
+    mock_client.adapter = mock_adapter
+
+    worker = GraphMemorySyncWorker(memory_client=mock_client, max_retries=3)
+
+    with patch("ptb_graph_memory.sync_worker.log_bug") as mock_log_bug:
+        status = await worker.sync_episode("decision", "dec-off", {"summary": "Offline Test"})
+
+        assert status == GraphSyncStatus.RETRY
+        assert mock_log_bug.call_count == 1
+        call_kwargs = mock_log_bug.call_args[1]
+        assert call_kwargs["code"] == BugCode.PTB_GRAPH_001
+        assert "offline or unavailable" in str(call_kwargs["exc"])
+
+
+@pytest.mark.asyncio
+async def test_sync_worker_max_retries_transitions_to_failed():
+    """Test that reaching max_retries marks episode as FAILED."""
+    mock_client = MagicMock()
+    mock_client.add_evidence_episode = AsyncMock(side_effect=RuntimeError("Persistent Graphiti failure"))
+
+    worker = GraphMemorySyncWorker(memory_client=mock_client, max_retries=2)
+
+    ev_payload = {"id": "ev-max-fail", "snippet": "Fails twice"}
+
+    # Attempt 1 -> RETRY
+    status_1 = await worker.sync_episode("evidence", "ev-max-fail", ev_payload)
+    assert status_1 == GraphSyncStatus.RETRY
+    assert worker.get_sync_status("ev-max-fail") == GraphSyncStatus.RETRY
+
+    # Attempt 2 -> FAILED
+    status_2 = await worker.sync_episode("evidence", "ev-max-fail", ev_payload)
+    assert status_2 == GraphSyncStatus.FAILED
+    assert status_2 == "FAILED"
+    assert worker.get_sync_status("ev-max-fail") == GraphSyncStatus.FAILED
+
+    rec = worker.get_sync_record("ev-max-fail")
+    assert rec["attempts"] == 2
+    assert rec["status"] == GraphSyncStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_sync_worker_run_sync_sweep_processes_pending_and_retry():
+    """Test that run_sync_sweep scans and processes both locally queued and Neo4j PENDING/RETRY episodes."""
+    # 1. Test local enqueue and sweep
+    mock_client = MagicMock()
+    mock_client.add_evidence_episode = AsyncMock(return_value="ev-q1")
+    mock_client.add_decision_episode = AsyncMock(return_value="dec-q1")
+
+    worker = GraphMemorySyncWorker(memory_client=mock_client, max_retries=3)
+    worker.enqueue_sync("evidence", "ev-q1", {"id": "ev-q1", "snippet": "Queued evidence"})
+    worker.enqueue_sync("decision", "dec-q1", {"decision_id": "dec-q1", "summary": "Queued decision"})
+
+    sweep_res = await worker.run_sync_sweep()
+    assert sweep_res["total_scanned"] == 2
+    assert sweep_res["synced"] == 2
+    assert sweep_res["retried"] == 0
+    assert sweep_res["failed"] == 0
+
+    assert worker.get_sync_status("ev-q1") == GraphSyncStatus.SYNCED
+    assert worker.get_sync_status("dec-q1") == GraphSyncStatus.SYNCED
+
+    # 2. Test sweep from Neo4j driver
+    async def sweep_handler(query: str, params: Dict[str, Any]):
+        if "MATCH (n:EpisodicNode)" in query:
+            return MockAsyncResult(records=[
+                MockRecord({
+                    "node_labels": ["Evidence", "EpisodicNode"],
+                    "props": {"id": "ev-db1", "snippet": "Evidence from DB", "graph_sync_status": "PENDING"},
+                    "task_id": "task-db1",
+                    "project_key": None,
+                    "raw_event_id": "raw-db1",
+                    "incident_id": None,
+                }),
+                MockRecord({
+                    "node_labels": ["Decision", "EpisodicNode"],
+                    "props": {"decision_id": "dec-db1", "summary": "Decision from DB", "graph_sync_status": "RETRY"},
+                    "task_id": "task-db1",
+                    "project_key": "PTB",
+                    "raw_event_id": None,
+                    "incident_id": None,
+                }),
+            ])
+        return MockAsyncResult()
+
+    driver = MockDriver(run_handler=sweep_handler)
+    worker_db = GraphMemorySyncWorker(memory_client=mock_client, driver=driver, max_retries=3)
+
+    sweep_db_res = await worker_db.run_sync_sweep()
+    assert sweep_db_res["total_scanned"] == 2
+    assert sweep_db_res["synced"] == 2
+    assert worker_db.get_sync_status("ev-db1") == GraphSyncStatus.SYNCED
+    assert worker_db.get_sync_status("dec-db1") == GraphSyncStatus.SYNCED
+

@@ -47,6 +47,7 @@ class GraphitiAdapter:
         self.enabled = enabled
         self._graphiti = graphiti_instance
         self._is_initialized = False
+        self.last_error: Optional[Exception] = None
 
         if not self.enabled:
             return
@@ -97,6 +98,7 @@ class GraphitiAdapter:
         """
         if not self.is_available:
             logger.debug("GraphitiAdapter not available; skipping episode '%s'", name)
+            self.last_error = RuntimeError(f"GraphitiAdapter is offline or unavailable for episode '{name}'")
             return None
 
         # Normalize reference_time to datetime
@@ -125,9 +127,11 @@ class GraphitiAdapter:
                 group_id=group_id,
                 uuid=uuid,
             )
+            self.last_error = None
             logger.debug("Successfully added episode to Graphiti: %s (uuid: %s)", name, uuid)
             return res
         except Exception as exc:
+            self.last_error = exc
             # Derived semantic layer invariant: Never throw or disrupt domain operations
             logger.warning(
                 "Graphiti episode ingestion failed for '%s' (uuid: %s): %s. Domain flow intact.",
@@ -166,3 +170,13 @@ class GraphitiAdapter:
                 logger.debug("Error while closing Graphiti: %s", e)
         self._graphiti = None
         self._is_initialized = False
+
+
+# Re-export GraphMemorySyncWorker & GraphSyncStatus
+from ptb_graph_memory.sync_worker import GraphMemorySyncWorker, GraphSyncStatus
+
+__all__ = [
+    "GraphitiAdapter",
+    "GraphMemorySyncWorker",
+    "GraphSyncStatus",
+]

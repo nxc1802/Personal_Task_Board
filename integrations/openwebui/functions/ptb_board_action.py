@@ -15,6 +15,14 @@ import urllib.error
 import urllib.request
 from pydantic import BaseModel, Field
 
+from ptb_contracts.logging import BugCode, log_bug
+
+OFFLINE_ERROR_MESSAGE = (
+    "❌ [PTB-OWUI-001] APPLICATION SERVICE OFFLINE "
+    "(Run 'ptb serve' or 'ptb run' and check port 8000): "
+    "OpenWebUI cannot reach Application API."
+)
+
 
 class Action:
     class Valves(BaseModel):
@@ -26,10 +34,6 @@ class Action:
             default="",
             description="Absolute or relative path to ptb_board.html. Auto-detected if blank."
         )
-        enable_mock_fallback: bool = Field(
-            default=True,
-            description="Fallback to bundled mock response if Application Service is unreachable"
-        )
         board_title: str = Field(
             default="Personal Task Board",
             description="Title displayed in OpenWebUI Artifact panel"
@@ -37,6 +41,7 @@ class Action:
 
     def __init__(self):
         self.valves = self.Valves()
+        self._last_http_error_logged: bool = False
 
     def _resolve_board_html_path(self) -> Path:
         """Finds ptb_board.html path on filesystem."""
@@ -88,8 +93,9 @@ class Action:
         method: str = "GET",
         payload: Optional[Dict[str, Any]] = None,
         timeout: float = 3.0
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[Any]:
         """Performs a synchronous HTTP request using stdlib urllib."""
+        self._last_http_error_logged = False
         url = f"{self.valves.app_service_url.rstrip('/')}{endpoint}"
         data = json.dumps(payload).encode("utf-8") if payload else None
         headers = {"Content-Type": "application/json"}
@@ -98,10 +104,41 @@ class Action:
         try:
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 if 200 <= response.status < 300:
-                    return json.loads(response.read().decode("utf-8"))
-        except Exception:
+                    raw_content = response.read().decode("utf-8")
+                    return json.loads(raw_content) if raw_content else {}
+            self._last_http_error_logged = True
+            log_bug(
+                BugCode.PTB_OWUI_001,
+                subsystem="openwebui",
+                severity="ERROR",
+                message="OpenWebUI cannot reach Application API",
+                context={"endpoint": endpoint, "method": method, "url": url},
+            )
+        except Exception as exc:
+            self._last_http_error_logged = True
+            log_bug(
+                BugCode.PTB_OWUI_001,
+                subsystem="openwebui",
+                severity="ERROR",
+                message="OpenWebUI cannot reach Application API",
+                context={"endpoint": endpoint, "method": method, "url": url},
+                exc=exc,
+            )
             return None
         return None
+
+    def _offline_error(self, endpoint: str = "") -> str:
+        """Emits log_bug(PTB_OWUI_001) if not already logged and returns APPLICATION SERVICE OFFLINE error."""
+        if not getattr(self, "_last_http_error_logged", False):
+            log_bug(
+                BugCode.PTB_OWUI_001,
+                subsystem="openwebui",
+                severity="ERROR",
+                message="OpenWebUI cannot reach Application API",
+                context={"endpoint": endpoint} if endpoint else None,
+            )
+        self._last_http_error_logged = False
+        return OFFLINE_ERROR_MESSAGE
 
     async def action(
         self,
@@ -174,17 +211,14 @@ class Action:
                 )
 
             elif subcommand == "review":
-                # Fetch review queue
-                data = self._http_request("/api/review")
-                if not data and self.valves.enable_mock_fallback:
-                    items = [
-                        {"id": "rev-cand-101", "title": "Kiểm tra log lỗi đồng bộ webhook Jira", "confidence": 0.58, "reason": "Confidence trung bình 0.58"},
-                        {"id": "rev-cand-102", "title": "Cung cấp báo cáo audit security cho đối tác", "confidence": 0.62, "reason": "Attribution cần xác nhận"}
-                    ]
+                endpoint = "/api/review"
+                data = self._http_request(endpoint)
+                if data is None:
+                    response_text = self._offline_error(endpoint)
                 else:
                     items = [
                         {
-                            "id": item.get("id"),
+                            "id": item.get("id") or item.get("candidate_task", {}).get("id"),
                             "title": item.get("candidate_task", {}).get("title"),
                             "confidence": item.get("candidate_task", {}).get("extraction_confidence", 0.5),
                             "reason": item.get("reason", "")
@@ -192,40 +226,46 @@ class Action:
                         for item in (data or [])
                     ]
 
-                if not items:
-                    response_text = "✨ **Hàng đợi duyệt (Review Queue) hiện đang trống!** Không có task nào cần phê duyệt."
-                else:
-                    lines = ["### 📥 Hàng đợi duyệt Task Candidate (Confidence 0.40 - 0.64):\n"]
-                    for it in items:
-                        lines.append(
-                            f"- **`{it['id']}`**: **{it['title']}** (Độ tin cậy: {int(it['confidence']*100)}%)\n"
-                            f"  *Lý do:* {it['reason']}\n"
-                            f"  *Lệnh duyệt:* `/board approve {it['id']}` | `/board dismiss {it['id']}`\n"
-                        )
-                    response_text = "\n".join(lines)
+                    if not items:
+                        response_text = "✨ **Hàng đợi duyệt (Review Queue) hiện đang trống!** Không có task nào cần phê duyệt."
+                    else:
+                        lines = ["### 📥 Hàng đợi duyệt Task Candidate (Confidence 0.40 - 0.64):\n"]
+                        for it in items:
+                            lines.append(
+                                f"- **`{it['id']}`**: **{it['title']}** (Độ tin cậy: {int(it['confidence']*100)}%)\n"
+                                f"  *Lý do:* {it['reason']}\n"
+                                f"  *Lệnh duyệt:* `/board approve {it['id']}` | `/board dismiss {it['id']}`\n"
+                            )
+                        response_text = "\n".join(lines)
 
             elif subcommand == "approve" and target_id:
-                res = self._http_request(f"/api/review/{target_id}/approve", method="POST")
-                if res or self.valves.enable_mock_fallback:
-                    response_text = f"✅ **Đã phê duyệt task candidate `{target_id}`!** Task đã được chuyển sang trạng thái TODO trong authoritative board."
+                endpoint = f"/api/review/{target_id}/approve"
+                res = self._http_request(endpoint, method="POST", payload={"actor": "USER"})
+                if res is None:
+                    response_text = self._offline_error(endpoint)
                 else:
-                    response_text = f"❌ Không thể kết nối tới Application Service để phê duyệt task `{target_id}`."
+                    response_text = f"✅ **Đã phê duyệt task candidate `{target_id}`!** Task đã được chuyển sang trạng thái TODO trong authoritative board."
 
             elif subcommand == "dismiss" and target_id:
-                res = self._http_request(f"/api/review/{target_id}/dismiss", method="POST")
-                if res or self.valves.enable_mock_fallback:
-                    response_text = f"🗑️ **Đã loại bỏ candidate `{target_id}` khỏi hàng đợi duyệt.**"
+                endpoint = f"/api/review/{target_id}/dismiss"
+                res = self._http_request(endpoint, method="POST", payload={"actor": "USER"})
+                if res is None:
+                    response_text = self._offline_error(endpoint)
                 else:
-                    response_text = f"❌ Không thể kết nối tới Application Service để từ chối task `{target_id}`."
+                    response_text = f"🗑️ **Đã loại bỏ candidate `{target_id}` khỏi hàng đợi duyệt.**"
 
             elif subcommand == "today":
-                data = self._http_request("/api/today")
-                headline = data.get("summary_headline") if data else "Hôm nay có 2 việc cần ưu tiên, trong đó 1 lỗi deployment staging đang có người chờ."
-                response_text = (
-                    f"### ☀️ Kế hoạch hôm nay (Morning Briefing)\n\n"
-                    f"> **{headline}**\n\n"
-                    f"Dùng lệnh `/board` để mở đầy đủ 8 views của Task Board tương tác!"
-                )
+                endpoint = "/api/today"
+                data = self._http_request(endpoint)
+                if data is None:
+                    response_text = self._offline_error(endpoint)
+                else:
+                    headline = data.get("summary_headline") or "Hôm nay không có task ưu tiên khẩn cấp."
+                    response_text = (
+                        f"### ☀️ Kế hoạch hôm nay (Morning Briefing)\n\n"
+                        f"> **{headline}**\n\n"
+                        f"Dùng lệnh `/board` để mở đầy đủ 8 views của Task Board tương tác!"
+                    )
 
             else:
                 response_text = (

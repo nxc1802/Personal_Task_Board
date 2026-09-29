@@ -6,11 +6,13 @@ Tests all 14 REST endpoints, CORS middleware, and error handling (404, 400).
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
+import json
 import pytest
 from fastapi.testclient import TestClient
 
-from ptb_application.api import app, get_application_service
+from ptb_application.api import app, create_app, get_application_service, set_application_service
 from ptb_application.service import ApplicationService
+from ptb_mcp.server import create_mcp_server
 from ptb_contracts.l1_acquisition import IngestionCheckpointRecord, SourceType
 from ptb_contracts.l2_processing import (
     CommitmentRecord,
@@ -368,6 +370,68 @@ def test_endpoint_1_health(client: TestClient):
     assert data["status"] == "healthy"
     assert data["service"] == "ptb-application"
     assert "timestamp" in data
+    assert data["neo4j"] == "healthy"
+    assert data["processing_worker"] == "healthy"
+    assert data["graphiti"] == "healthy"
+    assert data["llm"] == "healthy"
+    assert "playwright" in data
+
+
+def test_deep_health_healthy(client: TestClient):
+    """Kiểm tra deep health khi các dependencies khỏe mạnh."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "healthy"
+    for key in ("neo4j", "processing_worker", "graphiti", "llm", "playwright"):
+        assert key in data
+    assert data["neo4j"] == "healthy"
+    assert data["processing_worker"] == "healthy"
+    assert data["graphiti"] == "healthy"
+    assert data["llm"] == "healthy"
+
+
+def test_deep_health_neo4j_down_returns_not_ready(
+    client: TestClient,
+    mock_service: ApplicationService,
+    caplog: pytest.LogCaptureFixture,
+):
+    """Khi neo4j_client.verify_connectivity() trả về False -> status == 'not_ready', neo4j == 'not_ready', phát sinh PTB-APP-001."""
+    import logging
+    from unittest.mock import AsyncMock
+
+    mock_service._explicit_neo4j_client = True
+    mock_service.neo4j_client.verify_connectivity = AsyncMock(return_value=False)
+
+    with caplog.at_level(logging.ERROR, logger="ptb.bugs.application"):
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "not_ready"
+    assert data["neo4j"] == "not_ready"
+    assert "PTB-APP-001" in caplog.text
+
+
+def test_deep_health_graphiti_down_returns_degraded(
+    client: TestClient,
+    mock_service: ApplicationService,
+    caplog: pytest.LogCaptureFixture,
+):
+    """Khi Graphiti lỗi (is_healthy = False) -> status == 'degraded', graphiti == 'degraded', nhưng neo4j == 'healthy'."""
+    import logging
+
+    mock_service.graph_memory.is_healthy = False
+
+    with caplog.at_level(logging.WARNING, logger="ptb.bugs.graph_memory"):
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["graphiti"] == "degraded"
+    assert data["neo4j"] == "healthy"
+    assert "PTB-GRAPH-001" in caplog.text
 
 
 def test_endpoint_2_today(client: TestClient):
@@ -482,26 +546,54 @@ def test_endpoint_5_review_queue(client: TestClient):
     assert "reason" in items[0]
 
 
-def test_endpoint_6_review_approve(client: TestClient):
-    """6. POST /api/review/{task_id}/approve: duyệt task và 404 khi task không tồn tại."""
-    # Thành công
-    resp = client.post("/api/review/task-2/approve", json={"actor": "ADMIN", "new_status": "TODO"})
+def test_endpoint_6_review_approve(client: TestClient, mock_service: ApplicationService):
+    """6. POST /api/review/{task_id}/approve: duyệt task sang TODO, lưu thật qua repository, ghi audit và 404/400."""
+    initial_audit_count = len(mock_service.task_repo.audits)
+
+    # Thành công với payload mặc định (chuyển từ BLOCKED/pending_review sang TODO/auto_approved)
+    resp = client.post("/api/review/task-2/approve", json={"actor": "ADMIN"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
     assert data["task_id"] == "task-2"
 
-    # Kiểm tra task detail đã đổi review_status
-    task_resp = client.get("/api/tasks/task-2")
-    assert task_resp.json()["task"]["review_status"] == "auto_approved"
+    # Kiểm tra task trong repository đã đổi sang trạng thái active TODO và auto_approved
+    persisted_task = mock_service.task_repo.tasks["task-2"]
+    assert persisted_task.status == TaskStatus.TODO
+    assert persisted_task.review_status == "auto_approved"
+    assert persisted_task.status_authoritative is True
+
+    # Kiểm tra StatusTransitionAuditRecord đã được ghi
+    assert len(mock_service.task_repo.audits) == initial_audit_count + 1
+    latest_audit = mock_service.task_repo.audits[-1]
+    assert latest_audit.task_id == "task-2"
+    assert latest_audit.old_status == TaskStatus.BLOCKED
+    assert latest_audit.new_status == TaskStatus.TODO
+    assert latest_audit.change_actor == "ADMIN"
+
+    # Kiểm tra task không còn nằm trong review queue
+    rev_resp = client.get("/api/review")
+    assert rev_resp.status_code == 200
+    assert all(item["candidate_task"]["id"] != "task-2" for item in rev_resp.json())
+
+    # Hỗ trợ cả review_id có tiền tố rev- (tương thích ptb_tools.py)
+    resp_prefix = client.post("/api/review/rev-task-2/approve", json={"actor": "USER", "new_status": "IN_PROGRESS"})
+    assert resp_prefix.status_code == 200
+    assert mock_service.task_repo.tasks["task-2"].status == TaskStatus.IN_PROGRESS
+
+    # Trạng thái không hợp lệ -> 400
+    resp_bad_status = client.post("/api/review/task-2/approve", json={"new_status": "INVALID_STATE"})
+    assert resp_bad_status.status_code == 400
 
     # Task không tồn tại -> 404
     resp_404 = client.post("/api/review/task-unknown/approve")
     assert resp_404.status_code == 404
 
 
-def test_endpoint_7_review_dismiss(client: TestClient):
-    """7. POST /api/review/{task_id}/dismiss: bỏ qua task review."""
+def test_endpoint_7_review_dismiss(client: TestClient, mock_service: ApplicationService):
+    """7. POST /api/review/{task_id}/dismiss: loại bỏ task review sang DISMISSED, lưu thật qua repository."""
+    initial_audit_count = len(mock_service.task_repo.audits)
+
     # Thành công
     resp = client.post("/api/review/task-2/dismiss", json={"actor": "USER"})
     assert resp.status_code == 200
@@ -509,22 +601,44 @@ def test_endpoint_7_review_dismiss(client: TestClient):
     assert data["success"] is True
     assert data["task_id"] == "task-2"
 
-    # Kiểm tra task status đã thành DISMISSED
+    # Kiểm tra task trong repository đã thành DISMISSED và review_status == rejected
+    persisted_task = mock_service.task_repo.tasks["task-2"]
+    assert persisted_task.status == TaskStatus.DISMISSED
+    assert persisted_task.review_status == "rejected"
+    assert persisted_task.status_authoritative is True
+
+    # Kiểm tra StatusTransitionAuditRecord đã được ghi
+    assert len(mock_service.task_repo.audits) == initial_audit_count + 1
+    latest_audit = mock_service.task_repo.audits[-1]
+    assert latest_audit.task_id == "task-2"
+    assert latest_audit.new_status == TaskStatus.DISMISSED
+    assert latest_audit.change_actor == "USER"
+
+    # Kiểm tra task detail đã thành DISMISSED và không còn trong review queue
     task_resp = client.get("/api/tasks/task-2")
     assert task_resp.json()["task"]["status"] == "DISMISSED"
+    rev_resp = client.get("/api/review")
+    assert all(item["candidate_task"]["id"] != "task-2" for item in rev_resp.json())
 
     # Task không tồn tại -> 404
     resp_404 = client.post("/api/review/task-unknown/dismiss")
     assert resp_404.status_code == 404
 
 
-def test_endpoint_8_patch_task(client: TestClient):
-    """8. PATCH /api/tasks/{task_id}: cập nhật thông tin task."""
-    # Cập nhật title, priority_score, project_key
+def test_endpoint_8_patch_task(client: TestClient, mock_service: ApplicationService):
+    """8. PATCH /api/tasks/{task_id}: cập nhật thông tin task (title, project_key, owner_name, due_date, notes, ...)."""
+    initial_audit_count = len(mock_service.task_repo.audits)
+
+    # Cập nhật đầy đủ các trường: title, priority_score, project_key, owner_name, due_date, notes, status
     patch_body = {
         "title": "Tiêu đề đã sửa qua REST API",
         "priority_score": 92.5,
         "project_key": "AUTH_V2",
+        "owner_name": "Dam Quang Cuong",
+        "due_date": "2026-10-15",
+        "notes": "Ghi chú chi tiết cập nhật từ modal edit",
+        "status": "IN_PROGRESS",
+        "actor": "EDITOR",
     }
     resp = client.patch("/api/tasks/task-1", json=patch_body)
     assert resp.status_code == 200
@@ -533,43 +647,98 @@ def test_endpoint_8_patch_task(client: TestClient):
     assert updated["title"] == "Tiêu đề đã sửa qua REST API"
     assert updated["priority_score"] == 92.5
     assert updated["project_key"] == "AUTH_V2"
+    assert updated["owner_name"] == "Dam Quang Cuong"
+    assert updated["description"] == "Ghi chú chi tiết cập nhật từ modal edit"
+    assert updated["status"] == "IN_PROGRESS"
+    assert updated["due_date"].startswith("2026-10-15")
+
+    # Kiểm tra lưu thật trong repository và ghi StatusTransitionAuditRecord
+    persisted = mock_service.task_repo.tasks["task-1"]
+    assert persisted.title == "Tiêu đề đã sửa qua REST API"
+    assert persisted.owner_name == "Dam Quang Cuong"
+    assert persisted.description == "Ghi chú chi tiết cập nhật từ modal edit"
+    assert persisted.status == TaskStatus.IN_PROGRESS
+    assert len(mock_service.task_repo.audits) == initial_audit_count + 1
+    assert mock_service.task_repo.audits[-1].new_status == TaskStatus.IN_PROGRESS
 
     # Sai status -> 400
     resp_bad = client.patch("/api/tasks/task-1", json={"status": "INVALID_STATUS"})
     assert resp_bad.status_code == 400
+    resp_non_canonical = client.patch("/api/tasks/task-1", json={"status": "OPEN"})
+    assert resp_non_canonical.status_code == 400
+
+    # Title rỗng -> 400
+    resp_empty_title = client.patch("/api/tasks/task-1", json={"title": "   "})
+    assert resp_empty_title.status_code == 400
+
+    # due_date sai định dạng -> 400
+    resp_bad_due = client.patch("/api/tasks/task-1", json={"due_date": "not-a-valid-date"})
+    assert resp_bad_due.status_code == 400
 
     # Task không tồn tại -> 404
     resp_404 = client.patch("/api/tasks/task-unknown", json={"title": "Test"})
     assert resp_404.status_code == 404
 
 
-def test_endpoint_9_update_task_status(client: TestClient):
-    """9. POST /api/tasks/{task_id}/status: cập nhật trạng thái task và validate."""
-    # Cập nhật hợp lệ
+def test_endpoint_9_update_task_status(client: TestClient, mock_service: ApplicationService):
+    """9. POST /api/tasks/{task_id}/status: hỗ trợ cả status và new_status, kiểm tra 5 trạng thái canonical và ghi audit."""
+    initial_audit_count = len(mock_service.task_repo.audits)
+
+    # 1. Cập nhật hợp lệ với trường 'status' (tương thích ptb_board.html)
     resp = client.post("/api/tasks/task-1/status", json={"status": "IN_PROGRESS", "actor": "DEV"})
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["success"] is True
+    assert resp.json()["success"] is True
+    assert mock_service.task_repo.tasks["task-1"].status == TaskStatus.IN_PROGRESS
+    assert len(mock_service.task_repo.audits) == initial_audit_count + 1
+    assert mock_service.task_repo.audits[-1].old_status == TaskStatus.TODO
+    assert mock_service.task_repo.audits[-1].new_status == TaskStatus.IN_PROGRESS
+    assert mock_service.task_repo.audits[-1].change_actor == "DEV"
 
-    # Kiểm tra trạng thái mới
-    task_resp = client.get("/api/tasks/task-1")
-    assert task_resp.json()["task"]["status"] == "IN_PROGRESS"
+    # 2. Cập nhật hợp lệ với trường 'new_status' (tương thích ptb_tools.py)
+    resp_new = client.post("/api/tasks/task-1/status", json={"new_status": "BLOCKED", "actor": "TOOL"})
+    assert resp_new.status_code == 200
+    assert resp_new.json()["success"] is True
+    assert mock_service.task_repo.tasks["task-1"].status == TaskStatus.BLOCKED
+    assert len(mock_service.task_repo.audits) == initial_audit_count + 2
+    assert mock_service.task_repo.audits[-1].old_status == TaskStatus.IN_PROGRESS
+    assert mock_service.task_repo.audits[-1].new_status == TaskStatus.BLOCKED
+    assert mock_service.task_repo.audits[-1].change_actor == "TOOL"
 
-    # Trạng thái không hợp lệ -> 400
-    resp_invalid = client.post("/api/tasks/task-1/status", json={"status": "WRONG_STATUS"})
-    assert resp_invalid.status_code == 400
+    # 3. Kiểm tra đầy đủ các trạng thái canonical còn lại (DONE, DISMISSED, TODO)
+    for canonical_st in ("DONE", "DISMISSED", "TODO"):
+        r = client.post("/api/tasks/task-1/status", json={"new_status": canonical_st})
+        assert r.status_code == 200
+        assert mock_service.task_repo.tasks["task-1"].status == TaskStatus(canonical_st)
 
-    # Thiếu status -> 400
+    # 4. Trạng thái không thuộc 5 trạng thái canonical -> 400
+    for invalid_st in ("WRONG_STATUS", "OPEN", "PENDING", "ARCHIVED"):
+        resp_invalid = client.post("/api/tasks/task-1/status", json={"status": invalid_st})
+        assert resp_invalid.status_code == 400
+        resp_invalid_new = client.post("/api/tasks/task-1/status", json={"new_status": invalid_st})
+        assert resp_invalid_new.status_code == 400
+
+    # 5. Truyền cả status và new_status nhưng xung đột nhau -> 400
+    resp_conflict = client.post(
+        "/api/tasks/task-1/status",
+        json={"status": "TODO", "new_status": "DONE"},
+    )
+    assert resp_conflict.status_code == 400
+
+    # 6. Thiếu cả status và new_status -> 400
     resp_missing = client.post("/api/tasks/task-1/status", json={})
     assert resp_missing.status_code == 400
 
-    # Task không tồn tại -> 404
+    # 7. Task không tồn tại -> 404
     resp_404 = client.post("/api/tasks/task-unknown/status", json={"status": "DONE"})
     assert resp_404.status_code == 404
+    resp_404_new = client.post("/api/tasks/task-unknown/status", json={"new_status": "DONE"})
+    assert resp_404_new.status_code == 404
 
 
-def test_endpoint_10_split_task(client: TestClient):
-    """10. POST /api/tasks/{task_id}/split: tách task thành task mới."""
+def test_endpoint_10_split_task(client: TestClient, mock_service: ApplicationService):
+    """10. POST /api/tasks/{task_id}/split: tách task thành task mới thật trong repository."""
+    initial_task_count = len(mock_service.task_repo.tasks)
+
     # Tách thành công
     resp = client.post(
         "/api/tasks/task-1/split",
@@ -577,13 +746,21 @@ def test_endpoint_10_split_task(client: TestClient):
     )
     assert resp.status_code == 200
     new_task = resp.json()
+    new_task_id = new_task["id"]
     assert new_task["title"] == "Tách bug xác thực token"
     assert len(new_task["evidences"]) == 1
     assert new_task["evidences"][0]["id"] == "ev-1"
 
-    # evidence_ids rỗng -> 400
+    # Kiểm tra task mới đã được lưu thật trong repository và evidence đã tách khỏi task gốc
+    assert len(mock_service.task_repo.tasks) == initial_task_count + 1
+    assert new_task_id in mock_service.task_repo.tasks
+    assert len(mock_service.task_repo.tasks["task-1"].evidences) == 0
+
+    # evidence_ids rỗng hoặc chỉ chứa khoảng trắng -> 400
     resp_empty = client.post("/api/tasks/task-1/split", json={"evidence_ids": []})
     assert resp_empty.status_code == 400
+    resp_blank = client.post("/api/tasks/task-1/split", json={"evidence_ids": ["   "]})
+    assert resp_blank.status_code == 400
 
     # evidence_ids không tồn tại trong task -> 400
     resp_bad_ev = client.post("/api/tasks/task-1/split", json={"evidence_ids": ["non-existent-ev"]})
@@ -656,3 +833,110 @@ def test_cors_middleware(client: TestClient):
     )
     assert resp_options.status_code == 200
     assert resp_options.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_set_application_service_and_create_app(mock_service: ApplicationService):
+    """Kiểm tra set_application_service và create_app(application_service=...)."""
+    # 1. create_app với explicit application_service
+    custom_app = create_app(application_service=mock_service)
+    with TestClient(custom_app) as custom_client:
+        resp = custom_client.get("/api/tasks")
+        assert resp.status_code == 200
+        tasks = resp.json()
+        assert len(tasks) == 2
+
+    # 2. set_application_service trực tiếp
+    set_application_service(mock_service)
+    assert get_application_service() is mock_service
+
+    # Reset
+    set_application_service(None)
+
+
+@pytest.mark.asyncio
+async def test_fastapi_and_mcp_shared_application_service_state():
+    """Kiểm tra FastAPI và FastMCP cùng chia sẻ trạng thái và repository từ chung một ApplicationService."""
+    now = datetime.now(timezone.utc)
+    ev = EvidenceRecord(
+        id="ev-shared-1",
+        raw_event_id="raw-1",
+        evidence_type=EvidenceType.CHAT_COMMITMENT,
+        source_type="ms_teams",
+        timestamp=now,
+        snippet="Shared service test evidence",
+        confidence=0.9,
+    )
+    t1 = UnifiedTaskCandidate(
+        id="task-shared-1",
+        title="Nhiệm vụ chung FastAPI và FastMCP",
+        status=TaskStatus.TODO,
+        priority_score=75.0,
+        owner_name="Dev",
+        project_key="SHARED",
+        due_date=now + timedelta(days=2),
+        explicit_deadline=True,
+        extraction_confidence=0.9,
+        review_status="auto_approved",
+        evidences=[ev],
+    )
+    task_repo = MockTaskDomainRepository([t1])
+    checkpoint_repo = MockCheckpointRepository()
+    graph_memory = MockGraphitiMemoryClient()
+
+    # Khởi tạo MỘT instance ApplicationService duy nhất
+    shared_service = ApplicationService(
+        task_repo=task_repo,
+        checkpoint_repo=checkpoint_repo,
+        graph_memory=graph_memory,
+    )
+
+    # Inject vào cả FastAPI và FastMCP
+    api_app = create_app(application_service=shared_service)
+    mcp_srv = create_mcp_server(application_service=shared_service)
+
+    # 1. FastMCP đọc trạng thái ban đầu của task
+    mcp_res = await mcp_srv.call_tool("get_task_context", {"task_id": "task-shared-1"})
+    assert mcp_res.is_error is False
+    mcp_data = mcp_res.structured_content if hasattr(mcp_res, "structured_content") and mcp_res.structured_content else json.loads(mcp_res.content[0].text)
+    if isinstance(mcp_data, dict) and "result" in mcp_data:
+        mcp_data = mcp_data["result"]
+    assert mcp_data["task"]["status"] == "TODO"
+    assert mcp_data["task"]["priority_score"] == 75.0
+
+    # 2. FastAPI REST cập nhật trạng thái sang IN_PROGRESS và priority_score lên 95.0
+    with TestClient(api_app) as api_client:
+        status_resp = api_client.post(
+            "/api/tasks/task-shared-1/status",
+            json={"status": "IN_PROGRESS", "actor": "TEST_RUNNER"},
+        )
+        assert status_resp.status_code == 200
+        assert status_resp.json()["success"] is True
+
+        patch_resp = api_client.patch(
+            "/api/tasks/task-shared-1",
+            json={"priority_score": 95.0, "title": "Nhiệm vụ đã cập nhật qua REST"},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["priority_score"] == 95.0
+
+    # 3. FastMCP đọc lại qua tool và ngay lập tức thấy cập nhật từ FastAPI
+    mcp_res2 = await mcp_srv.call_tool("get_task_context", {"task_id": "task-shared-1"})
+    assert mcp_res2.is_error is False
+    mcp_data2 = mcp_res2.structured_content if hasattr(mcp_res2, "structured_content") and mcp_res2.structured_content else json.loads(mcp_res2.content[0].text)
+    if isinstance(mcp_data2, dict) and "result" in mcp_data2:
+        mcp_data2 = mcp_data2["result"]
+    assert mcp_data2["task"]["status"] == "IN_PROGRESS"
+    assert mcp_data2["task"]["priority_score"] == 95.0
+    assert mcp_data2["task"]["title"] == "Nhiệm vụ đã cập nhật qua REST"
+
+    # 4. FastMCP query tool get_tasks lọc theo status IN_PROGRESS
+    mcp_tasks_res = await mcp_srv.call_tool("get_tasks", {"filters": {"status": "IN_PROGRESS"}})
+    assert mcp_tasks_res.is_error is False
+    mcp_tasks = mcp_tasks_res.structured_content if hasattr(mcp_tasks_res, "structured_content") and mcp_tasks_res.structured_content else json.loads(mcp_tasks_res.content[0].text)
+    if isinstance(mcp_tasks, dict) and "result" in mcp_tasks:
+        mcp_tasks = mcp_tasks["result"]
+    assert len(mcp_tasks) == 1
+    assert mcp_tasks[0]["id"] == "task-shared-1"
+
+    # Reset
+    set_application_service(None)

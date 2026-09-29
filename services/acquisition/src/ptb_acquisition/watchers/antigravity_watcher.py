@@ -29,29 +29,26 @@ class AntigravityWatcher(BaseAgentWatcher):
 
     def get_default_paths(self) -> List[str]:
         """Xác định đường dẫn lưu trữ brain logs của Antigravity sử dụng platformdirs."""
-        paths = []
-        try:
-            import platformdirs
-            data_brain = os.path.join(platformdirs.user_data_dir("antigravity", appauthor=False), "brain")
-            data_ide_brain = os.path.join(platformdirs.user_data_dir("antigravity-ide", appauthor=False), "brain")
-            for p in (data_brain, data_ide_brain):
-                if p not in paths:
-                    paths.append(p)
-        except Exception as e:
-            logger.debug(f"platformdirs resolution error for Antigravity: {e}")
-
+        paths = self.resolve_platform_paths(
+            app_names=["antigravity", "antigravity-ide"],
+            sub_path="brain",
+        )
         home = os.path.expanduser("~")
         std_antigravity = os.path.join(home, ".gemini", "antigravity", "brain")
         std_antigravity_ide = os.path.join(home, ".gemini", "antigravity-ide", "brain")
-        for p in (std_antigravity, std_antigravity_ide):
+        std_antigravity_alt = os.path.join(home, ".antigravity", "brain")
+        for p in (std_antigravity, std_antigravity_ide, std_antigravity_alt):
             if p not in paths:
                 paths.append(p)
 
-        existing = [p for p in paths if os.path.isdir(p)]
-        return existing if existing else paths
+        unique_paths = list(dict.fromkeys(os.path.normpath(p) for p in paths if p))
+        existing = [p for p in unique_paths if os.path.isdir(p)]
+        return existing if existing else unique_paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét tất cả các thư mục session trong brain/ và trích xuất."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
         try:
             for brain_dir in self.base_paths:
@@ -77,6 +74,7 @@ class AntigravityWatcher(BaseAgentWatcher):
                     continue
         except Exception as e:
             logger.warning(f"Lỗi khi quét Antigravity sessions: {e}")
+            return []
         return all_records
 
     def extract_from_transcript(self, transcript_path: str, session_id: str, session_dir: str = "") -> List[RawAgentSessionRecord]:

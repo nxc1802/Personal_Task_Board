@@ -1,22 +1,24 @@
-"""Vertical Slice E2E Integration Test (Phase R17).
+"""Vertical Slice E2E Integration Test (Wave 6 — Sub-Agent 6B).
 
-Tests the complete end-to-end flow across all PTB layers:
-- Step 1 (Acquisition): Ingest fixture raw events via AcquisitionPipeline -> Persist into RawEventRepository with PENDING status.
-- Step 2 (Processing): ProcessingWorker (1 iteration) -> Scans PENDING events -> Parse quote/reply -> Heuristic filter ->
-                       Extract UnifiedTaskCandidate & Evidence -> Correlation / Merge if anchor present -> Save UnifiedTask
-                       into TaskDomainRepository -> Mark raw event as PROCESSED.
-- Step 3 (Intelligence): TaskIntelligenceLifecycle -> DeterministicPriorityEngine (config/priority.yaml) -> Priority breakdown & inferred status.
-- Step 4 (Application & REST): FastAPI TestClient -> GET /api/today (task with priority score) -> POST /api/tasks/{id}/status ->
-                              Update to IN_PROGRESS, enforce status_authoritative, verify audit log.
-- Step 5 (Checkpoint & Idempotency): Re-run ingestion with identical payload -> Deduplication recognized, no duplicate tasks created.
+Tests the complete end-to-end production flow across all PTB layers using test doubles
+exclusively from tests.support.test_doubles:
+Teams/Outlook fixture
+-> real TeamsNetworkInterceptor / OutlookNetworkInterceptor
+-> real AcquisitionPipeline
+-> test InMemoryRawEventRepository & InMemoryCheckpointRepository
+-> real ProcessingWorker
+-> real ProcessingPipeline (with auto-wired TaskIntelligenceLifecycle & GraphMemorySyncWorker)
+-> FakeDeterministicLLMExtractor
+-> task persisted in InMemoryTaskDomainRepository
+-> intelligence automatically computed
+-> FakeGraphitiAdapter episodes synchronized
+-> FastAPI TestClient
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
@@ -26,322 +28,48 @@ from ptb_acquisition.playwright.teams_interceptor import TeamsNetworkInterceptor
 from ptb_application.api import app, get_application_service
 from ptb_application.service import ApplicationService
 from ptb_contracts import (
-    CommitmentRecord,
-    EvidenceRecord,
     EvidenceType,
     IngestionCheckpointRecord,
-    MergeAuditRecord,
-    ProcessingAttemptRecord,
     ProcessingStatus,
     RawEventRecord,
-    ReviewQueueItem,
     SourceType,
-    StatusTransitionAuditRecord,
     TaskStatus,
-    UnifiedTaskCandidate,
 )
-from ptb_contracts.l4_intelligence import TaskWithContext
+from ptb_graph_memory import GraphMemorySyncWorker, GraphSyncStatus
 from ptb_intelligence.lifecycle import TaskIntelligenceLifecycle
 from ptb_intelligence.priority import DeterministicPriorityEngine
 from ptb_intelligence.status_machine import StatusInferenceMachine
-from ptb_processing.extractor.llm_extractor import LLMStructuredExtractor
 from ptb_processing.pipeline import ProcessingPipeline
 from ptb_processing.worker import ProcessingWorker
+from tests.support.test_doubles import (
+    FakeDeterministicLLMExtractor,
+    FakeGraphitiAdapter,
+    InMemoryCheckpointRepository,
+    InMemoryRawEventRepository,
+    InMemoryTaskDomainRepository,
+)
 
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
 
-# ==============================================================================
-# IN-MEMORY REPOSITORIES & CLIENT FIXTURES FOR E2E INTEGRATION
-# ==============================================================================
-
-class InMemoryRawEventRepository:
-    """In-memory RawEventRepository implementing durability and idempotency checks."""
-
-    def __init__(self) -> None:
-        self.events: Dict[str, RawEventRecord] = {}
-        self.idempotency_index: Dict[str, str] = {}
-        self.attempt_records: List[ProcessingAttemptRecord] = []
-        self.status_audit_log: List[dict] = []
-
-    async def persist_raw_event(self, record: RawEventRecord) -> str:
-        """MERGE on idempotency_key: returns existing ID if duplicate, else stores new."""
-        if record.idempotency_key in self.idempotency_index:
-            existing_id = self.idempotency_index[record.idempotency_key]
-            return existing_id
-
-        event_id = record.id or str(uuid4())
-        record_copy = record.model_copy(deep=True)
-        record_copy.id = event_id
-        if not record_copy.payload_json and record_copy.raw_payload:
-            record_copy.payload_json = json.dumps(record_copy.raw_payload, default=str)
-        if not record_copy.content_hash and record_copy.normalized_text:
-            record_copy.content_hash = hashlib.sha256(record_copy.normalized_text.encode("utf-8")).hexdigest()
-
-        self.events[event_id] = record_copy
-        self.idempotency_index[record.idempotency_key] = event_id
-        return event_id
-
-    async def save_raw_event(self, record: RawEventRecord) -> bool:
-        await self.persist_raw_event(record)
-        return True
-
-    async def get_by_id(self, event_id: str) -> Optional[RawEventRecord]:
-        return self.events.get(event_id)
-
-    async def get_pending_raw_events(self, limit: int = 50) -> List[RawEventRecord]:
-        now = datetime.now(timezone.utc)
-        pending: List[RawEventRecord] = []
-        for ev in self.events.values():
-            if ev.processing_status in (
-                ProcessingStatus.PENDING,
-                ProcessingStatus.RETRY,
-                ProcessingStatus.pending,
-                ProcessingStatus.retry,
-            ):
-                if ev.next_retry_at is None or ev.next_retry_at <= now:
-                    pending.append(ev)
-        # Order by event_timestamp ASC
-        pending.sort(key=lambda e: e.event_timestamp or datetime.min.replace(tzinfo=timezone.utc))
-        return pending[:limit]
-
-    async def mark_event_status(
-        self,
-        event_id: str,
-        status: ProcessingStatus,
-        error: Optional[str] = None,
-        next_retry_at: Optional[datetime] = None,
-        processed_at: Optional[datetime] = None,
-        processor_version: Optional[str] = None,
-    ) -> None:
-        self.status_audit_log.append({
-            "event_id": event_id,
-            "status": status,
-            "error": error,
-            "next_retry_at": next_retry_at,
-            "processed_at": processed_at,
-            "processor_version": processor_version,
-        })
-        if event_id in self.events:
-            ev = self.events[event_id]
-            ev.processing_status = status
-            ev.last_processing_error = error
-            ev.next_retry_at = next_retry_at
-            if processed_at:
-                ev.processed_at = processed_at
-            if processor_version:
-                ev.processor_version = processor_version
-            if status in (ProcessingStatus.RETRY, ProcessingStatus.FAILED):
-                ev.retry_count = (ev.retry_count or 0) + 1
-                ev.processing_attempt_count = (ev.processing_attempt_count or 0) + 1
-
-    async def record_processing_attempt(self, attempt: ProcessingAttemptRecord) -> None:
-        self.attempt_records.append(attempt)
-
-
-class InMemoryTaskDomainRepository:
-    """In-memory TaskDomainRepository implementing task storage, graph context, and audits."""
-
-    def __init__(self, initial_tasks: Optional[List[UnifiedTaskCandidate]] = None) -> None:
-        self.tasks: Dict[str, UnifiedTaskCandidate] = {
-            t.id: t.model_copy(deep=True) for t in (initial_tasks or [])
-        }
-        self.audits: List[StatusTransitionAuditRecord] = []
-        self.merge_audits: List[MergeAuditRecord] = []
-        self.commitments: List[CommitmentRecord] = []
-
-    async def upsert_task_atomic(self, task: UnifiedTaskCandidate) -> str:
-        task_id = task.id or str(uuid4())
-        task_copy = task.model_copy(deep=True)
-        task_copy.id = task_id
-        now = datetime.now(timezone.utc)
-        if not task_copy.created_at:
-            task_copy.created_at = now
-        task_copy.updated_at = now
-
-        self.tasks[task_id] = task_copy
-        return task_id
-
-    async def get_task_by_id(self, task_id: str) -> Optional[UnifiedTaskCandidate]:
-        t = self.tasks.get(task_id)
-        return t.model_copy(deep=True) if t else None
-
-    async def list_tasks(self, filters: Optional[dict] = None) -> List[UnifiedTaskCandidate]:
-        all_tasks = [t.model_copy(deep=True) for t in self.tasks.values()]
-        if not filters:
-            return all_tasks
-
-        filtered = []
-        for t in all_tasks:
-            if "status" in filters and filters["status"]:
-                req_status = filters["status"]
-                if isinstance(req_status, (list, set, tuple)):
-                    status_vals = [s.value if hasattr(s, "value") else str(s) for s in req_status]
-                    if t.status.value not in status_vals:
-                        continue
-                else:
-                    status_val = req_status.value if hasattr(req_status, "value") else str(req_status)
-                    if t.status.value != status_val:
-                        continue
-
-            if "project" in filters and filters["project"]:
-                if (t.project_key or "").lower() != str(filters["project"]).lower():
-                    continue
-
-            if "customer" in filters and filters["customer"]:
-                if (t.customer_id or "").lower() != str(filters["customer"]).lower():
-                    continue
-
-            if "source" in filters and filters["source"]:
-                req_source = str(filters["source"]).lower()
-                if not any((ev.source_type or "").lower() == req_source for ev in t.evidences):
-                    continue
-
-            filtered.append(t)
-
-        if "limit" in filters and isinstance(filters["limit"], int):
-            return filtered[:filters["limit"]]
-        return filtered
-
-    async def get_active_tasks(self) -> List[UnifiedTaskCandidate]:
-        return [
-            t.model_copy(deep=True) for t in self.tasks.values()
-            if t.status in (TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED)
-        ]
-
-    async def get_task_with_context(self, task_id: str) -> Optional[TaskWithContext]:
-        task = self.tasks.get(task_id)
-        if not task:
-            return None
-        now = datetime.now(timezone.utc)
-        last_change = task.updated_at or task.created_at or now
-        if last_change.tzinfo is None:
-            last_change = last_change.replace(tzinfo=timezone.utc)
-        days_in_status = max(0, int((now - last_change).total_seconds() // 86400))
-        return TaskWithContext(
-            task=task.model_copy(deep=True),
-            last_status_change_at=last_change,
-            days_in_current_status=days_in_status,
-            has_completion_evidence=any(
-                ev.evidence_type == EvidenceType.COMPLETION_SIGNAL
-                or "done" in (ev.snippet or "").lower()
-                for ev in task.evidences
-            ),
-            blocking_tasks=["task-blocker-1"] if task.status == TaskStatus.BLOCKED else [],
-            dependent_people=["Alex"] if task.status == TaskStatus.BLOCKED else [],
-        )
-
-    async def get_review_queue(self, limit: int = 20) -> List[ReviewQueueItem]:
-        items: List[ReviewQueueItem] = []
-        for t in self.tasks.values():
-            if t.review_status == "pending_review" or (0.40 <= (t.extraction_confidence or 0.0) < 0.65):
-                raw_id = t.evidences[0].raw_event_id if t.evidences else "raw-001"
-                items.append(ReviewQueueItem(
-                    id=f"rev-{t.id}",
-                    raw_event_id=raw_id,
-                    candidate_task=t.model_copy(deep=True),
-                    reason=f"Confidence {t.extraction_confidence} requires human review",
-                    created_at=t.created_at or datetime.now(timezone.utc),
-                ))
-                if len(items) >= limit:
-                    break
-        return items
-
-    async def get_active_commitments(self, user_id: Optional[str] = None) -> List[CommitmentRecord]:
-        return list(self.commitments)
-
-    async def record_status_transition_audit(self, audit: StatusTransitionAuditRecord) -> str:
-        self.audits.append(audit)
-        return audit.id
-
-    async def record_merge_audit(self, audit: MergeAuditRecord) -> str:
-        self.merge_audits.append(audit)
-        return audit.id
-
-    async def split_task(
-        self,
-        original_task_id: str,
-        evidence_ids_to_detach: list[str],
-        new_task_title: Optional[str] = None,
-    ) -> UnifiedTaskCandidate:
-        orig = self.tasks.get(original_task_id)
-        if not orig:
-            raise ValueError(f"Task {original_task_id} not found")
-        detached = [e for e in orig.evidences if e.id in evidence_ids_to_detach]
-        if not detached:
-            raise ValueError(f"None of {evidence_ids_to_detach} found in task {original_task_id}")
-
-        orig.evidences = [e for e in orig.evidences if e.id not in evidence_ids_to_detach]
-        new_id = str(uuid4())
-        new_task = UnifiedTaskCandidate(
-            id=new_id,
-            title=new_task_title or f"Split: {orig.title}",
-            description=orig.description,
-            status=orig.status,
-            evidences=[e.model_copy(update={"task_id": new_id}) for e in detached],
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-        )
-        self.tasks[new_id] = new_task
-        return new_task
-
-
-class InMemoryCheckpointRepository:
-    """In-memory CheckpointRepository tracking source sync positions."""
-
-    def __init__(self) -> None:
-        self.checkpoints: Dict[str, IngestionCheckpointRecord] = {}
-
-    def _key(self, source_type: Any, stream_id: str, tenant_id: Optional[str] = None) -> str:
-        st = source_type.value if hasattr(source_type, "value") else str(source_type)
-        t = tenant_id or "default"
-        return f"{t}:{st}:{stream_id}"
-
-    async def get_checkpoint(
-        self, source_type: str, stream_id: str, tenant_id: Optional[str] = None
-    ) -> Optional[IngestionCheckpointRecord]:
-        key = self._key(source_type, stream_id, tenant_id)
-        return self.checkpoints.get(key)
-
-    async def save_checkpoint(self, checkpoint: IngestionCheckpointRecord) -> None:
-        key = self._key(checkpoint.source_type, checkpoint.stream_id, checkpoint.tenant_id)
-        self.checkpoints[key] = checkpoint.model_copy(deep=True)
-
-    async def list_checkpoints(self) -> List[IngestionCheckpointRecord]:
-        return list(self.checkpoints.values())
-
-    async def cleanup_duplicate_checkpoints(self) -> int:
-        return 0
-
-
-class MockGraphitiMemoryClient:
-    """Mock Graphiti memory client for knowledge search during E2E."""
-
-    def __init__(self, episodes: Optional[List[Dict[str, Any]]] = None) -> None:
-        self.episodes = episodes or []
-
-    async def search_context(self, query: str, limit: int = 5, include_invalidated: bool = False) -> List[Dict[str, Any]]:
-        return self.episodes[:limit]
-
-
-# ==============================================================================
-# VERTICAL SLICE E2E INTEGRATION TEST (5 STEPS)
-# ==============================================================================
-
+@pytest.mark.fixture_e2e
 @pytest.mark.asyncio
 async def test_vertical_slice_e2e_teams_flow():
     """Complete 5-step Vertical Slice E2E flow for Teams Web message ingestion & processing."""
     # --------------------------------------------------------------------------
-    # Khởi tạo repositories và dependencies
+    # Khởi tạo repositories và test doubles từ tests.support.test_doubles
     # --------------------------------------------------------------------------
     raw_event_repo = InMemoryRawEventRepository()
-    task_repo = InMemoryTaskDomainRepository()
     checkpoint_repo = InMemoryCheckpointRepository()
+    fake_graphiti = FakeGraphitiAdapter()
+    graph_sync_worker = GraphMemorySyncWorker(memory_client=fake_graphiti)
+    task_repo = InMemoryTaskDomainRepository(graph_sync_worker=graph_sync_worker)
+    llm_extractor = FakeDeterministicLLMExtractor()
 
     # Load deterministic priority engine từ config/priority.yaml (authoritative)
     config_file = Path("config/priority.yaml")
-    assert config_file.is_file(), "config/priority.yaml must exist for Phase R17"
+    assert config_file.is_file(), "config/priority.yaml must exist"
     priority_engine = DeterministicPriorityEngine(config_path=config_file)
     assert priority_engine.deadline_weight == 35.0
     assert priority_engine.commitment_weight == 10.0
@@ -379,6 +107,24 @@ async def test_vertical_slice_e2e_teams_flow():
     assert pipeline.stats["ingested"] == 1
     assert pipeline.stats["persisted"] == 1
 
+    # Lưu và kiểm tra checkpoint theo composite key (tenant_id, source_type, stream_id)
+    ckpt = IngestionCheckpointRecord(
+        id="",
+        tenant_id="tenant-e2e-slice",
+        source_type=SourceType.MS_TEAMS_WEB,
+        stream_id=commitment_record.conversation_or_project_id,
+        last_external_id=commitment_record.external_id,
+        last_event_timestamp=commitment_record.event_timestamp,
+    )
+    await checkpoint_repo.save_checkpoint(ckpt)
+    loaded_ckpt = await checkpoint_repo.get_checkpoint(
+        SourceType.MS_TEAMS_WEB,
+        commitment_record.conversation_or_project_id,
+        tenant_id="tenant-e2e-slice",
+    )
+    assert loaded_ckpt is not None
+    assert loaded_ckpt.last_external_id == commitment_record.external_id
+
     # Xác nhận event được persist vào RawEventRepository với trạng thái PENDING
     pending_events = await raw_event_repo.get_pending_raw_events()
     assert len(pending_events) == 1
@@ -390,33 +136,36 @@ async def test_vertical_slice_e2e_teams_flow():
     # --------------------------------------------------------------------------
     # BƯỚC 2 (Processing): Khởi chạy ProcessingWorker (1 iteration)
     # --------------------------------------------------------------------------
-    # Cấu hình ProcessingPipeline với mock extractor
-    extractor = LLMStructuredExtractor(mock_mode=True)
     processing_pipeline = ProcessingPipeline(
         task_repo=task_repo,
-        llm_extractor=extractor,
+        llm_extractor=llm_extractor,
+        intelligence_lifecycle=lifecycle,
     )
 
     worker = ProcessingWorker(
         raw_event_repo=raw_event_repo,
         pipeline=processing_pipeline,
         max_retries=3,
+        intelligence_lifecycle=lifecycle,
     )
 
     # Chạy 1 iteration batch processing
     batch_statuses = await worker.process_batch(limit=10)
     assert batch_statuses == [ProcessingStatus.PROCESSED]
+    assert len(llm_extractor.calls) == 1
 
-    # Kiểm tra RawEvent trong repo được đánh dấu là PROCESSED
+    # Kiểm tra RawEvent trong repo được đánh dấu là PROCESSED và attempt_count == 1
     processed_event = await raw_event_repo.get_by_id(commitment_record.id)
     assert processed_event is not None
     assert processed_event.processing_status == ProcessingStatus.PROCESSED
     assert processed_event.processed_at is not None
+    assert processed_event.processing_attempt_count == 1
 
     # Kiểm tra ProcessingAttemptRecord thành công
     assert len(raw_event_repo.attempt_records) == 1
     assert raw_event_repo.attempt_records[0].status == ProcessingStatus.PROCESSED
     assert raw_event_repo.attempt_records[0].raw_event_id == commitment_record.id
+    assert raw_event_repo.attempt_records[0].attempt_number == 1
 
     # Kiểm tra UnifiedTask được trích xuất và lưu vào TaskDomainRepository
     saved_tasks = await task_repo.list_tasks()
@@ -425,6 +174,9 @@ async def test_vertical_slice_e2e_teams_flow():
     assert created_task.status == TaskStatus.TODO
     assert created_task.owner_name == "Dam Quang Cuong"
     assert len(created_task.evidences) == 1
+    # Tự động tính toán priority ngay sau khi worker xử lý
+    assert created_task.priority_score is not None
+    assert created_task.priority_score > 0.0
 
     # Kiểm tra Evidence lưu trữ đầy đủ provenance trỏ về RawEvent
     evidence = created_task.evidences[0]
@@ -432,6 +184,12 @@ async def test_vertical_slice_e2e_teams_flow():
     assert evidence.evidence_type == EvidenceType.CHAT_COMMITMENT
     assert "OPS-88" in created_task.title
     assert "để em fix bug này trước 5h chiều" in evidence.snippet
+
+    # Kiểm tra GraphMemorySyncWorker đã đồng bộ Evidence sang FakeGraphitiAdapter
+    assert graph_sync_worker.get_sync_status(evidence.id, "evidence") == GraphSyncStatus.SYNCED
+    assert len(fake_graphiti.episodes) == 1
+    assert fake_graphiti.episodes[0]["id"] == evidence.id
+    assert fake_graphiti.episodes[0]["task_id"] == created_task.id
 
     # --------------------------------------------------------------------------
     # BƯỚC 2B (Correlation / Merge nếu có anchor):
@@ -470,23 +228,25 @@ async def test_vertical_slice_e2e_teams_flow():
     assert len(task_repo.merge_audits) == 1
     assert "OPS-88" in str(task_repo.merge_audits[0].deterministic_anchors)
 
-    # --------------------------------------------------------------------------
-    # BƯỚC 3 (Intelligence): Kích hoạt TaskIntelligenceLifecycle & Priority Engine
-    # --------------------------------------------------------------------------
-    lifecycle_res = await lifecycle.on_task_changed(merged_task.id)
-    updated_task, priority_breakdown, transition_result = lifecycle_res
+    # Cả 2 evidence đều đã được đồng bộ sang FakeGraphitiAdapter
+    assert len(fake_graphiti.episodes) == 2
+    for ev in merged_task.evidences:
+        assert graph_sync_worker.get_sync_status(ev.id, "evidence") == GraphSyncStatus.SYNCED
 
-    # Điểm ưu tiên được tính toán dựa trên config/priority.yaml:
-    # Có CHAT_COMMITMENT -> commitment_weight = 10.0
-    # Có keyword "OPS-88" / "hotfix" / "production" -> production_impact_score > 0
+    # --------------------------------------------------------------------------
+    # BƯỚC 3 (Intelligence): Tự động tính toán priority & inferred status
+    # Tuyệt đối KHÔNG gọi thủ công lifecycle.on_task_changed() trong test E2E.
+    # Pipeline đã tự động kích hoạt recalculation và persist vào TaskDomainRepository.
+    # --------------------------------------------------------------------------
+    task_in_db = await task_repo.get_task_by_id(merged_task.id)
+    assert task_in_db is not None
+    assert task_in_db.priority_score is not None
+    assert task_in_db.priority_score > 0.0
+
+    priority_breakdown = priority_engine.calculate_priority(task_in_db)
     assert priority_breakdown.commitment_weight == 10.0
     assert priority_breakdown.production_impact_score > 0.0
     assert priority_breakdown.total_score > 0.0
-    assert updated_task.priority_score == priority_breakdown.total_score
-
-    # Kiểm tra dữ liệu được lưu bền bỉ trong TaskDomainRepository
-    task_in_db = await task_repo.get_task_by_id(merged_task.id)
-    assert task_in_db is not None
     assert task_in_db.priority_score == priority_breakdown.total_score
 
     # --------------------------------------------------------------------------
@@ -498,7 +258,8 @@ async def test_vertical_slice_e2e_teams_flow():
         checkpoint_repo=checkpoint_repo,
         priority_engine=priority_engine,
         lifecycle=lifecycle,
-        graph_memory=MockGraphitiMemoryClient(),
+        graph_memory=fake_graphiti,
+        processing_pipeline=processing_pipeline,
     )
 
     app.dependency_overrides[get_application_service] = lambda: app_service
@@ -514,6 +275,8 @@ async def test_vertical_slice_e2e_teams_flow():
         top_task_entry = today_data["top_tasks"][0]
         assert top_task_entry["task_id"] == merged_task.id
         assert top_task_entry["priority"]["total_score"] == priority_breakdown.total_score
+        assert top_task_entry["priority"]["total_score"] == task_in_db.priority_score
+        assert top_task_entry["priority"]["total_score"] > 0.0
 
         # Kiểm tra chi tiết task qua GET /api/tasks/{id}
         resp_detail = client.get(f"/api/tasks/{merged_task.id}")
@@ -545,36 +308,34 @@ async def test_vertical_slice_e2e_teams_flow():
     # --------------------------------------------------------------------------
     # BƯỚC 5 (Checkpoint & Idempotency): Tái chạy ingestion cùng payload ban đầu
     # --------------------------------------------------------------------------
-    # 5a. Thử ingest lại cùng raw_record ban đầu qua AcquisitionPipeline
     reingest_result = await pipeline.ingest_event(commitment_record)
     assert reingest_result is False
     assert pipeline.stats["deduplicated"] >= 1
 
-    # 5b. Thử ingest qua pipeline mới (mô phỏng restart hệ thống)
-    fresh_pipeline = AcquisitionPipeline(
-        raw_event_repo=raw_event_repo,
-        checkpoint_repo=checkpoint_repo,
-        tenant_id="tenant-e2e-slice",
-    )
     # Repo đã ghi nhận idempotency_key -> persist_raw_event trả về ID cũ và không tạo mới
     returned_id = await raw_event_repo.persist_raw_event(commitment_record)
     assert returned_id == commitment_record.id
 
-    # 5c. Khởi chạy worker lần nữa -> không có pending event nào mới
+    # Khởi chạy worker lần nữa -> không có pending event nào mới
     empty_batch = await worker.process_batch(limit=10)
     assert empty_batch == []
 
-    # 5d. Xác nhận số lượng task trong TaskDomainRepository vẫn duy nhất 1 task
+    # Xác nhận số lượng task trong TaskDomainRepository vẫn duy nhất 1 task
     final_tasks_count = await task_repo.list_tasks()
     assert len(final_tasks_count) == 1
 
 
+@pytest.mark.fixture_e2e
 @pytest.mark.asyncio
 async def test_vertical_slice_e2e_outlook_flow():
     """Vertical Slice E2E flow for Outlook Web email request with explicit deadline."""
     raw_event_repo = InMemoryRawEventRepository()
-    task_repo = InMemoryTaskDomainRepository()
     checkpoint_repo = InMemoryCheckpointRepository()
+    fake_graphiti = FakeGraphitiAdapter()
+    graph_sync_worker = GraphMemorySyncWorker(memory_client=fake_graphiti)
+    task_repo = InMemoryTaskDomainRepository(graph_sync_worker=graph_sync_worker)
+    llm_extractor = FakeDeterministicLLMExtractor()
+
     priority_engine = DeterministicPriorityEngine(config_path="config/priority.yaml")
     lifecycle = TaskIntelligenceLifecycle(task_repo=task_repo, priority_engine=priority_engine)
 
@@ -594,10 +355,16 @@ async def test_vertical_slice_e2e_outlook_flow():
     )
     await pipeline.ingest_event(email_record)
 
-    # 2. Processing
+    # 2. Processing (với TaskIntelligenceLifecycle & GraphMemorySyncWorker tự động)
+    processing_pipeline = ProcessingPipeline(
+        task_repo=task_repo,
+        llm_extractor=llm_extractor,
+        intelligence_lifecycle=lifecycle,
+    )
     worker = ProcessingWorker(
         raw_event_repo=raw_event_repo,
-        pipeline=ProcessingPipeline(task_repo=task_repo, llm_extractor=LLMStructuredExtractor(mock_mode=True)),
+        pipeline=processing_pipeline,
+        intelligence_lifecycle=lifecycle,
     )
     statuses = await worker.process_batch()
     assert statuses == [ProcessingStatus.PROCESSED]
@@ -608,9 +375,12 @@ async def test_vertical_slice_e2e_outlook_flow():
     assert "review" in task.title.lower() or "personal task board" in task.title.lower()
     assert task.explicit_deadline is True
 
-    # 3. Intelligence: Tính toán priority
-    lifecycle_res = await lifecycle.on_task_changed(task.id)
-    assert lifecycle_res.priority_breakdown.total_score > 0.0
+    # 3. Intelligence & Graphiti Sync: Tự động tính toán priority và sync episode
+    assert task.priority_score is not None
+    assert task.priority_score > 0.0
+    assert len(task.evidences) == 1
+    assert graph_sync_worker.get_sync_status(task.evidences[0].id, "evidence") == GraphSyncStatus.SYNCED
+    assert len(fake_graphiti.episodes) == 1
 
     # 4. REST API verification
     app_service = ApplicationService(
@@ -619,13 +389,25 @@ async def test_vertical_slice_e2e_outlook_flow():
         checkpoint_repo=checkpoint_repo,
         priority_engine=priority_engine,
         lifecycle=lifecycle,
-        graph_memory=MockGraphitiMemoryClient(),
+        graph_memory=fake_graphiti,
+        processing_pipeline=processing_pipeline,
     )
     app.dependency_overrides[get_application_service] = lambda: app_service
     with TestClient(app) as client:
+        # GET /api/today kiểm tra task có priority tự động ngay sau khi worker xử lý
+        resp_today = client.get("/api/today?user_id=default")
+        assert resp_today.status_code == 200
+        today_data = resp_today.json()
+        assert len(today_data.get("top_tasks", [])) >= 1
+        assert today_data["top_tasks"][0]["task_id"] == task.id
+        assert today_data["top_tasks"][0]["priority"]["total_score"] == task.priority_score
+        assert today_data["top_tasks"][0]["priority"]["total_score"] > 0.0
+
+        # GET /api/tasks/{id}
         resp = client.get(f"/api/tasks/{task.id}")
         assert resp.status_code == 200
         assert resp.json()["task"]["id"] == task.id
+        assert resp.json()["task"]["priority_score"] == task.priority_score
     app.dependency_overrides.clear()
 
     # 5. Idempotency: re-ingest duplicate email

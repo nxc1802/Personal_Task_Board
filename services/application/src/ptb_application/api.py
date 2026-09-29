@@ -39,7 +39,11 @@ _app_service: Optional[ApplicationService] = None
 
 
 def get_application_service() -> ApplicationService:
-    """Dependency injection provider for ApplicationService."""
+    """Dependency injection provider for ApplicationService.
+
+    Ưu tiên trả về service được inject qua set_application_service() hoặc create_app().
+    Nếu chưa được thiết lập, khởi tạo instance mặc định.
+    """
     global _app_service
     if _app_service is None:
         _app_service = ApplicationService()
@@ -47,9 +51,32 @@ def get_application_service() -> ApplicationService:
 
 
 def set_application_service(service: Optional[ApplicationService]) -> None:
-    """Setter to override or reset ApplicationService instance (for tests / lifecycle)."""
+    """Setter to override or reset ApplicationService instance (for tests / shared dependency graph)."""
     global _app_service
     _app_service = service
+
+
+# ==============================================================================
+# Canonical Constants & Helpers
+# ==============================================================================
+CANONICAL_TASK_STATUSES = (
+    TaskStatus.TODO.value,
+    TaskStatus.IN_PROGRESS.value,
+    TaskStatus.BLOCKED.value,
+    TaskStatus.DONE.value,
+    TaskStatus.DISMISSED.value,
+)
+
+
+def _validate_canonical_status(status_val: str) -> str:
+    """Kiểm tra hợp lệ với 5 trạng thái canonical (TODO, IN_PROGRESS, BLOCKED, DONE, DISMISSED)."""
+    norm = str(status_val).strip().upper()
+    if norm not in CANONICAL_TASK_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status '{status_val}'. Must be one of {list(CANONICAL_TASK_STATUSES)}",
+        )
+    return norm
 
 
 # ==============================================================================
@@ -57,6 +84,7 @@ def set_application_service(service: Optional[ApplicationService]) -> None:
 # ==============================================================================
 class ApproveReviewRequest(BaseModel):
     new_status: Optional[str] = None
+    status: Optional[str] = None
     actor: str = "USER"
 
 
@@ -67,8 +95,9 @@ class DismissReviewRequest(BaseModel):
 class TaskPatchRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
+    notes: Optional[str] = None
     status: Optional[str] = None
-    due_date: Optional[datetime] = None
+    due_date: Optional[Union[datetime, str]] = None
     explicit_deadline: Optional[bool] = None
     priority_score: Optional[float] = Field(default=None, ge=0.0, le=100.0)
     project_key: Optional[str] = None
@@ -95,13 +124,21 @@ class TaskSplitRequest(BaseModel):
 # ==============================================================================
 # Application Factory
 # ==============================================================================
-def create_app() -> FastAPI:
-    """Khởi tạo và cấu hình FastAPI application."""
+def create_app(application_service: Optional[ApplicationService] = None) -> FastAPI:
+    """Khởi tạo và cấu hình FastAPI application.
+
+    Hỗ trợ inject shared ApplicationService qua tham số application_service hoặc hàm set_application_service().
+    """
+    if application_service is not None:
+        set_application_service(application_service)
+
     app = FastAPI(
         title="Personal Task Board REST API",
         description="FastAPI REST service for Personal Task Board v1 (Port 8000)",
         version="1.0.0",
     )
+    if application_service is not None:
+        app.state.application_service = application_service
 
     # Cấu hình CORS middleware cho phép OpenWebUI gọi từ http://localhost:3000 và http://127.0.0.1:3000
     app.add_middleware(
@@ -119,13 +156,11 @@ def create_app() -> FastAPI:
     # 1. GET /health
     # --------------------------------------------------------------------------
     @app.get("/health")
-    async def health_check() -> Dict[str, Any]:
-        """Kiểm tra tình trạng sức khỏe của service."""
-        return {
-            "status": "healthy",
-            "service": "ptb-application",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+    async def health_check(
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
+        """Kiểm tra tình trạng sức khỏe sâu (deep health) của service và các dependencies."""
+        return await service.get_system_health()
 
     # --------------------------------------------------------------------------
     # 2. GET /api/today
@@ -145,6 +180,7 @@ def create_app() -> FastAPI:
     async def list_tasks(
         source: Optional[str] = Query(default=None),
         project: Optional[str] = Query(default=None),
+        project_key: Optional[str] = Query(default=None),
         customer: Optional[str] = Query(default=None),
         status: Optional[str] = Query(default=None),
         due_from: Optional[datetime] = Query(default=None),
@@ -162,8 +198,8 @@ def create_app() -> FastAPI:
         filters: Dict[str, Any] = {}
         if source is not None:
             filters["source"] = source
-        if project is not None:
-            filters["project"] = project
+        if project is not None or project_key is not None:
+            filters["project"] = project if project is not None else project_key
         if customer is not None:
             filters["customer"] = customer
         if status is not None:
@@ -228,13 +264,18 @@ def create_app() -> FastAPI:
         body: Optional[ApproveReviewRequest] = None,
         service: ApplicationService = Depends(get_application_service),
     ) -> TaskActionResponse:
-        """Duyệt task candidate trong hàng đợi review."""
-        new_status = body.new_status if body else None
+        """Duyệt task candidate trong hàng đợi review sang trạng thái active (mặc định TODO)."""
+        raw_status = (body.new_status if body and body.new_status is not None else (body.status if body else None))
+        target_status = (
+            _validate_canonical_status(raw_status)
+            if raw_status is not None
+            else TaskStatus.TODO.value
+        )
         actor = body.actor if body else "USER"
         res = await service.execute_task_action(
             task_id=task_id,
             action="APPROVE",
-            new_status=new_status,
+            new_status=target_status,
             actor=actor,
         )
         if not res.success:
@@ -258,7 +299,7 @@ def create_app() -> FastAPI:
         body: Optional[DismissReviewRequest] = None,
         service: ApplicationService = Depends(get_application_service),
     ) -> TaskActionResponse:
-        """Bỏ qua task candidate trong hàng đợi review."""
+        """Bỏ qua task candidate trong hàng đợi review (chuyển sang DISMISSED)."""
         actor = body.actor if body else "USER"
         res = await service.execute_task_action(
             task_id=task_id,
@@ -286,21 +327,45 @@ def create_app() -> FastAPI:
         body: TaskPatchRequest,
         service: ApplicationService = Depends(get_application_service),
     ) -> UnifiedTaskCandidate:
-        """Chỉnh sửa các trường thông tin của task."""
-        if body.status is not None:
-            try:
-                TaskStatus(body.status)
-            except ValueError:
-                valid_statuses = [s.value for s in TaskStatus]
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid status '{body.status}'. Must be one of {valid_statuses}",
-                )
-
+        """Chỉnh sửa các trường thông tin của task (title, project_key, owner_name, due_date, notes, ...)."""
         updates = body.model_dump(exclude_unset=True)
         actor = updates.pop("actor", "USER")
 
-        updated = await service.update_task(task_id=task_id, actor=actor, **updates)
+        if "title" in updates:
+            if updates["title"] is None or not str(updates["title"]).strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Field 'title' cannot be empty",
+                )
+            updates["title"] = str(updates["title"]).strip()
+
+        if "status" in updates and updates["status"] is not None:
+            updates["status"] = _validate_canonical_status(updates["status"])
+
+        if "due_date" in updates and isinstance(updates["due_date"], str):
+            due_str = updates["due_date"].strip()
+            if not due_str:
+                updates["due_date"] = None
+            else:
+                try:
+                    parsed_due = datetime.fromisoformat(due_str.replace("Z", "+00:00"))
+                    if parsed_due.tzinfo is None:
+                        parsed_due = parsed_due.replace(tzinfo=timezone.utc)
+                    updates["due_date"] = parsed_due
+                except ValueError:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid due_date '{updates['due_date']}'. Expected ISO-8601 date or datetime.",
+                    )
+
+        try:
+            updated = await service.update_task(task_id=task_id, actor=actor, **updates)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            )
+
         if updated is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -318,21 +383,24 @@ def create_app() -> FastAPI:
         service: ApplicationService = Depends(get_application_service),
     ) -> TaskActionResponse:
         """Cập nhật trạng thái task (TODO, IN_PROGRESS, BLOCKED, DONE, DISMISSED)."""
-        target_status = body.status or body.new_status
-        if not target_status:
+        if (
+            body.status is not None
+            and body.new_status is not None
+            and body.status.strip().upper() != body.new_status.strip().upper()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Conflicting 'status' and 'new_status' values in request payload",
+            )
+
+        raw_status = body.status if body.status is not None else body.new_status
+        if not raw_status or not str(raw_status).strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Field 'status' or 'new_status' is required",
             )
 
-        try:
-            TaskStatus(target_status)
-        except ValueError:
-            valid_statuses = [s.value for s in TaskStatus]
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status '{target_status}'. Must be one of {valid_statuses}",
-            )
+        target_status = _validate_canonical_status(raw_status)
 
         res = await service.execute_task_action(
             task_id=task_id,
@@ -362,7 +430,8 @@ def create_app() -> FastAPI:
         service: ApplicationService = Depends(get_application_service),
     ) -> UnifiedTaskCandidate:
         """Tách các evidence chỉ định khỏi task thành một UnifiedTask mới."""
-        if not body.evidence_ids:
+        cleaned_evidence_ids = [eid.strip() for eid in (body.evidence_ids or []) if eid and str(eid).strip()]
+        if not cleaned_evidence_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="evidence_ids list cannot be empty",
@@ -371,12 +440,13 @@ def create_app() -> FastAPI:
         try:
             return await service.split_task(
                 task_id=task_id,
-                evidence_ids=body.evidence_ids,
+                evidence_ids=cleaned_evidence_ids,
                 new_title=body.new_title,
             )
         except ValueError as e:
             msg = str(e)
-            if "not found" in msg.lower():
+            msg_lower = msg.lower()
+            if "not found" in msg_lower and "evidence" not in msg_lower and "none of" not in msg_lower:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=msg,

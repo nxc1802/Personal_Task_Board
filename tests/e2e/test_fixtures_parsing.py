@@ -21,6 +21,7 @@ from ptb_processing.parsers.quote_reply import TeamsQuoteReplyParser
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
 
+@pytest.mark.fixture_e2e
 def test_teams_messages_fixture_parsing():
     """Verify parsing of tests/fixtures/teams_messages_fixture.json into RawEventRecord v1."""
     fixture_path = FIXTURES_DIR / "teams_messages_fixture.json"
@@ -91,6 +92,7 @@ def test_teams_messages_fixture_parsing():
     assert heuristic.should_extract(parsed_msg3.actual_content_text) is False
 
 
+@pytest.mark.fixture_e2e
 def test_outlook_messages_fixture_parsing():
     """Verify parsing of tests/fixtures/outlook_messages_fixture.json into RawEventRecord v1."""
     fixture_path = FIXTURES_DIR / "outlook_messages_fixture.json"
@@ -149,6 +151,7 @@ def test_outlook_messages_fixture_parsing():
     assert heuristic.should_extract(email1.normalized_text) is True
 
 
+@pytest.mark.fixture_e2e
 def test_interceptor_parsing_idempotency_determinism():
     """Verify that multiple parses of the same payload produce deterministic idempotency_key & content_hash."""
     fixture_path = FIXTURES_DIR / "teams_messages_fixture.json"

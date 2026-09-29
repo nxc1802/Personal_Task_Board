@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
+from uuid import uuid4
 from pydantic import BaseModel, Field
 
 
@@ -10,12 +11,17 @@ class TaskStatus(str, Enum):
     BLOCKED = "BLOCKED"
     DONE = "DONE"
     DISMISSED = "DISMISSED"
-    # Backwards compatibility aliases
-    open = "TODO"
-    in_progress = "IN_PROGRESS"
-    blocked = "BLOCKED"
-    done = "DONE"
-    dismissed = "DISMISSED"
+
+    @classmethod
+    def _missing_(cls, value: object) -> Any:
+        if isinstance(value, str):
+            val_norm = value.strip().upper()
+            if val_norm == "OPEN":
+                return cls.TODO
+            for member in cls:
+                if member.value == val_norm or member.name == val_norm:
+                    return member
+        return None
 
 
 class InferredStatus(str, Enum):
@@ -44,18 +50,35 @@ class ParsedMessageContent(BaseModel):
 
 
 class EvidenceRecord(BaseModel):
-    id: str = Field(description="UUID v4 của evidence")
+    id: str = Field(default_factory=lambda: str(uuid4()), description="UUID v4 của evidence")
     task_id: Optional[str] = Field(default=None, description="ID của task liên kết")
-    raw_event_id: str = Field(description="Tham chiếu đến raw_events.id")
     evidence_type: EvidenceType
+    snippet: str = Field(description="Đoạn trích văn bản làm bằng chứng")
     source_type: str
+    source_event_id: Optional[str] = Field(default=None, description="ID của raw source event")
+    timestamp: datetime
+    confidence_score: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Điểm tin cậy trích xuất")
+
+    # Compatibility aliases
+    raw_event_id: Optional[str] = Field(default=None, description="Alias cho source_event_id")
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Alias cho confidence_score")
     external_url: Optional[str] = None
     author_canonical_id: Optional[str] = Field(default=None, description="ID người gửi theo Person node")
     author_canonical_name: Optional[str] = Field(default=None, description="Tên canonical người gửi")
-    timestamp: datetime
-    snippet: str = Field(description="Đoạn trích văn bản làm bằng chứng")
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     extraction_version: str = Field(default="v1.0")
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.source_event_id and not self.raw_event_id:
+            object.__setattr__(self, "raw_event_id", self.source_event_id)
+        elif self.raw_event_id and not self.source_event_id:
+            object.__setattr__(self, "source_event_id", self.raw_event_id)
+        if self.confidence is not None and self.confidence_score is None:
+            object.__setattr__(self, "confidence_score", self.confidence)
+        elif self.confidence_score is not None and self.confidence is None:
+            object.__setattr__(self, "confidence", self.confidence_score)
+        elif self.confidence is None and self.confidence_score is None:
+            object.__setattr__(self, "confidence_score", 1.0)
+            object.__setattr__(self, "confidence", 1.0)
 
 
 class CommitmentRecord(BaseModel):
@@ -124,27 +147,53 @@ class UnifiedTaskCandidate(BaseModel):
 
 
 class MergeAuditRecord(BaseModel):
-    id: str = Field(description="UUID v4 của merge audit record")
-    winning_task_id: str = Field(description="ID task đích được gộp vào")
+    id: str = Field(default_factory=lambda: str(uuid4()), description="UUID v4 của merge audit record")
     candidate_task_ids: List[str] = Field(default_factory=list, description="Danh sách task candidates được so sánh")
+    winning_task_id: str = Field(description="ID task đích được gộp vào")
     correlation_score: float = Field(default=0.0, description="Điểm correlation_confidence")
     deterministic_anchors: List[str] = Field(default_factory=list, description="Danh sách anchors khớp")
-    semantic_score: float = Field(default=0.0, description="Điểm tương đồng ngữ nghĩa")
     merge_reason: str = Field(default="", description="Lý do chi tiết gộp task")
+    merged_at: Optional[datetime] = Field(default=None, description="Thời điểm gộp task")
+
+    # Compatibility aliases
+    semantic_score: float = Field(default=0.0, description="Điểm tương đồng ngữ nghĩa")
     processor_version: str = Field(default="v1.1", description="Phiên bản processor")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: Optional[datetime] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        now_val = datetime.now(timezone.utc)
+        if self.created_at and not self.merged_at:
+            object.__setattr__(self, "merged_at", self.created_at)
+        elif self.merged_at and not self.created_at:
+            object.__setattr__(self, "created_at", self.merged_at)
+        elif not self.merged_at and not self.created_at:
+            object.__setattr__(self, "merged_at", now_val)
+            object.__setattr__(self, "created_at", now_val)
 
 
 class StatusTransitionAuditRecord(BaseModel):
-    id: str = Field(description="UUID v4 của audit record")
+    id: str = Field(default_factory=lambda: str(uuid4()), description="UUID v4 của audit record")
     task_id: str
     old_status: TaskStatus
     new_status: TaskStatus
-    reason: str
-    source_evidence_ids: List[str] = Field(default_factory=list)
-    confidence: float = Field(ge=0.0, le=1.0)
-    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     change_actor: str = Field(default="SYSTEM", description="'SYSTEM' | 'USER'")
+    timestamp: Optional[datetime] = Field(default=None, description="Thời điểm thay đổi trạng thái")
+    reason: str
+
+    # Compatibility aliases
+    source_evidence_ids: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    changed_at: Optional[datetime] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        now_val = datetime.now(timezone.utc)
+        if self.changed_at and not self.timestamp:
+            object.__setattr__(self, "timestamp", self.changed_at)
+        elif self.timestamp and not self.changed_at:
+            object.__setattr__(self, "changed_at", self.timestamp)
+        elif not self.timestamp and not self.changed_at:
+            object.__setattr__(self, "timestamp", now_val)
+            object.__setattr__(self, "changed_at", now_val)
 
 
 class ReviewQueueItem(BaseModel):
@@ -153,4 +202,10 @@ class ReviewQueueItem(BaseModel):
     candidate_task: UnifiedTaskCandidate
     reason: str = Field(description="Lý do cần người dùng xác nhận (e.g., 'Confidence trung bình 0.72', 'Attribution chưa chắc chắn')")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# Canonical Ontology Aliases
+Evidence = EvidenceRecord
+MergeAudit = MergeAuditRecord
+StatusTransitionAudit = StatusTransitionAuditRecord
 

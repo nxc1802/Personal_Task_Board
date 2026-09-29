@@ -1,7 +1,13 @@
 """Shared contracts and data transfer objects for Personal Task Board."""
 
+from ptb_contracts.logging import (
+    BugCode,
+    BugLogRecord,
+    log_bug,
+)
 from ptb_contracts.l1_acquisition import (
     AgentType,
+    IngestionCheckpoint,
     IngestionCheckpointRecord,
     ProcessingAttemptRecord,
     ProcessingStatus,
@@ -13,13 +19,16 @@ from ptb_contracts.l1_acquisition import (
 )
 from ptb_contracts.l2_processing import (
     CommitmentRecord,
+    Evidence,
     EvidenceRecord,
     EvidenceType,
     ExtractedCommitment,
     InferredStatus,
+    MergeAudit,
     MergeAuditRecord,
     ParsedMessageContent,
     ReviewQueueItem,
+    StatusTransitionAudit,
     StatusTransitionAuditRecord,
     TaskStatus,
     UnifiedTaskCandidate,
@@ -34,6 +43,7 @@ from ptb_contracts.l3_storage import (
     GraphNeighborhoodQuery,
     IncidentNodeRecord,
     LessonNodeRecord,
+    Person,
     ProjectRecord,
     SourceIdentityRecord,
     TenantRecord,
@@ -62,6 +72,10 @@ from ptb_contracts.l5_experience import (
 )
 
 __all__ = [
+    # Bug Logging Contract
+    "BugCode",
+    "BugLogRecord",
+    "log_bug",
     # L1
     "SourceType",
     "AgentType",
@@ -69,6 +83,7 @@ __all__ = [
     "RawEventRecord",
     "RawAgentSessionRecord",
     "IngestionCheckpointRecord",
+    "IngestionCheckpoint",
     "ProcessingAttemptRecord",
     "SourceConnectionConfig",
     "SyncCheckpointState",
@@ -78,14 +93,18 @@ __all__ = [
     "EvidenceType",
     "ParsedMessageContent",
     "EvidenceRecord",
+    "Evidence",
     "CommitmentRecord",
     "ExtractedCommitment",
     "UnifiedTaskCandidate",
     "MergeAuditRecord",
+    "MergeAudit",
     "StatusTransitionAuditRecord",
+    "StatusTransitionAudit",
     "ReviewQueueItem",
     # L3
     "CanonicalPersonRecord",
+    "Person",
     "SourceIdentityRecord",
     "UnifiedTaskRecord",
     "EvidenceNodeRecord",

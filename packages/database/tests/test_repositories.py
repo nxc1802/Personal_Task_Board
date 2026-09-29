@@ -1,6 +1,7 @@
 """Unit tests for Neo4j Repositories: RawEventRepository, CheckpointRepository, TaskDomainRepository."""
 
 from datetime import datetime, timezone
+import hashlib
 import json
 from typing import Any, Callable, Dict, List, Optional
 from unittest.mock import AsyncMock
@@ -266,7 +267,23 @@ async def test_mark_event_status_success():
 
 
 @pytest.mark.asyncio
-async def test_mark_event_status_failed_increments_retry():
+async def test_mark_event_status_processing_increments_attempt():
+    session = MockSession()
+    client = make_client_with_session(session)
+    repo = RawEventRepository(client)
+
+    await repo.mark_event_status("raw-123", ProcessingStatus.PROCESSING)
+    assert len(session.queries) == 1
+    query, params = session.queries[0]
+    assert "re.processing_attempt_count = CASE" in query
+    assert "WHEN $status IN ['processing', 'PROCESSING'] THEN coalesce(re.processing_attempt_count, re.retry_count, 0) + 1" in query
+    assert "re.retry_count = CASE" in query
+    assert params["event_id"] == "raw-123"
+    assert params["status"] == "processing"
+
+
+@pytest.mark.asyncio
+async def test_mark_event_status_failed_does_not_increment_attempt():
     session = MockSession()
     client = make_client_with_session(session)
     repo = RawEventRepository(client)
@@ -274,7 +291,9 @@ async def test_mark_event_status_failed_increments_retry():
     await repo.mark_event_status("raw-123", ProcessingStatus.FAILED, error="Connection timeout")
     assert len(session.queries) == 1
     query, params = session.queries[0]
-    assert "re.retry_count = CASE WHEN $status = 'failed' THEN coalesce(re.retry_count, 0) + 1" in query
+    assert "re.processing_attempt_count = CASE" in query
+    assert "WHEN $status IN ['processing', 'PROCESSING'] THEN coalesce(re.processing_attempt_count, re.retry_count, 0) + 1" in query
+    assert "ELSE coalesce(re.processing_attempt_count, re.retry_count, 0)" in query
     assert params["event_id"] == "raw-123"
     assert params["status"] == "failed"
     assert params["error"] == "Connection timeout"
@@ -377,10 +396,14 @@ async def test_save_checkpoint_with_id():
     await repo.save_checkpoint(checkpoint)
     assert len(session.queries) == 1
     query, params = session.queries[0]
-    assert "MERGE (cp:IngestionCheckpoint {id: $id})" in query
-    assert params["id"] == "checkpoint-custom-id"
+    assert "MERGE (cp:IngestionCheckpoint {tenant_id: $tenant_id, source_type: $source_type, stream_id: $stream_id})" in query
+    assert "SET cp.id = $id" in query
+    expected_hash = hashlib.sha256(b"tenant-shortcut:shortcut:workspace-ops").hexdigest()
+    assert params["id"] == expected_hash
+    assert checkpoint.id == expected_hash
     assert params["source_type"] == "shortcut"
     assert params["stream_id"] == "workspace-ops"
+    assert params["tenant_id"] == "tenant-shortcut"
     assert params["last_external_id"] == "story-456"
     assert params["cursor_token"] == "cursor-xyz"
 
@@ -402,7 +425,11 @@ async def test_save_checkpoint_composite_key():
     await repo.save_checkpoint(checkpoint)
     assert len(session.queries) == 1
     query, params = session.queries[0]
-    assert params["id"] == "local:coding_agent:session-antigravity-1"
+    assert "MERGE (cp:IngestionCheckpoint {tenant_id: $tenant_id, source_type: $source_type, stream_id: $stream_id})" in query
+    assert "SET cp.id = $id" in query
+    expected_hash = hashlib.sha256(b"local:coding_agent:session-antigravity-1").hexdigest()
+    assert params["id"] == expected_hash
+    assert checkpoint.id == expected_hash
 
 
 # ==============================================================================
@@ -653,6 +680,252 @@ async def test_get_checkpoint_tenant_id_default_and_custom():
     await repo.get_checkpoint("jira", "stream-2", tenant_id=None)
     assert len(queries) == 2
     assert queries[1][1]["tenant_id"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_tenant_isolation_no_overwrite():
+    """Regression Test 1: Tenant A và Tenant B có cùng stream_id và source_type không bao giờ đè checkpoint lên nhau."""
+    stream_id = "shared-general-channel"
+    source_type = SourceType.MS_TEAMS
+
+    tenant_a_id = "tenant-alpha"
+    tenant_b_id = "tenant-beta"
+
+    st_val = source_type.value
+    expected_id_a = hashlib.sha256(f"{tenant_a_id}:{st_val}:{stream_id}".encode("utf-8")).hexdigest()
+    expected_id_b = hashlib.sha256(f"{tenant_b_id}:{st_val}:{stream_id}".encode("utf-8")).hexdigest()
+
+    # Deterministic IDs must be different for different tenants
+    assert expected_id_a != expected_id_b
+
+    # In-memory storage to simulate Neo4j composite constraint and storage
+    store: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+
+    async def handler(query, params):
+        clean_query = query.strip()
+        if "MERGE (cp:IngestionCheckpoint {tenant_id: $tenant_id, source_type: $source_type, stream_id: $stream_id})" in clean_query:
+            key = (params["tenant_id"], params["source_type"], params["stream_id"])
+            store[key] = {
+                "id": params["id"],
+                "tenant_id": params["tenant_id"],
+                "source_type": params["source_type"],
+                "stream_id": params["stream_id"],
+                "last_external_id": params["last_external_id"],
+                "last_event_timestamp": params["last_event_timestamp"],
+                "cursor_token": params["cursor_token"],
+                "updated_at": params["updated_at"],
+            }
+            return MockAsyncResult()
+        elif "MATCH (cp:IngestionCheckpoint)" in clean_query:
+            key = (params["tenant_id"], params["source_type"], params["stream_id"])
+            item = store.get(key)
+            if item:
+                return MockAsyncResult(single_record=MockRecord({"cp": item}))
+            return MockAsyncResult(single_record=None)
+        return MockAsyncResult()
+
+    session = MockSession(run_handler=handler)
+    client = make_client_with_session(session)
+    repo = CheckpointRepository(client)
+
+    ckpt_a = IngestionCheckpointRecord(
+        id="",  # will be computed as deterministic hash
+        source_type=source_type,
+        stream_id=stream_id,
+        tenant_id=tenant_a_id,
+        last_external_id="msg-alpha-99",
+        cursor_token="cursor-alpha",
+    )
+    ckpt_b = IngestionCheckpointRecord(
+        id="",
+        source_type=source_type,
+        stream_id=stream_id,
+        tenant_id=tenant_b_id,
+        last_external_id="msg-beta-100",
+        cursor_token="cursor-beta",
+    )
+
+    # Save both checkpoints
+    await repo.save_checkpoint(ckpt_a)
+    await repo.save_checkpoint(ckpt_b)
+
+    assert ckpt_a.id == expected_id_a
+    assert ckpt_b.id == expected_id_b
+
+    # Verify queries used composite MERGE
+    assert len(session.queries) == 2
+    q1, p1 = session.queries[0]
+    q2, p2 = session.queries[1]
+    assert "MERGE (cp:IngestionCheckpoint {tenant_id: $tenant_id, source_type: $source_type, stream_id: $stream_id})" in q1
+    assert p1["tenant_id"] == tenant_a_id
+    assert p1["id"] == expected_id_a
+    assert p2["tenant_id"] == tenant_b_id
+    assert p2["id"] == expected_id_b
+
+    # Retrieve checkpoint for Tenant A
+    read_a = await repo.get_checkpoint(source_type, stream_id, tenant_id=tenant_a_id)
+    assert read_a is not None
+    assert read_a.tenant_id == tenant_a_id
+    assert read_a.last_external_id == "msg-alpha-99"
+    assert read_a.cursor_token == "cursor-alpha"
+    assert read_a.id == expected_id_a
+
+    # Retrieve checkpoint for Tenant B
+    read_b = await repo.get_checkpoint(source_type, stream_id, tenant_id=tenant_b_id)
+    assert read_b is not None
+    assert read_b.tenant_id == tenant_b_id
+    assert read_b.last_external_id == "msg-beta-100"
+    assert read_b.cursor_token == "cursor-beta"
+    assert read_b.id == expected_id_b
+
+    # Verify Tenant A did not overwrite Tenant B and vice versa
+    assert read_a.last_external_id != read_b.last_external_id
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_restart_resume_deterministic_id():
+    """Regression Test 2: Checkpoint được lưu và đọc lại chính xác với deterministic ID qua các lần restart."""
+    tenant_id = "tenant-prod"
+    source_type = SourceType.GIT
+    stream_id = "repo-org/service-auth"
+    st_val = source_type.value
+
+    expected_hash = hashlib.sha256(f"{tenant_id}:{st_val}:{stream_id}".encode("utf-8")).hexdigest()
+
+    # Step 1: Initial run saves checkpoint
+    persisted_state = {}
+
+    async def handler_step1(query, params):
+        if "MERGE (cp:IngestionCheckpoint {tenant_id: $tenant_id, source_type: $source_type, stream_id: $stream_id})" in query:
+            persisted_state.update(params)
+        return MockAsyncResult()
+
+    session1 = MockSession(run_handler=handler_step1)
+    client1 = make_client_with_session(session1)
+    repo1 = CheckpointRepository(client1)
+
+    initial_ckpt = IngestionCheckpointRecord(
+        id="random-uuid-from-caller-should-be-overridden",
+        source_type=source_type,
+        stream_id=stream_id,
+        tenant_id=tenant_id,
+        last_external_id="commit-sha-123456",
+        last_event_timestamp=datetime(2026, 9, 29, 10, 0, 0, tzinfo=timezone.utc),
+        cursor_token="git-cursor-1",
+    )
+
+    await repo1.save_checkpoint(initial_ckpt)
+    assert initial_ckpt.id == expected_hash
+    assert persisted_state["id"] == expected_hash
+
+    # Step 2: System restarts (fresh repo / client instance) reading checkpoint for resumption
+    async def handler_step2(query, params):
+        if "MERGE (cp:IngestionCheckpoint" in query:
+            persisted_state.update(params)
+            return MockAsyncResult()
+        assert params["tenant_id"] == tenant_id
+        assert params["source_type"] == st_val
+        assert params["stream_id"] == stream_id
+        return MockAsyncResult(single_record=MockRecord({"cp": persisted_state}))
+
+    session2 = MockSession(run_handler=handler_step2)
+    client2 = make_client_with_session(session2)
+    repo2 = CheckpointRepository(client2)
+
+    resumed_ckpt = await repo2.get_checkpoint(source_type, stream_id, tenant_id=tenant_id)
+    assert resumed_ckpt is not None
+    assert resumed_ckpt.id == expected_hash
+    assert resumed_ckpt.last_external_id == "commit-sha-123456"
+    assert resumed_ckpt.cursor_token == "git-cursor-1"
+    assert resumed_ckpt.last_event_timestamp == datetime(2026, 9, 29, 10, 0, 0, tzinfo=timezone.utc)
+
+    # Step 3: Resumed ingestion advances checkpoint and saves again
+    resumed_ckpt.last_external_id = "commit-sha-789012"
+    resumed_ckpt.cursor_token = "git-cursor-2"
+    resumed_ckpt.last_event_timestamp = datetime(2026, 9, 29, 11, 0, 0, tzinfo=timezone.utc)
+
+    await repo2.save_checkpoint(resumed_ckpt)
+    assert resumed_ckpt.id == expected_hash
+    assert persisted_state["id"] == expected_hash
+    assert persisted_state["last_external_id"] == "commit-sha-789012"
+    assert persisted_state["cursor_token"] == "git-cursor-2"
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_same_stream_duplicate_cleanup():
+    """Regression Test 3: Xóa duplicate trong cùng stream, giữ lại checkpoint mới nhất."""
+    tenant_id = "tenant-ops"
+    source_type = SourceType.JIRA
+    stream_id = "board-ops-01"
+
+    # Simulate 3 duplicate nodes created before constraint was applied
+    nodes = [
+        {
+            "id": "old-uuid-1",
+            "tenant_id": tenant_id,
+            "source_type": source_type.value,
+            "stream_id": stream_id,
+            "last_external_id": "JIRA-100",
+            "updated_at": "2026-09-29T08:00:00+00:00",
+        },
+        {
+            "id": "newest-uuid",
+            "tenant_id": tenant_id,
+            "source_type": source_type.value,
+            "stream_id": stream_id,
+            "last_external_id": "JIRA-105",
+            "updated_at": "2026-09-29T11:00:00+00:00",
+        },
+        {
+            "id": "mid-uuid-2",
+            "tenant_id": tenant_id,
+            "source_type": source_type.value,
+            "stream_id": stream_id,
+            "last_external_id": "JIRA-102",
+            "updated_at": "2026-09-29T09:30:00+00:00",
+        },
+    ]
+
+    deleted_nodes = []
+    retained_nodes = []
+
+    async def handler(query, params):
+        clean_q = query.strip()
+        if "MATCH (cp:IngestionCheckpoint)" in clean_q and "WHERE cp.tenant_id IS NULL" in clean_q:
+            return MockAsyncResult()
+        elif "UNWIND tail(nodes) AS dup" in clean_q:
+            # Cypher orders cp by updated_at DESC:
+            # Sorted: newest-uuid (11:00), mid-uuid-2 (09:30), old-uuid-1 (08:00)
+            sorted_nodes = sorted(nodes, key=lambda x: x["updated_at"], reverse=True)
+            retained = sorted_nodes[0]
+            dups = sorted_nodes[1:]
+            retained_nodes.append(retained)
+            deleted_nodes.extend(dups)
+            return MockAsyncResult(single_record=MockRecord({"deleted_count": len(dups)}))
+        elif "MATCH (cp:IngestionCheckpoint)" in clean_q and "ORDER BY cp.updated_at DESC" in clean_q:
+            # get_checkpoint should return the newest checkpoint
+            active_nodes = [n for n in nodes if n not in deleted_nodes]
+            sorted_active = sorted(active_nodes, key=lambda x: x["updated_at"], reverse=True)
+            if sorted_active:
+                return MockAsyncResult(single_record=MockRecord({"cp": sorted_active[0]}))
+            return MockAsyncResult(single_record=None)
+        return MockAsyncResult()
+
+    session = MockSession(run_handler=handler)
+    client = make_client_with_session(session)
+    repo = CheckpointRepository(client)
+
+    deleted_count = await repo.cleanup_duplicate_checkpoints()
+    assert deleted_count == 2
+    assert len(deleted_nodes) == 2
+    assert len(retained_nodes) == 1
+    assert retained_nodes[0]["id"] == "newest-uuid"
+    assert retained_nodes[0]["last_external_id"] == "JIRA-105"
+
+    # Verify that get_checkpoint returns the newest retained record
+    latest_cp = await repo.get_checkpoint(source_type, stream_id, tenant_id=tenant_id)
+    assert latest_cp is not None
+    assert latest_cp.last_external_id == "JIRA-105"
 
 
 # ==============================================================================

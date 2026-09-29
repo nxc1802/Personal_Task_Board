@@ -27,26 +27,35 @@ class CodexWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        """Đường dẫn ~/.codex/sessions/."""
-        paths = []
-        home = os.path.expanduser("~")
-        codex_dir = os.path.join(home, ".codex", "sessions")
-        if os.path.isdir(codex_dir):
-            paths.append(codex_dir)
-        return paths
+        """Xác định đường dẫn sessions của OpenAI Codex CLI đa nền tảng qua platformdirs."""
+        return self.resolve_home_paths(
+            dot_name=".codex",
+            sub_path="sessions",
+            app_names=["codex", "Codex"],
+        )
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét đệ quy toàn bộ thư mục sessions của Codex."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
-        for base_dir in self.base_paths:
-            if not os.path.isdir(base_dir):
-                continue
-            for root, _, files in os.walk(base_dir):
-                for file_name in files:
-                    if file_name.startswith("rollout-") and file_name.endswith(".jsonl"):
-                        file_path = os.path.join(root, file_name)
-                        records = self.extract_from_file(file_path)
-                        all_records.extend(records)
+        try:
+            for base_dir in self.base_paths:
+                if not os.path.isdir(base_dir):
+                    continue
+                try:
+                    for root, _, files in os.walk(base_dir):
+                        for file_name in files:
+                            if file_name.startswith("rollout-") and file_name.endswith(".jsonl"):
+                                file_path = os.path.join(root, file_name)
+                                records = self.extract_from_file(file_path)
+                                all_records.extend(records)
+                except Exception as walk_err:
+                    logger.debug(f"Error walking dir {base_dir}: {walk_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Codex sessions: {e}")
+            return []
         return all_records
 
     def extract_from_file(self, file_path: str) -> List[RawAgentSessionRecord]:

@@ -39,8 +39,8 @@ from ptb_acquisition.adapters import (
     JiraAdapter,
     ShortcutAdapter,
 )
-from ptb_acquisition.pipeline import (
-    AcquisitionPipeline,
+from ptb_acquisition.pipeline import AcquisitionPipeline
+from tests.support.test_doubles import (
     InMemoryCheckpointRepository,
     InMemoryRawEventRepository,
 )

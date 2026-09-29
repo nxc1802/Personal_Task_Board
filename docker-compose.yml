@@ -8,7 +8,7 @@ services:
       - "127.0.0.1:7474:7474" # Neo4j Browser UI
       - "127.0.0.1:7687:7687" # Bolt protocol
     environment:
-      - NEO4J_AUTH=neo4j/personal_task_board_secret_2026
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-change_me_in_production}
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
       - NEO4J_dbms_security_procedures_allowlist=apoc.*
@@ -29,11 +29,11 @@ services:
     ports:
       - "127.0.0.1:3000:8080"
     volumes:
-      - openwebui_data:/app/backend/data
+      - ./data/openwebui:/app/backend/data
     environment:
       - WEBUI_AUTH=False
       - ENABLE_OLLAMA_API=True
-      - OPENAI_API_BASE_URLS=${LLM_BASE_URL:-http://localhost:11434/v1}
+      - OPENAI_API_BASE_URLS=${LLM_BASE_URL:-http://127.0.0.1:11434/v1}
       - WEBUI_NAME=Personal Task Board
     depends_on:
       - neo4j
@@ -48,4 +48,3 @@ networks:
 volumes:
   neo4j_data:
   neo4j_logs:
-  openwebui_data:

@@ -26,24 +26,35 @@ class ContinueWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        paths = []
-        home = os.path.expanduser("~")
-        continue_dir = os.path.join(home, ".continue", "sessions")
-        if os.path.isdir(continue_dir):
-            paths.append(continue_dir)
-        return paths
+        """Xác định đường dẫn sessions của Continue.dev đa nền tảng qua platformdirs."""
+        return self.resolve_home_paths(
+            dot_name=".continue",
+            sub_path="sessions",
+            app_names=["continue", "Continue"],
+        )
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
+        """Quét toàn bộ thư mục sessions của Continue.dev."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
-        for base_dir in self.base_paths:
-            if not os.path.isdir(base_dir):
-                continue
-            for root, _, files in os.walk(base_dir):
-                for f in files:
-                    if f.endswith(".json"):
-                        fp = os.path.join(root, f)
-                        records = self.extract_from_file(fp)
-                        all_records.extend(records)
+        try:
+            for base_dir in self.base_paths:
+                if not os.path.isdir(base_dir):
+                    continue
+                try:
+                    for root, _, files in os.walk(base_dir):
+                        for f in files:
+                            if f.endswith(".json"):
+                                fp = os.path.join(root, f)
+                                records = self.extract_from_file(fp)
+                                all_records.extend(records)
+                except Exception as walk_err:
+                    logger.debug(f"Error walking dir {base_dir}: {walk_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Continue sessions: {e}")
+            return []
         return all_records
 
     def extract_from_file(self, file_path: str) -> List[RawAgentSessionRecord]:

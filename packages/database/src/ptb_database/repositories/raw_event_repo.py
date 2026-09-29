@@ -213,8 +213,14 @@ class RawEventRepository:
         SET re.processing_status = $status,
             re.last_error = $error,
             re.last_processing_error = $error,
-            re.retry_count = CASE WHEN $status = 'failed' THEN coalesce(re.retry_count, 0) + 1 WHEN $status IN ['retry', 'RETRY', 'failed', 'FAILED'] THEN coalesce(re.retry_count, 0) + 1 ELSE coalesce(re.retry_count, 0) END,
-            re.processing_attempt_count = CASE WHEN $status IN ['processing', 'PROCESSING', 'retry', 'RETRY', 'failed', 'FAILED'] THEN coalesce(re.processing_attempt_count, re.retry_count, 0) + 1 ELSE coalesce(re.processing_attempt_count, re.retry_count, 0) END,
+            re.processing_attempt_count = CASE
+                WHEN $status IN ['processing', 'PROCESSING'] THEN coalesce(re.processing_attempt_count, re.retry_count, 0) + 1
+                ELSE coalesce(re.processing_attempt_count, re.retry_count, 0)
+            END,
+            re.retry_count = CASE
+                WHEN $status IN ['processing', 'PROCESSING'] THEN coalesce(re.processing_attempt_count, re.retry_count, 0) + 1
+                ELSE coalesce(re.retry_count, re.processing_attempt_count, 0)
+            END,
             re.next_retry_at = $next_retry_at,
             re.processed_at = CASE WHEN $status IN ['processed', 'PROCESSED'] THEN coalesce($processed_at, $updated_at) ELSE re.processed_at END,
             re.processor_version = coalesce($processor_version, re.processor_version),

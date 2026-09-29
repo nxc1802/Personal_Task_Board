@@ -7,7 +7,7 @@ Consists of:
 
 from typing import Dict, Set, Tuple, Union
 
-# 15 Node Types được phép trong Neo4j Single-Store (docs/v1.md)
+# 17 Node Types được phép trong Neo4j Single-Store (docs/v1.md, docs/v1_2.md)
 ALLOWED_NODES: Set[str] = {
     "UnifiedTask",
     "Evidence",
@@ -27,6 +27,67 @@ ALLOWED_NODES: Set[str] = {
     "StatusTransitionAudit",
     "MergeAudit",
 }
+
+# 5 Trạng thái Task chuẩn hóa (docs/v1_2.md)
+CANONICAL_TASK_STATUSES: Set[str] = {
+    "TODO",
+    "IN_PROGRESS",
+    "BLOCKED",
+    "DONE",
+    "DISMISSED",
+}
+
+# Canonical required properties cho các ontology nodes cốt lõi
+CANONICAL_NODE_SCHEMAS: Dict[str, Set[str]] = {
+    "Person": {
+        "canonical_id",
+        "canonical_name",
+        "primary_email",
+    },
+    "Evidence": {
+        "id",
+        "task_id",
+        "evidence_type",
+        "snippet",
+        "source_type",
+        "source_event_id",
+        "timestamp",
+        "confidence_score",
+    },
+    "MergeAudit": {
+        "id",
+        "candidate_task_ids",
+        "winning_task_id",
+        "correlation_score",
+        "deterministic_anchors",
+        "merge_reason",
+        "merged_at",
+    },
+    "StatusTransitionAudit": {
+        "id",
+        "task_id",
+        "old_status",
+        "new_status",
+        "change_actor",
+        "timestamp",
+        "reason",
+    },
+    "IngestionCheckpoint": {
+        "tenant_id",
+        "source_type",
+        "stream_id",
+        "last_external_id",
+        "last_event_timestamp",
+        "cursor_token",
+        "updated_at",
+    },
+}
+
+EVIDENCE_FIELDS: Set[str] = CANONICAL_NODE_SCHEMAS["Evidence"]
+MERGE_AUDIT_FIELDS: Set[str] = CANONICAL_NODE_SCHEMAS["MergeAudit"]
+STATUS_TRANSITION_AUDIT_FIELDS: Set[str] = CANONICAL_NODE_SCHEMAS["StatusTransitionAudit"]
+INGESTION_CHECKPOINT_FIELDS: Set[str] = CANONICAL_NODE_SCHEMAS["IngestionCheckpoint"]
+PERSON_FIELDS: Set[str] = CANONICAL_NODE_SCHEMAS["Person"]
 
 # Edge Types với ma trận Source -> Target được phép
 # Value là Tuple[SourceLabels, TargetLabels] (mỗi thành phần có thể là str hoặc tuple các str)

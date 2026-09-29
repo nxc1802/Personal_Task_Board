@@ -16,6 +16,7 @@ from ptb_acquisition.playwright.session import (
     DEFAULT_STORAGE_PATH,
     SessionHealthState,
     SessionManager,
+    transition_session_state,
 )
 from ptb_acquisition.playwright.teams_interceptor import TeamsNetworkInterceptor
 from ptb_acquisition.playwright.outlook_interceptor import OutlookNetworkInterceptor
@@ -40,20 +41,22 @@ class PlaywrightOrchestrator:
         self.session_mgr = SessionManager(storage_path)
         self.headless = headless
         self.tenant_id = tenant_id
+        self._running = False
+        self.health_state = SessionHealthState.UNCONFIGURED
         self.teams_interceptor = TeamsNetworkInterceptor(
             queue=queue,
             tenant_id=f"{tenant_id}-teams",
             pipeline=pipeline,
             raw_event_repo=raw_event_repo,
+            on_state_change=self.on_session_state_change,
         )
         self.outlook_interceptor = OutlookNetworkInterceptor(
             queue=queue,
             tenant_id=f"{tenant_id}-outlook",
             pipeline=pipeline,
             raw_event_repo=raw_event_repo,
+            on_state_change=self.on_session_state_change,
         )
-        self._running = False
-        self.health_state = SessionHealthState.UNCONFIGURED
         self.sweep_status = "PENDING"
         self.sweep_stats: Dict[str, Any] = {
             "status": "PENDING",
@@ -63,6 +66,31 @@ class PlaywrightOrchestrator:
             "oldest_captured_event": None,
             "newest_captured_event": None,
         }
+
+    @property
+    def session_state(self) -> SessionHealthState:
+        return self.health_state
+
+    @session_state.setter
+    def session_state(self, new_state: SessionHealthState) -> None:
+        self.on_session_state_change(new_state)
+
+    def on_session_state_change(self, new_state: SessionHealthState) -> None:
+        """Nhận và lan truyền cập nhật trạng thái session giữa interceptors và runner."""
+        target = transition_session_state(self.health_state, new_state)
+        if target == self.health_state and target != new_state:
+            return
+
+        self.health_state = target
+        self.session_mgr.health_state = target
+
+        if target == SessionHealthState.AUTH_EXPIRED:
+            logger.error("Session Microsoft AUTH_EXPIRED: dừng capture loop và đồng bộ trạng thái.")
+            self._running = False
+            if self.teams_interceptor.session_state != SessionHealthState.AUTH_EXPIRED:
+                self.teams_interceptor.session_state = SessionHealthState.AUTH_EXPIRED
+            if self.outlook_interceptor.session_state != SessionHealthState.AUTH_EXPIRED:
+                self.outlook_interceptor.session_state = SessionHealthState.AUTH_EXPIRED
 
     async def login_interactive(self, target_service: str = "all") -> None:
         """Mở trình duyệt có giao diện để người dùng hoàn tất đăng nhập và 2FA."""
@@ -92,6 +120,10 @@ class PlaywrightOrchestrator:
 
     async def sweep_teams(self, page: Page, max_scrolls: int = 5) -> int:
         """Thực hiện navigation/scroll có kiểm soát trên Teams để kích hoạt nạp lịch sử chat."""
+        if self.health_state == SessionHealthState.AUTH_EXPIRED:
+            logger.warning("Bỏ qua sweep_teams do session đã AUTH_EXPIRED")
+            return 0
+
         initial_count = len(self.teams_interceptor.captured_records)
         try:
             if hasattr(page, "wait_for_timeout"):
@@ -114,7 +146,7 @@ class PlaywrightOrchestrator:
                     pass
 
             for step in range(max_scrolls):
-                if not self._running and self._running is not None:
+                if not self._running or self.health_state == SessionHealthState.AUTH_EXPIRED:
                     break
                 try:
                     if hasattr(page, "evaluate"):
@@ -142,6 +174,10 @@ class PlaywrightOrchestrator:
 
     async def sweep_outlook(self, page: Page, max_scrolls: int = 5) -> int:
         """Thực hiện navigation/scroll có kiểm soát trên Outlook để kích hoạt nạp danh sách email/inbox."""
+        if self.health_state == SessionHealthState.AUTH_EXPIRED:
+            logger.warning("Bỏ qua sweep_outlook do session đã AUTH_EXPIRED")
+            return 0
+
         initial_count = len(self.outlook_interceptor.captured_records)
         try:
             if hasattr(page, "wait_for_timeout"):
@@ -162,7 +198,7 @@ class PlaywrightOrchestrator:
                     pass
 
             for step in range(max_scrolls):
-                if not self._running and self._running is not None:
+                if not self._running or self.health_state == SessionHealthState.AUTH_EXPIRED:
                     break
                 try:
                     if hasattr(page, "evaluate"):
@@ -249,7 +285,9 @@ class PlaywrightOrchestrator:
             )
 
         self._running = True
-        self.health_state = SessionHealthState.STARTING
+        self.session_state = SessionHealthState.STARTING
+        self.teams_interceptor.session_state = SessionHealthState.STARTING
+        self.outlook_interceptor.session_state = SessionHealthState.STARTING
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=self.headless)
@@ -258,13 +296,15 @@ class PlaywrightOrchestrator:
             # Xác thực session với Microsoft trước khi tiến hành
             health = await self.session_mgr.verify_authenticated_session(context)
             if health == SessionHealthState.AUTH_EXPIRED:
-                self.health_state = SessionHealthState.AUTH_EXPIRED
+                self.session_state = SessionHealthState.AUTH_EXPIRED
                 logger.error("Session Microsoft đã hết hạn (AUTH_EXPIRED). Cần đăng nhập lại.")
                 await browser.close()
                 self._running = False
                 return
 
-            self.health_state = health
+            self.session_state = health
+            self.teams_interceptor.session_state = health
+            self.outlook_interceptor.session_state = health
 
             # Mở page Teams
             teams_page = await context.new_page()
@@ -286,8 +326,12 @@ class PlaywrightOrchestrator:
             print("[✓] Layer 1A Network Interceptors & Bootstrap Sweep đã sẵn sàng!")
             elapsed = 0
             while self._running:
-                await asyncio.sleep(5)
-                elapsed += 5
+                if self.health_state == SessionHealthState.AUTH_EXPIRED:
+                    logger.error("Phiên đăng nhập Microsoft hết hạn trong lúc capture. Dừng runner.")
+                    self._running = False
+                    break
+                await asyncio.sleep(1)
+                elapsed += 1
                 if timeout_seconds and elapsed >= timeout_seconds:
                     break
 
@@ -298,6 +342,9 @@ class PlaywrightOrchestrator:
         return {
             "status": self.health_state.value,
             "session_valid": self.session_mgr.has_valid_session(),
+            "session_state": self.health_state.value,
+            "teams_state": self.teams_interceptor.session_state.value,
+            "outlook_state": self.outlook_interceptor.session_state.value,
             "bootstrap_sweep": self.sweep_status,
             "sweep_stats": self.sweep_stats,
             "teams_captured": len(self.teams_interceptor.captured_records),

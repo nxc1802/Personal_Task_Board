@@ -29,37 +29,15 @@ class CursorWatcher(BaseAgentWatcher):
 
     def get_default_paths(self) -> List[str]:
         """Xác định đường dẫn workspaceStorage của Cursor theo hệ điều hành sử dụng platformdirs."""
-        paths = []
-        try:
-            import platformdirs
-            cfg_ws = os.path.join(platformdirs.user_config_dir("Cursor", appauthor=False), "User", "workspaceStorage")
-            data_ws = os.path.join(platformdirs.user_data_dir("Cursor", appauthor=False), "User", "workspaceStorage")
-            for p in (cfg_ws, data_ws):
-                if p not in paths:
-                    paths.append(p)
-        except Exception as e:
-            logger.debug(f"platformdirs resolution error for Cursor: {e}")
-
-        if sys.platform == "darwin":
-            p = os.path.expanduser("~/Library/Application Support/Cursor/User/workspaceStorage")
-            if p not in paths:
-                paths.append(p)
-        elif sys.platform == "win32":
-            appdata = os.getenv("APPDATA")
-            if appdata:
-                p = os.path.join(appdata, "Cursor", "User", "workspaceStorage")
-                if p not in paths:
-                    paths.append(p)
-        else:
-            p = os.path.expanduser("~/.config/Cursor/User/workspaceStorage")
-            if p not in paths:
-                paths.append(p)
-
-        existing = [p for p in paths if os.path.isdir(p)]
-        return existing if existing else paths
+        return self.resolve_platform_paths(
+            app_names=["Cursor", "cursor"],
+            sub_path=os.path.join("User", "workspaceStorage"),
+        )
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét tất cả các thư mục workspace của Cursor và trích xuất sessions."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
         try:
             for storage_dir in self.base_paths:
@@ -77,6 +55,7 @@ class CursorWatcher(BaseAgentWatcher):
                     continue
         except Exception as e:
             logger.warning(f"Lỗi khi quét Cursor sessions: {e}")
+            return []
         return all_records
 
     def extract_from_db(self, db_path: str, workspace_id: str = "unknown") -> List[RawAgentSessionRecord]:

@@ -12,13 +12,22 @@ from ptb_acquisition.watchers.antigravity_watcher import AntigravityWatcher
 from ptb_acquisition.watchers.base import BaseAgentWatcher
 from ptb_acquisition.watchers.claude_code_watcher import ClaudeCodeWatcher
 from ptb_acquisition.watchers.cursor_watcher import CursorWatcher
-from ptb_contracts import AgentType
+from datetime import datetime, timezone
+import uuid
+
+from ptb_acquisition.adapters.base import AcquisitionAdapter
+from ptb_contracts import AgentType, BugCode, ProcessingStatus, RawEventRecord, SourceType
 from scripts.ptb_cli import (
+    AdapterPollingRunner,
     PTBProcessSupervisor,
     cmd_doctor,
     cmd_login,
     cmd_openwebui,
     cmd_status,
+)
+from tests.support.test_doubles import (
+    InMemoryCheckpointRepository,
+    InMemoryRawEventRepository,
 )
 
 
@@ -199,6 +208,9 @@ async def test_process_supervisor_startup_and_graceful_shutdown(capsys):
         mcp_port=mcp_port,
         enable_playwright=False,
         poll_interval=0.5,
+        raw_event_repo=InMemoryRawEventRepository(),
+        checkpoint_repo=InMemoryCheckpointRepository(),
+        task_repo=MagicMock(),
     )
 
     # Run supervisor with max_runtime=1.5s to let it bind, pass health checks, and shutdown
@@ -224,6 +236,9 @@ async def test_process_supervisor_trigger_shutdown():
         mcp_port=8136,
         enable_playwright=False,
         poll_interval=0.5,
+        raw_event_repo=InMemoryRawEventRepository(),
+        checkpoint_repo=InMemoryCheckpointRepository(),
+        task_repo=MagicMock(),
     )
 
     async def _stopper():
@@ -236,3 +251,233 @@ async def test_process_supervisor_trigger_shutdown():
 
     assert exit_code == 0
     assert supervisor._running is False
+
+
+@pytest.mark.asyncio
+async def test_process_supervisor_fail_fast_when_neo4j_down(capsys):
+    """Verify PTBProcessSupervisor fails fast with NOT_READY when Neo4j is unavailable."""
+    with patch("ptb_database.neo4j_client.Neo4jClient.verify_connectivity", new_callable=AsyncMock) as mock_conn:
+        mock_conn.return_value = False
+        supervisor = PTBProcessSupervisor(
+            host="127.0.0.1",
+            app_port=8145,
+            mcp_port=8146,
+            enable_playwright=False,
+        )
+        exit_code = await supervisor.run(max_runtime=1.0)
+        assert exit_code != 0
+        assert supervisor.state == "NOT_READY"
+        captured = capsys.readouterr().out
+        assert "CRITICAL ERROR: Neo4j authoritative store unavailable" in captured
+
+
+@pytest.mark.asyncio
+async def test_cmd_ingest_fail_fast_when_neo4j_down(capsys):
+    """Verify cmd_ingest fails fast with exit code != 0 when Neo4j is unavailable."""
+    from scripts.ptb_cli import cmd_ingest
+    args = argparse.Namespace(tenant_id="test-tenant", source="all")
+    with patch("ptb_database.neo4j_client.Neo4jClient.verify_connectivity", new_callable=AsyncMock) as mock_conn:
+        mock_conn.return_value = False
+        exit_code = await cmd_ingest(args)
+        #assert exit_code != 0
+        assert exit_code != 0
+        captured = capsys.readouterr().out
+        assert "CRITICAL ERROR: Neo4j authoritative store unavailable" in captured
+
+
+# ==============================================================================
+# 7. WAVE 5D: CLI TRUTHFULNESS & DOCTOR DEEP CHECK TESTS
+# ==============================================================================
+@pytest.mark.asyncio
+async def test_poll_health_url_rejects_not_ready_and_non_200():
+    """Verify _poll_health_url returns False when /health returns status='not_ready' or HTTP != 200."""
+    supervisor = PTBProcessSupervisor(enable_playwright=False)
+
+    # 1. Endpoint returns HTTP 200 with {"status": "not_ready"} -> False
+    mock_resp_not_ready = MagicMock()
+    mock_resp_not_ready.status = 200
+    mock_resp_not_ready.read.return_value = b'{"status": "not_ready", "neo4j": "not_ready"}'
+    mock_resp_not_ready.__enter__.return_value = mock_resp_not_ready
+    mock_resp_not_ready.__exit__.return_value = None
+
+    with patch("urllib.request.urlopen", return_value=mock_resp_not_ready):
+        assert await supervisor._poll_health_url("http://127.0.0.1:8000/health") is False
+
+    # 2. Endpoint returns HTTP 503 -> False
+    mock_resp_503 = MagicMock()
+    mock_resp_503.status = 503
+    mock_resp_503.read.return_value = b'{"status": "not_ready"}'
+    mock_resp_503.__enter__.return_value = mock_resp_503
+    mock_resp_503.__exit__.return_value = None
+
+    with patch("urllib.request.urlopen", return_value=mock_resp_503):
+        assert await supervisor._poll_health_url("http://127.0.0.1:8001/health") is False
+
+    # 3. Endpoint returns HTTP 200 with {"status": "healthy"} -> True
+    mock_resp_ok = MagicMock()
+    mock_resp_ok.status = 200
+    mock_resp_ok.read.return_value = b'{"status": "healthy"}'
+    mock_resp_ok.__enter__.return_value = mock_resp_ok
+    mock_resp_ok.__exit__.return_value = None
+
+    with patch("urllib.request.urlopen", return_value=mock_resp_ok):
+        assert await supervisor._poll_health_url("http://127.0.0.1:8000/health") is True
+
+    # 4. Endpoint returns HTTP 200 with {"status": "degraded"} -> True
+    mock_resp_deg = MagicMock()
+    mock_resp_deg.status = 200
+    mock_resp_deg.read.return_value = b'{"status": "degraded"}'
+    mock_resp_deg.__enter__.return_value = mock_resp_deg
+    mock_resp_deg.__exit__.return_value = None
+
+    with patch("urllib.request.urlopen", return_value=mock_resp_deg):
+        assert await supervisor._poll_health_url("http://127.0.0.1:8000/health") is True
+
+
+@pytest.mark.asyncio
+async def test_process_supervisor_ready_with_warnings_when_microsoft_auth_required(tmp_path: Path, capsys):
+    """Verify PTBProcessSupervisor reaches READY_WITH_WARNINGS when Playwright is enabled but Microsoft session is missing."""
+    missing_storage = str(tmp_path / "missing_storage_state.json")
+
+    supervisor = PTBProcessSupervisor(
+        host="127.0.0.1",
+        app_port=8151,
+        mcp_port=8152,
+        enable_playwright=True,
+        storage_path=missing_storage,
+        poll_interval=0.5,
+        raw_event_repo=InMemoryRawEventRepository(),
+        checkpoint_repo=InMemoryCheckpointRepository(),
+        task_repo=MagicMock(),
+    )
+
+    exit_code = await supervisor.run(max_runtime=1.2)
+    assert exit_code == 0
+    assert supervisor.state == "READY_WITH_WARNINGS"
+
+    captured = capsys.readouterr().out
+    assert (
+        "READY_WITH_WARNINGS: Core services operational (Microsoft acquisition AUTH_REQUIRED — run 'ptb login microsoft')"
+        in captured
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_supervisor_degraded_when_microsoft_strict_required(tmp_path: Path, capsys):
+    """Verify PTBProcessSupervisor reaches DEGRADED when Microsoft strict_required=True and session is missing."""
+    missing_storage = str(tmp_path / "missing_storage_state.json")
+
+    supervisor = PTBProcessSupervisor(
+        host="127.0.0.1",
+        app_port=8153,
+        mcp_port=8154,
+        enable_playwright=True,
+        storage_path=missing_storage,
+        poll_interval=0.5,
+        raw_event_repo=InMemoryRawEventRepository(),
+        checkpoint_repo=InMemoryCheckpointRepository(),
+        task_repo=MagicMock(),
+        sources_config={"sources": {"ms_teams": {"enabled": True, "strict_required": True}}},
+    )
+
+    exit_code = await supervisor.run(max_runtime=1.2)
+    assert exit_code == 0
+    assert supervisor.state == "DEGRADED"
+
+
+@pytest.mark.asyncio
+async def test_process_supervisor_ready_when_valid_microsoft_session(tmp_path: Path, capsys):
+    """Verify PTBProcessSupervisor reaches READY when Playwright is enabled and Microsoft session is valid."""
+    import json
+
+    valid_storage = tmp_path / "valid_storage_state.json"
+    valid_storage.write_text(
+        json.dumps({"cookies": [{"name": "ESTSAUTH", "value": "token", "expires": -1}]}),
+        encoding="utf-8",
+    )
+
+    with patch("ptb_acquisition.playwright.runner.PlaywrightOrchestrator.start_interceptor", new_callable=AsyncMock):
+        supervisor = PTBProcessSupervisor(
+            host="127.0.0.1",
+            app_port=8155,
+            mcp_port=8156,
+            enable_playwright=True,
+            storage_path=str(valid_storage),
+            poll_interval=0.5,
+            raw_event_repo=InMemoryRawEventRepository(),
+            checkpoint_repo=InMemoryCheckpointRepository(),
+            task_repo=MagicMock(),
+        )
+
+        exit_code = await supervisor.run(max_runtime=1.2)
+        assert exit_code == 0
+        assert supervisor.state == "READY"
+        captured = capsys.readouterr().out
+        assert "READY: All PTB components operational!" in captured
+
+
+@pytest.mark.asyncio
+async def test_cmd_doctor_llm_readiness_and_deep_check(monkeypatch, capsys):
+    """Verify cmd_doctor checks LLM Provider Readiness, logs PTB_LLM_001 when unconfigured, and supports --deep."""
+    for key_var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "LLM_API_KEY"):
+        monkeypatch.delenv(key_var, raising=False)
+
+    with patch("shutil.which", return_value="/usr/local/bin/docker"), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="ptb_neo4j\n")), \
+         patch("socket.socket") as mock_socket, \
+         patch("os.path.exists", return_value=True):
+
+        sock_instance = MagicMock()
+        sock_instance.connect.return_value = None
+        mock_socket.return_value = sock_instance
+
+        # 1. Missing API key -> logs PTB_LLM_001 and prints WARN details
+        with patch("scripts.ptb_cli.log_bug") as mock_log_bug:
+            args_no_key = argparse.Namespace(deep=False)
+            exit_code = await cmd_doctor(args_no_key)
+            assert exit_code == 0
+            out = capsys.readouterr().out
+            assert "LLM Provider Readiness" in out
+            assert "PTB-LLM-001: API key unconfigured -> Processing DEGRADED/NOT_READY" in out
+            assert any(
+                call.kwargs.get("code") == BugCode.PTB_LLM_001
+                or (call.args and call.args[0] == BugCode.PTB_LLM_001)
+                for call in mock_log_bug.call_args_list
+            )
+
+        # 2. API key configured + --deep=True with /models returning 200 OK -> PASS
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-live-valid-test-key-12345")
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        monkeypatch.setenv("LLM_MODEL", "gpt-4o-mini")
+
+        mock_models_resp = MagicMock()
+        mock_models_resp.status = 200
+        mock_models_resp.read.return_value = b'{"data": [{"id": "gpt-4o-mini"}]}'
+        mock_models_resp.__enter__.return_value = mock_models_resp
+        mock_models_resp.__exit__.return_value = None
+
+        with patch("urllib.request.urlopen", return_value=mock_models_resp) as mock_urlopen:
+            args_deep_ok = argparse.Namespace(deep=True)
+            exit_code_deep = await cmd_doctor(args_deep_ok)
+            assert exit_code_deep == 0
+            out_deep = capsys.readouterr().out
+            assert "LLM Provider Readiness" in out_deep
+            assert "/models [OK]" in out_deep
+            assert mock_urlopen.called
+
+        # 3. API key configured + --deep=True when /models fails -> logs PTB_LLM_001 and warns
+        import urllib.error
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Connection refused")), \
+             patch("scripts.ptb_cli.log_bug") as mock_log_bug_deep:
+            args_deep_fail = argparse.Namespace(deep=True)
+            exit_code_fail = await cmd_doctor(args_deep_fail)
+            assert exit_code_fail == 0
+            out_fail = capsys.readouterr().out
+            assert "PTB-LLM-001: Deep check (/models) failed" in out_fail
+            assert "Processing DEGRADED/NOT_READY" in out_fail
+            assert any(
+                call.kwargs.get("code") == BugCode.PTB_LLM_001
+                or (call.args and call.args[0] == BugCode.PTB_LLM_001)
+                for call in mock_log_bug_deep.call_args_list
+            )
+

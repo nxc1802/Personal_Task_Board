@@ -15,15 +15,18 @@ Quản trị và vận hành hệ thống Personal Task Board v1 theo docs/v1.md
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
 import shutil
 import signal
 import socket
+from datetime import datetime, timezone
+import re
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 import urllib.error
 import urllib.request
 
@@ -38,6 +41,13 @@ sys.path.insert(0, str(ROOT_DIR / "services" / "application" / "src"))
 sys.path.insert(0, str(ROOT_DIR / "services" / "mcp" / "src"))
 sys.path.insert(0, str(ROOT_DIR / "packages" / "graph_memory" / "src"))
 sys.path.insert(0, str(ROOT_DIR))
+
+from ptb_contracts import BugCode, log_bug
+
+try:
+    from ptb_processing.llm_readiness import check_llm_readiness
+except ImportError:
+    check_llm_readiness = None  # type: ignore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,17 +72,151 @@ def load_env():
                         os.environ[k] = v
 
 
+def resolve_env_vars(val: Any) -> Any:
+    """Đệ quy thay thế chuỗi ${VAR:-default} hoặc ${VAR} bằng giá trị biến môi trường."""
+    if isinstance(val, str):
+        pattern = re.compile(r"\$\{([A-Za-z0-9_]+)(?::-([^}]*))?\}")
+
+        def _repl(match):
+            var_name = match.group(1)
+            default_val = match.group(2) if match.group(2) is not None else ""
+            return os.getenv(var_name, default_val)
+
+        return pattern.sub(_repl, val)
+    elif isinstance(val, dict):
+        return {k: resolve_env_vars(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [resolve_env_vars(i) for i in val]
+    return val
+
+
 def load_config_yaml(file_path: Path) -> Dict[str, Any]:
-    """Đọc file YAML cấu hình nếu tồn tại."""
+    """Đọc file YAML cấu hình nếu tồn tại và phân giải biến môi trường."""
     if not file_path.exists():
         return {}
     try:
         import yaml
         with open(file_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+            raw = yaml.safe_load(f) or {}
+            return resolve_env_vars(raw)
     except Exception as e:
         logger.warning(f"Không thể đọc file YAML {file_path}: {e}")
         return {}
+
+
+def get_sources_config(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Tải cấu hình sources.yaml hoặc fallback sources.example.yaml."""
+    if config_path:
+        p = Path(config_path)
+        if p.exists():
+            return load_config_yaml(p)
+    sources_file = ROOT_DIR / "config" / "sources.yaml"
+    if sources_file.exists():
+        return load_config_yaml(sources_file)
+    example_file = ROOT_DIR / "config" / "sources.example.yaml"
+    if example_file.exists():
+        return load_config_yaml(example_file)
+    return {}
+
+
+def get_models_config(config_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Tải cấu hình models.yaml hoặc fallback models.example.yaml."""
+    if config_path:
+        p = Path(config_path)
+        if p.exists():
+            return load_config_yaml(p)
+    models_file = ROOT_DIR / "config" / "models.yaml"
+    if models_file.exists():
+        return load_config_yaml(models_file)
+    example_file = ROOT_DIR / "config" / "models.example.yaml"
+    if example_file.exists():
+        return load_config_yaml(example_file)
+    return {}
+
+
+# ==============================================================================
+# ADAPTER POLLING RUNNER (Independent Retry & Backoff Isolation)
+# ==============================================================================
+class AdapterPollingRunner:
+    """Quản lý vòng lặp polling định kỳ cho một acquisition adapter với cơ chế retry và exponential backoff độc lập."""
+
+    def __init__(
+        self,
+        name: str,
+        adapter: Any,
+        pipeline: Any,
+        poll_interval: float = 60.0,
+        min_backoff: float = 5.0,
+        max_backoff: float = 300.0,
+        backoff_multiplier: float = 2.0,
+        display_name: Optional[str] = None,
+    ):
+        self.name = name
+        self.adapter = adapter
+        self.pipeline = pipeline
+        self.poll_interval = max(poll_interval, 0.05)
+        self.min_backoff = max(min_backoff, 0.05)
+        self.max_backoff = max_backoff
+        self.backoff_multiplier = backoff_multiplier
+        self.display_name = display_name or name.replace("_", " ").title()
+
+        self.consecutive_failures: int = 0
+        self.status: str = "INITIALIZING"
+        self.last_sync_time: Optional[datetime] = None
+        self.last_error: Optional[str] = None
+        self.total_synced_events: int = 0
+        self.sync_count: int = 0
+
+    async def run_loop(self, should_run_fn: Callable[[], bool]) -> None:
+        """Thực thi vòng lặp polling định kỳ với checkpoint và independent retry/backoff."""
+        self.status = "HEALTHY"
+        while should_run_fn():
+            try:
+                events_synced = await self.pipeline.sync_adapter(self.adapter, stream_id="all")
+                self.sync_count += 1
+                self.total_synced_events += events_synced
+                self.consecutive_failures = 0
+                self.status = "HEALTHY"
+                self.last_sync_time = datetime.now(timezone.utc)
+                self.last_error = None
+                sleep_time = self.poll_interval
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.consecutive_failures += 1
+                self.status = "DEGRADED"
+                self.last_error = str(e)
+                backoff = min(
+                    self.max_backoff,
+                    self.min_backoff * (self.backoff_multiplier ** (self.consecutive_failures - 1)),
+                )
+                logger.warning(
+                    "Adapter '%s' (%s) polling error (attempt %d): %s. Backoff for %.1fs.",
+                    self.name,
+                    getattr(self.adapter, "source_type", "unknown"),
+                    self.consecutive_failures,
+                    e,
+                    backoff,
+                )
+                src_val = getattr(self.adapter, "source_type", None)
+                src_type_str = src_val.value if hasattr(src_val, "value") else str(src_val) if src_val else self.name
+                log_bug(
+                    code=BugCode.PTB_L1_002,
+                    subsystem=f"adapter_{self.name.lower()}",
+                    severity="WARNING",
+                    message=f"Adapter {self.name} synchronization failed: {e}",
+                    source_type=src_type_str,
+                    tenant_id=getattr(self.adapter, "tenant_id", None),
+                    exc=e,
+                    context={"consecutive_failures": self.consecutive_failures, "backoff": backoff},
+                )
+                sleep_time = backoff
+
+            try:
+                await asyncio.sleep(sleep_time)
+            except asyncio.CancelledError:
+                break
+        self.status = "STOPPED"
 
 
 # ==============================================================================
@@ -82,10 +226,11 @@ class PTBProcessSupervisor:
     """CLI Process Supervisor quản lý và giám sát đồng thời toàn bộ các components:
 
     1. Playwright acquisition runner (Teams & Outlook interceptors)
-    2. Coding Agent Watchers (Cursor, Claude Code, Antigravity)
-    3. ProcessingWorker vòng lặp xử lý background
-    4. Application Service FastAPI REST trên 127.0.0.1:8000
-    5. FastMCP Server trên 127.0.0.1:8001
+    2. Coding Agent Watchers (Cursor, Claude Code, Antigravity,...)
+    3. External Ingestion Adapters (GitWatcherAdapter, JiraAdapter, ShortcutAdapter)
+    4. ProcessingWorker vòng lặp xử lý background
+    5. Application Service FastAPI REST trên 127.0.0.1:8000
+    6. FastMCP Server trên 127.0.0.1:8001
     """
 
     def __init__(
@@ -100,6 +245,12 @@ class PTBProcessSupervisor:
         raw_event_repo: Optional[Any] = None,
         checkpoint_repo: Optional[Any] = None,
         task_repo: Optional[Any] = None,
+        application_service: Optional[Any] = None,
+        sources_config: Optional[Dict[str, Any]] = None,
+        sources_config_path: Optional[str] = None,
+        git_adapter: Optional[Any] = None,
+        jira_adapter: Optional[Any] = None,
+        shortcut_adapter: Optional[Any] = None,
     ):
         self.host = host
         self.app_port = app_port
@@ -112,7 +263,15 @@ class PTBProcessSupervisor:
         self.raw_event_repo = raw_event_repo
         self.checkpoint_repo = checkpoint_repo
         self.task_repo = task_repo
+        self.application_service = application_service
 
+        self.sources_config = sources_config
+        self.sources_config_path = sources_config_path
+        self.git_adapter = git_adapter
+        self.jira_adapter = jira_adapter
+        self.shortcut_adapter = shortcut_adapter
+
+        self.state: str = "INITIALIZING"
         self._running = False
         self._shutdown_event = asyncio.Event()
 
@@ -122,6 +281,8 @@ class PTBProcessSupervisor:
         self.processing_worker: Optional[Any] = None
         self.playwright_orchestrator: Optional[Any] = None
         self.neo4j_client: Optional[Any] = None
+        self.acq_pipeline: Optional[Any] = None
+        self.adapter_runners: Dict[str, AdapterPollingRunner] = {}
         self.tasks: List[asyncio.Task] = []
 
     def trigger_shutdown(self) -> None:
@@ -129,12 +290,38 @@ class PTBProcessSupervisor:
         self._shutdown_event.set()
 
     async def _poll_health_url(self, url: str, timeout: float = 1.0) -> bool:
-        """Kiểm tra HTTP endpoint trả về status 200 trong separate thread để không block loop."""
+        """Kiểm tra HTTP endpoint trả về status 200 và JSON status != 'not_ready' trong separate thread."""
         def _check():
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "PTB-Supervisor"})
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    return 200 <= resp.status < 300
+                    status_code = getattr(resp, "status", None)
+                    if not isinstance(status_code, int):
+                        status_code = getattr(resp, "status_code", None)
+                    if not isinstance(status_code, int) and hasattr(resp, "getcode"):
+                        code = resp.getcode()
+                        if isinstance(code, int):
+                            status_code = code
+                    if status_code is None:
+                        status_code = 200
+                    if status_code != 200:
+                        return False
+
+                    raw_body = resp.read() if hasattr(resp, "read") else b""
+                    if isinstance(raw_body, bytes):
+                        raw_body = raw_body.decode("utf-8")
+                    if isinstance(raw_body, str) and raw_body.strip():
+                        data = json.loads(raw_body)
+                    elif hasattr(resp, "json") and callable(resp.json):
+                        data = resp.json()
+                    else:
+                        data = {}
+
+                    if not isinstance(data, dict):
+                        return False
+                    if str(data.get("status", "")).lower() == "not_ready":
+                        return False
+                    return True
             except Exception:
                 return False
         return await asyncio.to_thread(_check)
@@ -156,15 +343,9 @@ class PTBProcessSupervisor:
         """Khởi động toàn bộ runtime services và giám sát health check."""
         import uvicorn
         from ptb_acquisition.adapters import AgentWatchersAdapter
-        from ptb_acquisition.pipeline import (
-            AcquisitionPipeline,
-            InMemoryCheckpointRepository,
-            InMemoryRawEventRepository,
-        )
+        from ptb_acquisition.pipeline import AcquisitionPipeline
         from ptb_acquisition.playwright.runner import PlaywrightOrchestrator
         from ptb_acquisition.playwright.session import SessionHealthState
-        from ptb_application.api import app as fastapi_app
-        from ptb_mcp.server import create_mcp_server
         from ptb_processing.pipeline import ProcessingPipeline
         from ptb_processing.worker import ProcessingWorker
 
@@ -172,7 +353,7 @@ class PTBProcessSupervisor:
         print("PERSONAL TASK BOARD: STARTING PROCESS SUPERVISOR (ptb run)")
         print("=" * 70)
 
-        # 1. Khởi tạo kho dữ liệu (Neo4j hoặc In-Memory Fallback)
+        # 1. Khởi tạo kho dữ liệu (Neo4j Authoritative Domain Store - Fail-Fast)
         if self.raw_event_repo is None or self.checkpoint_repo is None:
             try:
                 from ptb_database.neo4j_client import Neo4jClient
@@ -190,28 +371,211 @@ class PTBProcessSupervisor:
                     print("  [✓] Đã kết nối Neo4j Persistence Engine (Authoritative Domain Store)")
                 else:
                     await client.close()
-                    print("  [!] Không thể kết nối Neo4j, sử dụng In-Memory Repositories.")
-                    self.raw_event_repo = InMemoryRawEventRepository()
-                    self.checkpoint_repo = InMemoryCheckpointRepository()
-                    self.task_repo = None
+                    self.state = "NOT_READY"
+                    log_bug(
+                        code=BugCode.PTB_STORAGE_001,
+                        subsystem="neo4j",
+                        severity="CRITICAL",
+                        message="Neo4j authoritative store unavailable",
+                    )
+                    print("\n[✗] CRITICAL ERROR: Neo4j authoritative store unavailable. Không thể khởi động supervisor!")
+                    print("    Hệ thống Personal Task Board yêu cầu Neo4j hoạt động (Fail-Fast).")
+                    print("    Tuyệt đối không tiếp tục chạy với RAM store.\n")
+                    return 1
             except Exception as e:
-                logger.warning(f"Neo4j connectivity check failed: {e}")
-                print("  [!] Neo4j không khả dụng, sử dụng In-Memory Repositories.")
-                self.raw_event_repo = InMemoryRawEventRepository()
-                self.checkpoint_repo = InMemoryCheckpointRepository()
-                self.task_repo = None
+                logger.error(f"Neo4j connectivity check failed: {e}")
+                self.state = "NOT_READY"
+                log_bug(
+                    code=BugCode.PTB_STORAGE_001,
+                    subsystem="neo4j",
+                    severity="CRITICAL",
+                    message="Neo4j authoritative store unavailable",
+                    exc=e,
+                )
+                print(f"\n[✗] CRITICAL ERROR: Neo4j không khả dụng ({e}). Không thể khởi động supervisor!")
+                print("    Hệ thống Personal Task Board yêu cầu Neo4j hoạt động (Fail-Fast).")
+                print("    Tuyệt đối không tiếp tục chạy với RAM store.\n")
+                return 1
 
-        # 2. Pipeline thu nạp (Acquisition) & Coding Agent Watchers
+        if self.task_repo is None and self.neo4j_client:
+            from ptb_database.repositories import TaskDomainRepository
+            self.task_repo = TaskDomainRepository(self.neo4j_client)
+
+        # 2. Pipeline thu nạp (Acquisition) & Configured Adapters
+        from ptb_acquisition.adapters import (
+            AgentWatchersAdapter,
+            GitWatcherAdapter,
+            JiraAdapter,
+            ShortcutAdapter,
+        )
+
         acq_pipeline = AcquisitionPipeline(
             raw_event_repo=self.raw_event_repo,
             checkpoint_repo=self.checkpoint_repo,
             tenant_id=self.tenant_id,
         )
+        self.acq_pipeline = acq_pipeline
+
+        # Tải cấu hình sources
+        if self.sources_config is not None:
+            sources_cfg = self.sources_config
+        else:
+            sources_cfg = get_sources_config(self.sources_config_path)
+        sources_dict = sources_cfg.get("sources", {})
+
+        # (a) Coding Agent Watchers
         agent_adapter = AgentWatchersAdapter(tenant_id=self.tenant_id)
         acq_pipeline.register_adapter("coding_agents", agent_adapter)
+        coding_cfg = sources_dict.get("coding_agents", {})
+        coding_poll = float(coding_cfg.get("poll_interval_seconds", 5.0)) if isinstance(coding_cfg, dict) else 5.0
+        if self.poll_interval < 1.0:
+            coding_poll = min(coding_poll, self.poll_interval)
+        coding_runner = AdapterPollingRunner(
+            name="coding_agents",
+            adapter=agent_adapter,
+            pipeline=acq_pipeline,
+            poll_interval=coding_poll,
+            min_backoff=min(5.0, coding_poll),
+            display_name="Coding Agent Watchers",
+        )
+        self.adapter_runners["coding_agents"] = coding_runner
+
+        # (b) Git Watcher Adapter
+        git_cfg = sources_dict.get("git", {})
+        git_enabled = git_cfg.get("enabled", True) if isinstance(git_cfg, dict) else True
+        if self.git_adapter is not None:
+            g_adapter = self.git_adapter
+            acq_pipeline.register_adapter("git", g_adapter)
+            git_poll = float(git_cfg.get("poll_interval_seconds", 60.0)) if isinstance(git_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                git_poll = min(git_poll, self.poll_interval)
+            git_runner = AdapterPollingRunner(
+                name="git",
+                adapter=g_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=git_poll,
+                min_backoff=min(5.0, git_poll),
+                display_name="Local Git Watcher",
+            )
+            self.adapter_runners["git"] = git_runner
+        elif git_enabled:
+            repo_paths = git_cfg.get("repo_paths", [str(ROOT_DIR)]) if isinstance(git_cfg, dict) else [str(ROOT_DIR)]
+            expanded_paths = [os.path.expanduser(p) for p in repo_paths if os.path.exists(os.path.expanduser(p))]
+            if not expanded_paths:
+                expanded_paths = [str(ROOT_DIR)]
+            g_adapter = GitWatcherAdapter(repo_paths=expanded_paths, tenant_id=self.tenant_id)
+            acq_pipeline.register_adapter("git", g_adapter)
+            git_poll = float(git_cfg.get("poll_interval_seconds", 60.0)) if isinstance(git_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                git_poll = min(git_poll, self.poll_interval)
+            git_runner = AdapterPollingRunner(
+                name="git",
+                adapter=g_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=git_poll,
+                min_backoff=min(5.0, git_poll),
+                display_name="Local Git Watcher",
+            )
+            self.adapter_runners["git"] = git_runner
+
+        # (c) Jira Cloud / Server Adapter
+        jira_cfg = sources_dict.get("jira", {})
+        jira_enabled = jira_cfg.get("enabled", False) if isinstance(jira_cfg, dict) else False
+        jira_token = (jira_cfg.get("api_token") or os.getenv("JIRA_API_TOKEN", "")).strip() if isinstance(jira_cfg, dict) else os.getenv("JIRA_API_TOKEN", "").strip()
+        jira_url = (jira_cfg.get("base_url") or os.getenv("JIRA_BASE_URL", "")).strip() if isinstance(jira_cfg, dict) else os.getenv("JIRA_BASE_URL", "").strip()
+
+        if self.jira_adapter is not None:
+            j_adapter = self.jira_adapter
+            acq_pipeline.register_adapter("jira", j_adapter)
+            jira_poll = float(jira_cfg.get("poll_interval_seconds", 60.0)) if isinstance(jira_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                jira_poll = min(jira_poll, self.poll_interval)
+            jira_runner = AdapterPollingRunner(
+                name="jira",
+                adapter=j_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=jira_poll,
+                min_backoff=min(5.0, jira_poll),
+                display_name="Jira Cloud/Server",
+            )
+            self.adapter_runners["jira"] = jira_runner
+        elif (jira_enabled or jira_token) and jira_token and jira_url:
+            j_adapter = JiraAdapter(
+                base_url=jira_url,
+                email=jira_cfg.get("email") or os.getenv("JIRA_EMAIL"),
+                api_token=jira_token,
+                jql=jira_cfg.get("default_jql") or os.getenv("JIRA_JQL"),
+                project_keys=jira_cfg.get("project_keys", []),
+                tenant_id=self.tenant_id,
+            )
+            acq_pipeline.register_adapter("jira", j_adapter)
+            jira_poll = float(jira_cfg.get("poll_interval_seconds", 60.0)) if isinstance(jira_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                jira_poll = min(jira_poll, self.poll_interval)
+            jira_runner = AdapterPollingRunner(
+                name="jira",
+                adapter=j_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=jira_poll,
+                min_backoff=min(5.0, jira_poll),
+                display_name="Jira Cloud/Server",
+            )
+            self.adapter_runners["jira"] = jira_runner
+        elif jira_enabled and (not jira_token or not jira_url):
+            logger.info("Jira adapter enabled in configuration but missing base_url or api_token. Skipped polling.")
+
+        # (d) Shortcut REST API Adapter
+        shortcut_cfg = sources_dict.get("shortcut", {})
+        shortcut_enabled = shortcut_cfg.get("enabled", False) if isinstance(shortcut_cfg, dict) else False
+        shortcut_token = (shortcut_cfg.get("api_token") or os.getenv("SHORTCUT_API_TOKEN", "")).strip() if isinstance(shortcut_cfg, dict) else os.getenv("SHORTCUT_API_TOKEN", "").strip()
+
+        if self.shortcut_adapter is not None:
+            sc_adapter = self.shortcut_adapter
+            acq_pipeline.register_adapter("shortcut", sc_adapter)
+            shortcut_poll = float(shortcut_cfg.get("poll_interval_seconds", 60.0)) if isinstance(shortcut_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                shortcut_poll = min(shortcut_poll, self.poll_interval)
+            shortcut_runner = AdapterPollingRunner(
+                name="shortcut",
+                adapter=sc_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=shortcut_poll,
+                min_backoff=min(5.0, shortcut_poll),
+                display_name="Shortcut Stories",
+            )
+            self.adapter_runners["shortcut"] = shortcut_runner
+        elif (shortcut_enabled or shortcut_token) and shortcut_token:
+            sc_adapter = ShortcutAdapter(
+                api_token=shortcut_token,
+                base_url=shortcut_cfg.get("base_url"),
+                project_ids=shortcut_cfg.get("project_ids", []),
+                query=shortcut_cfg.get("default_query") or os.getenv("SHORTCUT_QUERY"),
+                tenant_id=self.tenant_id,
+            )
+            acq_pipeline.register_adapter("shortcut", sc_adapter)
+            shortcut_poll = float(shortcut_cfg.get("poll_interval_seconds", 60.0)) if isinstance(shortcut_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                shortcut_poll = min(shortcut_poll, self.poll_interval)
+            shortcut_runner = AdapterPollingRunner(
+                name="shortcut",
+                adapter=sc_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=shortcut_poll,
+                min_backoff=min(5.0, shortcut_poll),
+                display_name="Shortcut Stories",
+            )
+            self.adapter_runners["shortcut"] = shortcut_runner
+        elif shortcut_enabled and not shortcut_token:
+            logger.info("Shortcut adapter enabled in configuration but missing api_token. Skipped polling.")
 
         # 3. Processing Worker
-        proc_pipeline = ProcessingPipeline(task_repo=self.task_repo)
+        from ptb_intelligence.lifecycle import TaskIntelligenceLifecycle
+
+        lifecycle = TaskIntelligenceLifecycle(task_repo=self.task_repo)
+        proc_pipeline = ProcessingPipeline(
+            task_repo=self.task_repo,
+            intelligence_lifecycle=lifecycle,
+        )
         self.processing_worker = ProcessingWorker(
             raw_event_repo=self.raw_event_repo,
             pipeline=proc_pipeline,
@@ -226,7 +590,28 @@ class PTBProcessSupervisor:
             headless=True,
         )
 
-        # 5. Application Service (FastAPI REST)
+        # 5. Dependency Graph dùng chung (Shared Runtime Dependency Graph)
+        # Neo4jClient -> Repositories -> ProcessingPipeline -> TaskIntelligenceLifecycle -> GraphitiMemoryClient -> ApplicationService
+        if self.application_service is None:
+            from ptb_graph_memory.client import GraphitiMemoryClient
+            from ptb_application.service import ApplicationService
+
+            graph_memory = GraphitiMemoryClient(neo4j_client=self.neo4j_client) if self.neo4j_client else None
+            self.application_service = ApplicationService(
+                task_repo=self.task_repo,
+                raw_event_repo=self.raw_event_repo,
+                checkpoint_repo=self.checkpoint_repo,
+                lifecycle=lifecycle,
+                graph_memory=graph_memory,
+                neo4j_client=self.neo4j_client,
+                processing_pipeline=proc_pipeline,
+            )
+        shared_service = self.application_service
+
+        # 6. Inject instance shared_service này vào cả FastAPI app (:8000) và FastMCP server (:8001)
+        from ptb_application.api import create_app, set_application_service
+        set_application_service(shared_service)
+        fastapi_app = create_app(application_service=shared_service)
         app_config = uvicorn.Config(
             fastapi_app,
             host=self.host,
@@ -236,8 +621,9 @@ class PTBProcessSupervisor:
         )
         self.app_server = uvicorn.Server(app_config)
 
-        # 6. FastMCP Server
-        mcp_srv = create_mcp_server()
+        from ptb_mcp.server import create_mcp_server, set_application_service as set_mcp_app_service
+        set_mcp_app_service(shared_service)
+        mcp_srv = create_mcp_server(application_service=shared_service)
         starlette_mcp = mcp_srv.sse_app(host=self.host)
         mcp_config = uvicorn.Config(
             starlette_mcp,
@@ -262,30 +648,23 @@ class PTBProcessSupervisor:
         )
 
         # 3. ProcessingWorker Background Loop
-        self.tasks.append(
-            asyncio.create_task(
-                self.processing_worker.run_loop(poll_interval=self.poll_interval),
-                name="ptb-processing-worker",
+        worker_task = asyncio.create_task(
+            self.processing_worker.run_loop(poll_interval=self.poll_interval),
+            name="ptb-processing-worker",
+        )
+        self.tasks.append(worker_task)
+
+        # 4. Ingestion Adapter Background Polling Tasks (Coding Agents, Git, Jira, Shortcut)
+        for a_name, a_runner in self.adapter_runners.items():
+            self.tasks.append(
+                asyncio.create_task(
+                    a_runner.run_loop(lambda: self._running),
+                    name=f"ptb-adapter-{a_name}",
+                )
             )
-        )
 
-        # 4. Coding Agent Watchers Polling Loop
-        async def _watchers_loop():
-            while self._running:
-                try:
-                    await acq_pipeline.sync_adapter(agent_adapter, stream_id="all")
-                except asyncio.CancelledError:
-                    break
-                except Exception as w_err:
-                    logger.warning("Error in coding agent watchers loop: %s", w_err)
-                try:
-                    await asyncio.sleep(5.0)
-                except asyncio.CancelledError:
-                    break
-
-        self.tasks.append(
-            asyncio.create_task(_watchers_loop(), name="ptb-watchers-loop")
-        )
+        # Kiểm tra trước trạng thái session Microsoft
+        initial_pw_state = self.playwright_orchestrator.session_mgr.validate_session()
 
         # 5. Playwright Acquisition Daemon
         async def _playwright_loop():
@@ -305,7 +684,7 @@ class PTBProcessSupervisor:
                 )
                 while self._running:
                     try:
-                        await asyncio.sleep(10.0)
+                        await asyncio.sleep(5.0)
                     except asyncio.CancelledError:
                         break
                 return
@@ -316,9 +695,16 @@ class PTBProcessSupervisor:
                 self.playwright_orchestrator.stop()
             except Exception as pw_err:
                 logger.warning("Playwright acquisition runner stopped: %s. Entering standby.", pw_err)
+                log_bug(
+                    code=BugCode.PTB_L1_002,
+                    subsystem="playwright",
+                    severity="WARNING",
+                    message=f"Playwright acquisition runner stopped: {pw_err}",
+                    exc=pw_err,
+                )
                 while self._running:
                     try:
-                        await asyncio.sleep(10.0)
+                        await asyncio.sleep(5.0)
                     except asyncio.CancelledError:
                         break
 
@@ -339,30 +725,89 @@ class PTBProcessSupervisor:
             if not app_ready:
                 app_ready = await self._poll_health_url(app_url)
             if not mcp_ready:
-                # FastMCP SSE health
-                mcp_ready = await self._poll_health_url(mcp_url) or await self._poll_port_open(self.host, self.mcp_port)
+                # FastMCP SSE health (JSON /health check only, no TCP port open fallback)
+                mcp_ready = await self._poll_health_url(mcp_url)
 
             if app_ready and mcp_ready:
                 break
             await asyncio.sleep(0.3)
 
-        if not (app_ready and mcp_ready):
+        neo4j_ok = self.neo4j_client is not None or (
+            self.raw_event_repo is not None and self.checkpoint_repo is not None
+        )
+        worker_alive = worker_task is not None and not worker_task.done()
+
+        if not (neo4j_ok and app_ready and mcp_ready and worker_alive):
+            self.state = "NOT_READY"
             print("\n[✗] ERROR: Không thể vượt qua Health Check trong thời gian khởi động!")
             print(f"    • Application REST ({app_url}): {'[PASS]' if app_ready else '[FAIL]'}")
             print(f"    • FastMCP Server ({mcp_url}): {'[PASS]' if mcp_ready else '[FAIL]'}")
+            print(f"    • Processing Worker: {'[PASS]' if worker_alive else '[FAIL]'}")
             await self.shutdown()
             return 1
 
+        # 8. Đánh giá trạng thái sẵn sàng trung thực dựa trên Playwright / Microsoft session
+        ms_auth_missing = False
+        if self.enable_playwright:
+            session_mgr = self.playwright_orchestrator.session_mgr
+            if hasattr(session_mgr.has_valid_session, "_mock_name"):
+                ms_auth_missing = not bool(session_mgr.has_valid_session())
+            else:
+                current_pw_state = session_mgr.validate_session()
+                state_val = (
+                    current_pw_state.value
+                    if hasattr(current_pw_state, "value")
+                    else str(current_pw_state)
+                )
+                init_val = (
+                    initial_pw_state.value
+                    if hasattr(initial_pw_state, "value")
+                    else str(initial_pw_state)
+                )
+                ms_auth_missing = (
+                    state_val in ("UNCONFIGURED", "LOGIN_REQUIRED", "AUTH_EXPIRED", "AUTH_REQUIRED")
+                    or init_val in ("UNCONFIGURED", "LOGIN_REQUIRED", "AUTH_EXPIRED", "AUTH_REQUIRED")
+                )
+
+        ms_strict_required = False
+        for ms_key in ("ms_teams", "outlook", "ms_outlook"):
+            cfg_item = sources_dict.get(ms_key) if isinstance(sources_dict, dict) else None
+            if cfg_item is None and isinstance(sources_cfg, dict):
+                cfg_item = sources_cfg.get(ms_key)
+            if isinstance(cfg_item, dict) and bool(cfg_item.get("strict_required", False)) is True:
+                ms_strict_required = True
+                break
+
+        if self.enable_playwright and ms_auth_missing:
+            if ms_strict_required:
+                self.state = "DEGRADED"
+                banner_line = (
+                    "DEGRADED: Core services operational (Microsoft acquisition AUTH_REQUIRED — run 'ptb login microsoft')"
+                )
+            else:
+                self.state = "READY_WITH_WARNINGS"
+                banner_line = (
+                    "READY_WITH_WARNINGS: Core services operational (Microsoft acquisition AUTH_REQUIRED — run 'ptb login microsoft')"
+                )
+            pw_state = "AUTH_REQUIRED (Run 'ptb login microsoft' to enable)"
+        else:
+            self.state = "READY"
+            banner_line = "READY: All PTB components operational!"
+            pw_state = "ACTIVE" if self.enable_playwright else "DISABLED (--no-playwright)"
+
         # In thông báo chuẩn theo yêu cầu thiết kế
         print("\n" + "=" * 70)
-        print("READY: All PTB components operational!")
+        print(banner_line)
         print("=" * 70)
         print(f"  • Application Service REST : http://{self.host}:{self.app_port} (/health [PASS])")
-        print(f"  • FastMCP Server (SSE)     : http://{self.host}:{self.mcp_port} (Port bound [PASS])")
+        print(f"  • FastMCP Server (SSE)     : http://{self.host}:{self.mcp_port} (/health [PASS])")
         print(f"  • ProcessingWorker Loop    : ACTIVE (poll_interval={self.poll_interval}s)")
         print(f"  • Coding Agent Watchers    : ACTIVE (Cursor, Claude Code, Antigravity)")
-        pw_state = "ACTIVE" if (self.enable_playwright and self.playwright_orchestrator.session_mgr.has_valid_session()) else "STANDBY (Run 'ptb login microsoft' to enable)"
         print(f"  • Playwright Acquisition   : {pw_state}")
+        for name, runner in self.adapter_runners.items():
+            if name != "coding_agents":
+                st = "ACTIVE" if runner.status in ("HEALTHY", "INITIALIZING") else runner.status
+                print(f"  • {runner.display_name:<26} : {st} (poll_interval={runner.poll_interval}s)")
         print("=" * 70)
         print(">>> Nhấn Ctrl+C để dừng toàn bộ hệ thống PTB.\n")
 
@@ -386,6 +831,8 @@ class PTBProcessSupervisor:
         if not self._running:
             return
         self._running = False
+        if self.state == "INITIALIZING":
+            self.state = "STOPPED"
         print("\n[*] Đang tắt an toàn toàn bộ services...")
 
         # 1. Dừng workers
@@ -427,6 +874,7 @@ async def cmd_run(args: argparse.Namespace) -> int:
         tenant_id=args.tenant_id,
         enable_playwright=not args.no_playwright,
         poll_interval=args.poll_interval,
+        sources_config_path=getattr(args, "config", None),
     )
 
     loop = asyncio.get_running_loop()
@@ -577,6 +1025,151 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
         "is_pass": owui_ok,
         "is_warn": not owui_ok,
         "details": owui_detail,
+    })
+
+    # 6. LLM Provider Readiness
+    deep_check = bool(getattr(args, "deep", False))
+    models_cfg_arg = getattr(args, "models_config", None)
+    if models_cfg_arg:
+        models_cfg_path = str(models_cfg_arg)
+    elif (ROOT_DIR / "config" / "models.yaml").is_file():
+        models_cfg_path = str(ROOT_DIR / "config" / "models.yaml")
+    elif (ROOT_DIR / "config" / "models.example.yaml").is_file():
+        models_cfg_path = str(ROOT_DIR / "config" / "models.example.yaml")
+    else:
+        models_cfg_path = None
+
+    llm_ok = False
+    llm_detail = ""
+    try:
+        readiness_fn = check_llm_readiness
+        if readiness_fn is None:
+            try:
+                from ptb_processing.llm_readiness import check_llm_readiness as _proc_readiness_fn
+                readiness_fn = _proc_readiness_fn
+            except ImportError:
+                readiness_fn = None
+
+        if readiness_fn is not None:
+            report = await readiness_fn(config_path=models_cfg_path, deep=deep_check)
+            if isinstance(report, dict):
+                rep_status = str(report.get("status", "NOT_READY")).upper()
+                api_key_ok = bool(report.get("api_key_configured", False))
+                base_url_ok = bool(report.get("base_url_valid", True))
+                model_ok = bool(report.get("model_configured", True))
+                provider_name = str(report.get("provider", "openai_compatible"))
+                model_name = str(report.get("model_name", "gpt-4o-mini"))
+                base_url = str(report.get("base_url", "https://api.openai.com/v1"))
+                deep_passed = report.get("deep_check_passed")
+                err_msg = report.get("error_message")
+            else:
+                rep_status = str(getattr(report, "status", "NOT_READY")).upper()
+                api_key_ok = bool(getattr(report, "api_key_configured", False))
+                base_url_ok = bool(getattr(report, "base_url_valid", True))
+                model_ok = bool(getattr(report, "model_configured", True))
+                provider_name = str(getattr(report, "provider", "openai_compatible"))
+                model_name = str(getattr(report, "model_name", "gpt-4o-mini"))
+                base_url = str(getattr(report, "base_url", "https://api.openai.com/v1"))
+                deep_passed = getattr(report, "deep_check_passed", None)
+                err_msg = getattr(report, "error_message", None)
+        else:
+            models_cfg = get_models_config(models_cfg_path)
+            provider_name = str(models_cfg.get("default_llm_provider", "openai_compatible"))
+            prov_dict = models_cfg.get("providers", {}).get(provider_name, {})
+            api_key_val = (
+                os.getenv("OPENAI_API_KEY")
+                or os.getenv("GEMINI_API_KEY")
+                or os.getenv("ANTHROPIC_API_KEY")
+                or os.getenv("LLM_API_KEY")
+                or (prov_dict.get("api_key") if isinstance(prov_dict, dict) else "")
+                or ""
+            ).strip()
+            api_key_ok = bool(api_key_val)
+            base_url = (
+                os.getenv("OPENAI_BASE_URL")
+                or os.getenv("LLM_BASE_URL")
+                or (prov_dict.get("base_url") if isinstance(prov_dict, dict) else None)
+                or "https://api.openai.com/v1"
+            ).strip().rstrip("/")
+            base_url_ok = base_url.startswith(("http://", "https://"))
+            model_name = (
+                os.getenv("LLM_MODEL")
+                or os.getenv("PTB_EXTRACTION_MODEL")
+                or (prov_dict.get("extraction_model") if isinstance(prov_dict, dict) else None)
+                or "gpt-4o-mini"
+            ).strip()
+            model_ok = bool(model_name)
+            deep_passed = None
+            err_msg = None
+            if api_key_ok and base_url_ok and model_ok:
+                rep_status = "HEALTHY"
+                if deep_check:
+                    def _probe():
+                        req = urllib.request.Request(
+                            f"{base_url}/models",
+                            headers={"Authorization": f"Bearer {api_key_val}", "Accept": "application/json"},
+                            method="GET",
+                        )
+                        with urllib.request.urlopen(req, timeout=3.0) as resp:
+                            code = getattr(resp, "status", 200)
+                            if isinstance(code, int) and code >= 400:
+                                raise RuntimeError(f"HTTP {code}")
+                    try:
+                        await asyncio.to_thread(_probe)
+                        deep_passed = True
+                    except Exception as probe_err:
+                        rep_status = "DEGRADED"
+                        deep_passed = False
+                        err_msg = str(probe_err)
+            else:
+                rep_status = "NOT_READY"
+
+        if not api_key_ok:
+            llm_ok = False
+            llm_detail = "PTB-LLM-001: API key unconfigured -> Processing DEGRADED/NOT_READY"
+            log_bug(
+                code=BugCode.PTB_LLM_001,
+                subsystem="llm",
+                severity="WARNING",
+                message=llm_detail,
+            )
+        elif not base_url_ok or not model_ok or rep_status != "HEALTHY" or (deep_check and deep_passed is False):
+            llm_ok = False
+            if deep_check and deep_passed is False:
+                llm_detail = (
+                    f"PTB-LLM-001: Deep check (/models) failed ({err_msg or 'unreachable'}) -> Processing DEGRADED/NOT_READY"
+                )
+            else:
+                llm_detail = f"PTB-LLM-001: {err_msg or 'Invalid LLM config'} -> Processing DEGRADED/NOT_READY"
+            log_bug(
+                code=BugCode.PTB_LLM_001,
+                subsystem="llm",
+                severity="WARNING",
+                message=llm_detail,
+            )
+        else:
+            llm_ok = True
+            if deep_check:
+                llm_detail = f"Provider '{provider_name}' ready (model={model_name}, base_url={base_url}, /models [OK])"
+            else:
+                llm_detail = f"Provider '{provider_name}' configured (model={model_name}, base_url={base_url})"
+    except Exception as e:
+        llm_ok = False
+        llm_detail = f"PTB-LLM-001: LLM check error ({e}) -> Processing DEGRADED/NOT_READY"
+        log_bug(
+            code=BugCode.PTB_LLM_001,
+            subsystem="llm",
+            severity="WARNING",
+            message=llm_detail,
+            exc=e,
+        )
+
+    checks.append({
+        "component": "LLM Provider Readiness",
+        "status": PASS_SYM if llm_ok else WARN_SYM,
+        "is_pass": llm_ok,
+        "is_warn": not llm_ok,
+        "details": llm_detail,
     })
 
     # In bảng tóm tắt
@@ -808,17 +1401,12 @@ async def cmd_ingest(args: argparse.Namespace) -> int:
         JiraAdapter,
         ShortcutAdapter,
     )
-    from ptb_acquisition.pipeline import (
-        AcquisitionPipeline,
-        InMemoryCheckpointRepository,
-        InMemoryRawEventRepository,
-    )
+    from ptb_acquisition.pipeline import AcquisitionPipeline
 
     tenant_id = args.tenant_id or "local-user"
 
     raw_repo = None
     ckpt_repo = None
-    neo4j_connected = False
 
     try:
         from ptb_database.neo4j_client import Neo4jClient
@@ -828,15 +1416,30 @@ async def cmd_ingest(args: argparse.Namespace) -> int:
         if await client.verify_connectivity():
             raw_repo = RawEventRepository(client)
             ckpt_repo = CheckpointRepository(client)
-            neo4j_connected = True
             print("  ✓ Đã kết nối Neo4j Persistence Engine (RawEvent & Checkpoint repositories active)")
+        else:
+            await client.close()
+            log_bug(
+                code=BugCode.PTB_STORAGE_001,
+                subsystem="neo4j",
+                severity="CRITICAL",
+                message="Neo4j authoritative store unavailable",
+            )
+            print("\n[✗] CRITICAL ERROR: Neo4j authoritative store unavailable. Không thể thu nạp dữ liệu!")
+            print("    Hệ thống yêu cầu Neo4j hoạt động (Fail-Fast), không chạy với RAM store.\n")
+            return 1
     except Exception as e:
-        logger.debug(f"Không thể kết nối Neo4j, fallback in-memory: {e}")
-
-    if not neo4j_connected:
-        print("  ! Lưu ý: Neo4j không khả dụng, sử dụng In-Memory Repository để chạy thử nghiệm.")
-        raw_repo = InMemoryRawEventRepository()
-        ckpt_repo = InMemoryCheckpointRepository()
+        logger.error(f"Không thể kết nối Neo4j: {e}")
+        log_bug(
+            code=BugCode.PTB_STORAGE_001,
+            subsystem="neo4j",
+            severity="CRITICAL",
+            message="Neo4j authoritative store unavailable",
+            exc=e,
+        )
+        print(f"\n[✗] CRITICAL ERROR: Neo4j không khả dụng ({e}). Không thể thu nạp dữ liệu!")
+        print("    Hệ thống yêu cầu Neo4j hoạt động (Fail-Fast), không chạy với RAM store.\n")
+        return 1
 
     pipeline = AcquisitionPipeline(
         raw_event_repo=raw_repo,
@@ -844,9 +1447,7 @@ async def cmd_ingest(args: argparse.Namespace) -> int:
         tenant_id=tenant_id,
     )
 
-    sources_cfg = load_config_yaml(ROOT_DIR / "config" / "sources.yaml")
-    if not sources_cfg:
-        sources_cfg = load_config_yaml(ROOT_DIR / "config" / "sources.example.yaml")
+    sources_cfg = get_sources_config(getattr(args, "config", None))
     src_dict = sources_cfg.get("sources", {})
 
     target_source = getattr(args, "source", "all")
@@ -940,14 +1541,50 @@ async def cmd_serve(args: argparse.Namespace) -> int:
 
     tasks = []
 
+    # Khởi tạo Dependency Graph dùng chung nếu Neo4j khả dụng
+    shared_service = None
+    try:
+        from ptb_database.neo4j_client import Neo4jClient
+        from ptb_database.repositories import (
+            CheckpointRepository,
+            RawEventRepository,
+            TaskDomainRepository,
+        )
+        from ptb_processing.pipeline import ProcessingPipeline
+        from ptb_intelligence.lifecycle import TaskIntelligenceLifecycle
+        from ptb_graph_memory.client import GraphitiMemoryClient
+        from ptb_application.service import ApplicationService
+
+        client = Neo4jClient()
+        if await client.verify_connectivity():
+            raw_repo = RawEventRepository(client)
+            ckpt_repo = CheckpointRepository(client)
+            task_repo = TaskDomainRepository(client)
+            proc_pipeline = ProcessingPipeline(task_repo=task_repo)
+            lifecycle = TaskIntelligenceLifecycle(task_repo=task_repo)
+            graph_memory = GraphitiMemoryClient(neo4j_client=client)
+            shared_service = ApplicationService(
+                task_repo=task_repo,
+                raw_event_repo=raw_repo,
+                checkpoint_repo=ckpt_repo,
+                lifecycle=lifecycle,
+                graph_memory=graph_memory,
+                neo4j_client=client,
+                processing_pipeline=proc_pipeline,
+            )
+    except Exception as e:
+        logger.warning("Could not initialize connected ApplicationService in cmd_serve: %s", e)
+
     # FastMCP Server
     if not args.app_only:
         async def _run_mcp():
             print("  [+] Đang khởi động FastMCP Read-Only Server...")
             try:
-                from ptb_mcp.server import create_mcp_server
+                from ptb_mcp.server import create_mcp_server, set_application_service as set_mcp_app_service
                 import uvicorn
-                mcp_srv = create_mcp_server()
+                if shared_service:
+                    set_mcp_app_service(shared_service)
+                mcp_srv = create_mcp_server(application_service=shared_service)
                 starlette_mcp = mcp_srv.sse_app(host=args.host)
                 mcp_config = uvicorn.Config(starlette_mcp, host=args.host, port=8001, log_level="warning")
                 mcp_server = uvicorn.Server(mcp_config)
@@ -962,8 +1599,11 @@ async def cmd_serve(args: argparse.Namespace) -> int:
         async def _run_app():
             print("  [+] Đang khởi động Application Service...")
             try:
-                from ptb_application.api import app as fastapi_app
+                from ptb_application.api import create_app, set_application_service
                 import uvicorn
+                if shared_service:
+                    set_application_service(shared_service)
+                fastapi_app = create_app(application_service=shared_service)
                 app_config = uvicorn.Config(fastapi_app, host=args.host, port=args.port, log_level="warning")
                 app_server = uvicorn.Server(app_config)
                 await app_server.serve()
@@ -1038,9 +1678,11 @@ def main():
     parser_run.add_argument("--tenant-id", default="local-user", help="Tenant ID")
     parser_run.add_argument("--poll-interval", type=float, default=2.0, help="Chu kỳ thăm dò của worker (giây)")
     parser_run.add_argument("--no-playwright", action="store_true", help="Không khởi chạy Playwright browser daemon")
+    parser_run.add_argument("--config", default=None, help="Đường dẫn file cấu hình sources.yaml")
 
     # Command: doctor
     parser_doctor = subparsers.add_parser("doctor", help="Kiểm tra môi trường và các thành phần phụ thuộc")
+    parser_doctor.add_argument("--deep", action="store_true", help="Thực hiện kiểm tra chuyên sâu tới LLM provider endpoint (/models)")
 
     # Command: login
     parser_login = subparsers.add_parser("login", help="Đăng nhập tài khoản Microsoft 365")
@@ -1063,6 +1705,7 @@ def main():
     parser_ingest = subparsers.add_parser("ingest", help="Chạy 1 vòng quét tất cả các adapters")
     parser_ingest.add_argument("--source", default="all", choices=["all", "coding_agent", "git", "jira", "shortcut"], help="Nguồn cần nạp")
     parser_ingest.add_argument("--tenant-id", default="local-user", help="Tenant ID")
+    parser_ingest.add_argument("--config", default=None, help="Đường dẫn file cấu hình sources.yaml")
 
     # Command: status
     parser_status = subparsers.add_parser("status", help="Kiểm tra tình trạng kết nối Neo4j, Microsoft Session, Watchers, Processing Queue")

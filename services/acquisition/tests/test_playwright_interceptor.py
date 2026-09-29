@@ -3,14 +3,16 @@
 import asyncio
 from datetime import datetime, timezone
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from ptb_contracts import RawEventRecord, SourceType
-from ptb_acquisition.pipeline import AcquisitionPipeline, InMemoryRawEventRepository
+from ptb_contracts import BugCode, RawEventRecord, SourceType
+from ptb_acquisition.pipeline import AcquisitionPipeline
+from tests.support.test_doubles import InMemoryRawEventRepository
 from ptb_acquisition.playwright.session import (
     SessionHealthState,
     SessionManager,
+    transition_session_state,
     verify_authenticated_session,
 )
 from ptb_acquisition.playwright.teams_interceptor import TeamsNetworkInterceptor
@@ -146,15 +148,34 @@ async def test_teams_interceptor_persist_first_with_repo():
 
 @pytest.mark.asyncio
 async def test_teams_interceptor_auth_expired():
-    """Kiểm tra khi nhận status 401/403 thì interceptor cảnh báo và bỏ qua."""
+    """Kiểm tra khi nhận status 401/403 thì interceptor cảnh báo, log PTB-L1-001 và chuyển AUTH_EXPIRED."""
     interceptor = TeamsNetworkInterceptor()
     mock_response = MagicMock()
     mock_response.url = "https://teams.microsoft.com/api/chats/19:test/messages"
     mock_response.status = 401
 
-    records = await interceptor.handle_response(mock_response)
+    with patch("ptb_acquisition.playwright.teams_interceptor.log_bug") as mock_log:
+        records = await interceptor.handle_response(mock_response)
+
     assert len(records) == 0
     assert len(interceptor.captured_records) == 0
+    assert interceptor.session_state == SessionHealthState.AUTH_EXPIRED
+    mock_log.assert_called_once_with(
+        BugCode.PTB_L1_001,
+        subsystem="playwright",
+        severity="ERROR",
+        message="Microsoft session authentication expired (HTTP 401/403 or login redirect)",
+        context={"source_type": SourceType.MS_TEAMS_WEB, "url": mock_response.url, "status": 401},
+        source_type=SourceType.MS_TEAMS_WEB,
+        tenant_id=interceptor.tenant_id,
+    )
+
+    # Khi đã AUTH_EXPIRED, không lặp lại capture
+    mock_msg_resp = MagicMock()
+    mock_msg_resp.url = "https://teams.microsoft.com/api/chats/19:test/messages"
+    mock_msg_resp.status = 200
+    ignored = await interceptor.handle_response(mock_msg_resp)
+    assert len(ignored) == 0
 
 
 @pytest.mark.asyncio
@@ -387,3 +408,197 @@ async def test_bootstrap_capture_sweep():
     health = orchestrator.get_health()
     assert health["bootstrap_sweep"] == "COMPLETED"
     assert health["teams_captured"] == 1
+
+
+@pytest.mark.asyncio
+async def test_teams_interceptor_redirect_login_triggers_auth_expired():
+    """Kiểm tra khi interceptor gặp redirect login.microsoftonline.com thì kích hoạt PTB-L1-001 và AUTH_EXPIRED."""
+    interceptor = TeamsNetworkInterceptor()
+    mock_response = MagicMock()
+    mock_response.url = "https://login.microsoftonline.com/common/oauth2/authorize?client_id=xyz"
+    mock_response.status = 200
+
+    with patch("ptb_acquisition.playwright.teams_interceptor.log_bug") as mock_log:
+        records = await interceptor.handle_response(mock_response)
+
+    assert len(records) == 0
+    assert interceptor.session_state == SessionHealthState.AUTH_EXPIRED
+    mock_log.assert_called_once()
+    assert mock_log.call_args[0][0] == BugCode.PTB_L1_001
+    assert mock_log.call_args[1]["severity"] == "ERROR"
+
+
+@pytest.mark.asyncio
+async def test_outlook_interceptor_auth_expired():
+    """Kiểm tra khi nhận status 401/403 thì Outlook interceptor log PTB-L1-001 và chuyển AUTH_EXPIRED."""
+    interceptor = OutlookNetworkInterceptor()
+    mock_response = MagicMock()
+    mock_response.url = "https://outlook.office.com/api/v2.0/me/messages"
+    mock_response.status = 403
+
+    with patch("ptb_acquisition.playwright.outlook_interceptor.log_bug") as mock_log:
+        records = await interceptor.handle_response(mock_response)
+
+    assert len(records) == 0
+    assert len(interceptor.captured_records) == 0
+    assert interceptor.session_state == SessionHealthState.AUTH_EXPIRED
+    mock_log.assert_called_once_with(
+        BugCode.PTB_L1_001,
+        subsystem="playwright",
+        severity="ERROR",
+        message="Microsoft session authentication expired (HTTP 401/403 or login redirect)",
+        context={"source_type": SourceType.MS_OUTLOOK_WEB, "url": mock_response.url, "status": 403},
+        source_type=SourceType.MS_OUTLOOK_WEB,
+        tenant_id=interceptor.tenant_id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_outlook_interceptor_redirect_login_triggers_auth_expired():
+    """Kiểm tra Outlook gặp redirect login thì log PTB-L1-001 và chuyển AUTH_EXPIRED."""
+    interceptor = OutlookNetworkInterceptor()
+    mock_response = MagicMock()
+    mock_response.url = "https://login.live.com/oauth20_authorize.srf"
+    mock_response.status = 200
+
+    with patch("ptb_acquisition.playwright.outlook_interceptor.log_bug") as mock_log:
+        records = await interceptor.handle_response(mock_response)
+
+    assert len(records) == 0
+    assert interceptor.session_state == SessionHealthState.AUTH_EXPIRED
+    mock_log.assert_called_once()
+    assert mock_log.call_args[0][0] == BugCode.PTB_L1_001
+
+
+@pytest.mark.asyncio
+async def test_teams_interceptor_persist_failure_logs_bug_and_degraded():
+    """Kiểm tra khi persist vào raw_event_repo gặp exception thì kích hoạt PTB-L1-002 và chuyển DEGRADED."""
+    mock_repo = MagicMock()
+    mock_repo.persist_raw_event = AsyncMock(side_effect=RuntimeError("Authoritative DB write failed"))
+
+    interceptor = TeamsNetworkInterceptor(raw_event_repo=mock_repo)
+    mock_response = MagicMock()
+    mock_response.url = "https://teams.microsoft.com/api/chats/19:test/messages"
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={
+        "messages": [
+            {"id": "msg-err-1", "body": {"content": "Test error msg"}}
+        ]
+    })
+
+    with patch("ptb_acquisition.playwright.teams_interceptor.log_bug") as mock_log:
+        records = await interceptor.handle_response(mock_response)
+
+    assert len(records) == 0
+    assert len(interceptor.captured_records) == 0
+    assert interceptor.session_state == SessionHealthState.DEGRADED
+    mock_log.assert_called_once()
+    assert mock_log.call_args[0][0] == BugCode.PTB_L1_002
+    assert "Capture or persist failed" in mock_log.call_args[1]["message"]
+
+
+@pytest.mark.asyncio
+async def test_outlook_interceptor_persist_failure_logs_bug_and_degraded():
+    """Kiểm tra khi persist email vào raw_event_repo gặp exception thì kích hoạt PTB-L1-002 và chuyển DEGRADED."""
+    mock_repo = MagicMock()
+    mock_repo.persist_raw_event = AsyncMock(side_effect=RuntimeError("Disk I/O error"))
+
+    interceptor = OutlookNetworkInterceptor(raw_event_repo=mock_repo)
+    mock_response = MagicMock()
+    mock_response.url = "https://outlook.office.com/api/v2.0/me/messages"
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={
+        "value": [
+            {"id": "email-err-1", "subject": "Test error email", "body": {"content": "Error email content"}}
+        ]
+    })
+
+    with patch("ptb_acquisition.playwright.outlook_interceptor.log_bug") as mock_log:
+        records = await interceptor.handle_response(mock_response)
+
+    assert len(records) == 0
+    assert len(interceptor.captured_records) == 0
+    assert interceptor.session_state == SessionHealthState.DEGRADED
+    mock_log.assert_called_once()
+    assert mock_log.call_args[0][0] == BugCode.PTB_L1_002
+    assert "Capture or persist failed" in mock_log.call_args[1]["message"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_state_propagation_auth_expired():
+    """Kiểm tra lỗi 401 trên interceptor lan truyền về orchestrator làm AUTH_EXPIRED và dừng runner."""
+    orchestrator = PlaywrightOrchestrator()
+    orchestrator.health_state = SessionHealthState.HEALTHY
+    orchestrator._running = True
+
+    mock_response = MagicMock()
+    mock_response.url = "https://teams.microsoft.com/api/chats/19:test/messages"
+    mock_response.status = 401
+
+    await orchestrator.teams_interceptor.handle_response(mock_response)
+
+    assert orchestrator.session_state == SessionHealthState.AUTH_EXPIRED
+    assert orchestrator.health_state == SessionHealthState.AUTH_EXPIRED
+    assert orchestrator.outlook_interceptor.session_state == SessionHealthState.AUTH_EXPIRED
+    assert orchestrator._running is False
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_state_propagation_degraded():
+    """Kiểm tra lỗi persist lan truyền về orchestrator chuyển DEGRADED và chuyển AUTH_EXPIRED khi 401."""
+    mock_repo = MagicMock()
+    mock_repo.persist_raw_event = AsyncMock(side_effect=RuntimeError("DB timeout"))
+
+    orchestrator = PlaywrightOrchestrator(raw_event_repo=mock_repo)
+    orchestrator.health_state = SessionHealthState.HEALTHY
+
+    mock_response = MagicMock()
+    mock_response.url = "https://teams.microsoft.com/api/chats/19:test/messages"
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={
+        "messages": [
+            {"id": "msg-deg-1", "body": {"content": "Degraded check"}}
+        ]
+    })
+
+    await orchestrator.teams_interceptor.handle_response(mock_response)
+
+    assert orchestrator.session_state == SessionHealthState.DEGRADED
+    assert orchestrator.teams_interceptor.session_state == SessionHealthState.DEGRADED
+
+    # Tiếp theo nếu nhận 401, chuyển sang AUTH_EXPIRED
+    mock_401 = MagicMock()
+    mock_401.url = "https://teams.microsoft.com/api/chats/19:test/messages"
+    mock_401.status = 401
+    await orchestrator.teams_interceptor.handle_response(mock_401)
+    assert orchestrator.session_state == SessionHealthState.AUTH_EXPIRED
+
+    # Khi đã AUTH_EXPIRED, lỗi persist khác không được ghi đè về DEGRADED
+    await orchestrator.teams_interceptor.handle_response(mock_response)
+    assert orchestrator.session_state == SessionHealthState.AUTH_EXPIRED
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_sweep_aborts_on_auth_expired():
+    """Kiểm tra sweep không loop gửi request khi session ở trạng thái AUTH_EXPIRED."""
+    orchestrator = PlaywrightOrchestrator()
+    orchestrator.health_state = SessionHealthState.AUTH_EXPIRED
+
+    mock_teams_page = MagicMock()
+    mock_teams_page.wait_for_timeout = AsyncMock()
+    mock_teams_page.evaluate = AsyncMock()
+
+    mock_outlook_page = MagicMock()
+    mock_outlook_page.wait_for_timeout = AsyncMock()
+    mock_outlook_page.evaluate = AsyncMock()
+
+    stats = await orchestrator.run_bootstrap_sweep(
+        teams_page=mock_teams_page,
+        outlook_page=mock_outlook_page,
+        max_scrolls=5,
+    )
+
+    assert stats["teams_events_captured"] == 0
+    assert stats["outlook_events_captured"] == 0
+    mock_teams_page.evaluate.assert_not_called()
+    mock_outlook_page.evaluate.assert_not_called()

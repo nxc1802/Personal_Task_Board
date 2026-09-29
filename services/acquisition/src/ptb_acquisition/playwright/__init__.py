@@ -4,6 +4,7 @@ from ptb_acquisition.playwright.session import (
     DEFAULT_STORAGE_PATH,
     SessionHealthState,
     SessionManager,
+    transition_session_state,
     verify_authenticated_session,
 )
 from ptb_acquisition.playwright.teams_interceptor import TeamsNetworkInterceptor
@@ -14,6 +15,7 @@ __all__ = [
     "DEFAULT_STORAGE_PATH",
     "SessionHealthState",
     "SessionManager",
+    "transition_session_state",
     "verify_authenticated_session",
     "TeamsNetworkInterceptor",
     "OutlookNetworkInterceptor",

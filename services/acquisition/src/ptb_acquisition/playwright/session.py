@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from playwright.async_api import BrowserContext
+from ptb_contracts import BugCode, log_bug
 
 logger = logging.getLogger("ptb.acquisition.playwright.session")
 
@@ -30,6 +31,76 @@ class SessionHealthState(str, Enum):
     DEGRADED = "DEGRADED"
     AUTH_EXPIRED = "AUTH_EXPIRED"
     ERROR = "ERROR"
+
+
+VALID_TRANSITIONS = {
+    SessionHealthState.UNCONFIGURED: {
+        SessionHealthState.UNCONFIGURED,
+        SessionHealthState.LOGIN_REQUIRED,
+        SessionHealthState.STARTING,
+        SessionHealthState.ERROR,
+    },
+    SessionHealthState.LOGIN_REQUIRED: {
+        SessionHealthState.LOGIN_REQUIRED,
+        SessionHealthState.STARTING,
+        SessionHealthState.HEALTHY,
+        SessionHealthState.ERROR,
+    },
+    SessionHealthState.STARTING: {
+        SessionHealthState.STARTING,
+        SessionHealthState.HEALTHY,
+        SessionHealthState.DEGRADED,
+        SessionHealthState.AUTH_EXPIRED,
+        SessionHealthState.ERROR,
+    },
+    SessionHealthState.HEALTHY: {
+        SessionHealthState.HEALTHY,
+        SessionHealthState.DEGRADED,
+        SessionHealthState.AUTH_EXPIRED,
+        SessionHealthState.ERROR,
+    },
+    SessionHealthState.DEGRADED: {
+        SessionHealthState.DEGRADED,
+        SessionHealthState.HEALTHY,
+        SessionHealthState.AUTH_EXPIRED,
+        SessionHealthState.ERROR,
+    },
+    SessionHealthState.AUTH_EXPIRED: {
+        SessionHealthState.AUTH_EXPIRED,
+        SessionHealthState.STARTING,
+        SessionHealthState.HEALTHY,
+    },
+    SessionHealthState.ERROR: {
+        SessionHealthState.ERROR,
+        SessionHealthState.STARTING,
+        SessionHealthState.HEALTHY,
+        SessionHealthState.DEGRADED,
+        SessionHealthState.AUTH_EXPIRED,
+    },
+}
+
+
+def transition_session_state(
+    current: SessionHealthState,
+    target: SessionHealthState,
+    allow_reset: bool = False,
+) -> SessionHealthState:
+    """Kiểm tra và thực hiện chuyển đổi trạng thái session theo State Machine:
+
+    STARTING -> HEALTHY -> DEGRADED -> AUTH_EXPIRED.
+    AUTH_EXPIRED là trạng thái chặn: không thể tự động chuyển ngược lại về HEALTHY/DEGRADED
+    trừ khi có sự can thiệp làm mới phiên (allow_reset=True).
+    """
+    if current == target:
+        return current
+    if current == SessionHealthState.AUTH_EXPIRED and not allow_reset:
+        logger.debug(f"State machine: không thể chuyển từ AUTH_EXPIRED sang {target} mà không re-login")
+        return current
+    allowed = VALID_TRANSITIONS.get(current, set())
+    if target in allowed or allow_reset:
+        return target
+    logger.warning(f"State machine: chuyển đổi không hợp lệ từ {current} sang {target}")
+    return target
 
 
 async def verify_authenticated_session(
@@ -62,6 +133,13 @@ async def verify_authenticated_session(
         )
         if any(ind in final_url for ind in login_indicators):
             logger.warning(f"Phiên Microsoft đã hết hạn (Redirected to login: {final_url})")
+            log_bug(
+                BugCode.PTB_L1_001,
+                subsystem="playwright",
+                severity="ERROR",
+                message="Microsoft session authentication expired (HTTP 401/403 or login redirect)",
+                context={"url": final_url, "target_url": target_url},
+            )
             return SessionHealthState.AUTH_EXPIRED
 
         # 2. Kiểm tra mã trạng thái HTTP
@@ -69,6 +147,13 @@ async def verify_authenticated_session(
             status = response.status if hasattr(response, "status") else 200
             if status in (401, 403):
                 logger.warning(f"Phiên Microsoft hết hạn (HTTP {status}) tại {target_url}")
+                log_bug(
+                    BugCode.PTB_L1_001,
+                    subsystem="playwright",
+                    severity="ERROR",
+                    message="Microsoft session authentication expired (HTTP 401/403 or login redirect)",
+                    context={"url": target_url, "status": status},
+                )
                 return SessionHealthState.AUTH_EXPIRED
             if status >= 500:
                 logger.warning(f"Dịch vụ Microsoft gặp sự cố tạm thời (HTTP {status})")
@@ -82,6 +167,14 @@ async def verify_authenticated_session(
     except Exception as e:
         err_msg = str(e).lower()
         if "401" in err_msg or "403" in err_msg or "login.microsoftonline.com" in err_msg:
+            log_bug(
+                BugCode.PTB_L1_001,
+                subsystem="playwright",
+                severity="ERROR",
+                message="Microsoft session authentication expired (HTTP 401/403 or login redirect)",
+                context={"error": str(e), "target_url": target_url},
+                exc=e,
+            )
             return SessionHealthState.AUTH_EXPIRED
         if "timeout" in err_msg or "net::" in err_msg:
             logger.warning(f"Lỗi kết nối khi verify session: {e}")
@@ -159,6 +252,12 @@ class SessionManager:
         state = self.validate_session()
         return state in (SessionHealthState.STARTING, SessionHealthState.HEALTHY)
 
+    def transition_to(self, target: SessionHealthState, allow_reset: bool = False) -> SessionHealthState:
+        """Cập nhật trạng thái session tuân theo State Machine."""
+        new_state = transition_session_state(self.health_state, target, allow_reset=allow_reset)
+        self.health_state = new_state
+        return new_state
+
     async def verify_authenticated_session(
         self,
         context: BrowserContext,
@@ -167,14 +266,14 @@ class SessionManager:
     ) -> SessionHealthState:
         """Thực sự kiểm tra URL hoặc gọi endpoint authenticated của Teams/Outlook để xác nhận session còn sống."""
         state = await verify_authenticated_session(context, target_url=target_url, timeout_ms=timeout_ms)
-        self.health_state = state
+        self.transition_to(state, allow_reset=(state == SessionHealthState.HEALTHY))
         return state
 
     async def save_session(self, context: BrowserContext) -> None:
         """Lưu toàn bộ cookies và local storage từ browser context."""
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         await context.storage_state(path=str(self.storage_path))
-        self.health_state = SessionHealthState.HEALTHY
+        self.transition_to(SessionHealthState.HEALTHY, allow_reset=True)
         logger.info(f"Đã lưu session state vào: {self.storage_path}")
 
     @staticmethod

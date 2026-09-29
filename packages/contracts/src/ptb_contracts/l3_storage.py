@@ -52,11 +52,23 @@ class UnifiedTaskRecord(BaseModel):
 class EvidenceNodeRecord(BaseModel):
     id: str = Field(description="UUID v4 của Evidence")
     snippet: str
-    confidence: float = 1.0
+    confidence_score: float = Field(default=1.0, description="Điểm tin cậy")
+    confidence: Optional[float] = None
     source_type: str
     external_url: Optional[str] = None
     timestamp: datetime
-    raw_event_id: str
+    source_event_id: Optional[str] = None
+    raw_event_id: Optional[str] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.source_event_id and not self.raw_event_id:
+            object.__setattr__(self, "raw_event_id", self.source_event_id)
+        elif self.raw_event_id and not self.source_event_id:
+            object.__setattr__(self, "source_event_id", self.raw_event_id)
+        if self.confidence is not None and "confidence_score" not in self.model_fields_set:
+            object.__setattr__(self, "confidence_score", self.confidence)
+        elif self.confidence_score is not None and self.confidence is None:
+            object.__setattr__(self, "confidence", self.confidence_score)
 
 
 class CommitmentNodeRecord(BaseModel):
@@ -120,3 +132,18 @@ class GraphNeighborhoodQuery(BaseModel):
     center_label: str
     depth: int = Field(default=1, le=3)
     relationship_types: Optional[List[str]] = None
+
+
+# Canonical Ontology Aliases
+Person = CanonicalPersonRecord
+UnifiedTask = UnifiedTaskRecord
+SourceIdentity = SourceIdentityRecord
+EvidenceNode = EvidenceNodeRecord
+CommitmentNode = CommitmentNodeRecord
+Project = ProjectRecord
+Customer = CustomerRecord
+Tenant = TenantRecord
+Decision = DecisionNodeRecord
+Lesson = LessonNodeRecord
+Incident = IncidentNodeRecord
+Document = DocumentNodeRecord

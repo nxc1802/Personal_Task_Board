@@ -1,0 +1,140 @@
+# ==============================================================================
+# PERSONAL TASK BOARD (PTB) - SOURCES CONFIGURATION
+# ==============================================================================
+# Cấu hình các nguồn dữ liệu thu thập (Layer 1 Acquisition)
+# Hỗ trợ: Microsoft Teams, Microsoft Outlook, Jira, Shortcut, Coding Agents, Git.
+
+tenant_id: "local-user"
+
+sources:
+  # ----------------------------------------------------------------------------
+  # 1. Microsoft Teams (Playwright Web Network Interceptor)
+  # ----------------------------------------------------------------------------
+  ms_teams:
+    enabled: true
+    source_type: "ms_teams_web"
+    url: "https://teams.microsoft.com"
+    headless: true
+    storage_state_path: "${PTB_STORAGE_STATE:-data/playwright/storage_state.json}"
+    poll_interval_seconds: 60
+    filters:
+      chat_types:
+        - "chat"
+        - "channel"
+      exclude_system_messages: true
+
+  # ----------------------------------------------------------------------------
+  # 2. Microsoft Outlook (Playwright Web Network Interceptor)
+  # ----------------------------------------------------------------------------
+  ms_outlook:
+    enabled: true
+    source_type: "ms_outlook_web"
+    url: "https://outlook.office.com"
+    headless: true
+    storage_state_path: "${PTB_STORAGE_STATE:-data/playwright/storage_state.json}"
+    poll_interval_seconds: 120
+    filters:
+      folders:
+        - "Inbox"
+      ignore_promotions: true
+
+  # ----------------------------------------------------------------------------
+  # 3. Jira Cloud / Server (REST API v2/v3)
+  # ----------------------------------------------------------------------------
+  jira:
+    enabled: false
+    source_type: "jira"
+    base_url: "${JIRA_BASE_URL:-https://your-domain.atlassian.net}"
+    email: "${JIRA_EMAIL:-user@example.com}"
+    api_token: "${JIRA_API_TOKEN:-}"
+    default_jql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
+    project_keys:
+      - "PROJ"
+      - "DEV"
+    poll_interval_seconds: 60
+
+  # ----------------------------------------------------------------------------
+  # 4. Shortcut (formerly Clubhouse - REST API v3)
+  # ----------------------------------------------------------------------------
+  shortcut:
+    enabled: false
+    source_type: "shortcut"
+    base_url: "${SHORTCUT_BASE_URL:-https://api.app.shortcut.com/api/v3}"
+    api_token: "${SHORTCUT_API_TOKEN:-}"
+    project_ids: []
+    default_query: "!is:archived is:story owner:currentUser"
+    poll_interval_seconds: 60
+
+  # ----------------------------------------------------------------------------
+  # 5. Local Coding Agents (Session Log Watchers)
+  # ----------------------------------------------------------------------------
+  coding_agents:
+    enabled: true
+    source_type: "coding_agent"
+    poll_interval_seconds: 30
+    agents:
+      cursor:
+        enabled: true
+        paths:
+          - "%APPDATA%/Cursor/User/workspaceStorage"
+          - "~/Library/Application Support/Cursor/User/workspaceStorage"
+          - "~/.config/Cursor/User/workspaceStorage"
+
+      claude_code:
+        enabled: true
+        paths:
+          - "~/.claude/projects"
+          - "~/.claude/transcripts"
+
+      antigravity:
+        enabled: true
+        paths:
+          - "~/.gemini/antigravity"
+          - "~/.gemini/antigravity-ide"
+
+      codex:
+        enabled: true
+        paths:
+          - "~/.codex"
+          - "~/.codex/sessions"
+
+      windsurf:
+        enabled: true
+        paths:
+          - "~/Library/Application Support/Windsurf/User/workspaceStorage"
+          - "%APPDATA%/Windsurf/User/workspaceStorage"
+
+      copilot:
+        enabled: true
+        paths:
+          - "~/Library/Application Support/Code/User/workspaceStorage"
+          - "%APPDATA%/Code/User/workspaceStorage"
+
+      continue:
+        enabled: true
+        paths:
+          - "~/.continue/sessions"
+
+      aider:
+        enabled: true
+        paths:
+          - "./.aider.chat.history.md"
+
+      cline:
+        enabled: true
+        paths:
+          - "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev"
+
+  # ----------------------------------------------------------------------------
+  # 6. Local Git Repositories (Commit & Branch Watcher)
+  # ----------------------------------------------------------------------------
+  git:
+    enabled: true
+    source_type: "git"
+    poll_interval_seconds: 60
+    repo_paths:
+      - "."
+    scan_branches:
+      - "main"
+      - "master"
+      - "develop"

@@ -79,14 +79,6 @@ class FakeRawEventRepo:
         processed_at: Optional[datetime] = None,
         processor_version: Optional[str] = None,
     ) -> None:
-        self.status_calls.append({
-            "event_id": event_id,
-            "status": status,
-            "error": error,
-            "next_retry_at": next_retry_at,
-            "processed_at": processed_at,
-            "processor_version": processor_version,
-        })
         if event_id in self.events:
             ev = self.events[event_id]
             ev.processing_status = status
@@ -94,9 +86,25 @@ class FakeRawEventRepo:
             ev.next_retry_at = next_retry_at
             if processed_at:
                 ev.processed_at = processed_at
-            if status in (ProcessingStatus.RETRY, ProcessingStatus.FAILED):
-                ev.retry_count = (ev.retry_count or 0) + 1
-                ev.processing_attempt_count = (ev.processing_attempt_count or 0) + 1
+            if status in (
+                ProcessingStatus.PROCESSING,
+                ProcessingStatus.processing,
+                "processing",
+                "PROCESSING",
+            ):
+                count = (ev.processing_attempt_count or ev.retry_count or 0) + 1
+                ev.processing_attempt_count = count
+                ev.retry_count = count
+
+        self.status_calls.append({
+            "event_id": event_id,
+            "status": status,
+            "error": error,
+            "next_retry_at": next_retry_at,
+            "processed_at": processed_at,
+            "processor_version": processor_version,
+            "attempt_count": self.events[event_id].processing_attempt_count if event_id in self.events else None,
+        })
 
     async def record_processing_attempt(self, attempt: ProcessingAttemptRecord) -> None:
         self.attempt_records.append(attempt)
@@ -379,6 +387,7 @@ async def test_worker_deterministic_retry_count_3_marks_failed():
         assert status_1 == ProcessingStatus.RETRY
         assert raw_repo.events["raw-retry-exhausted"].processing_status == ProcessingStatus.RETRY
         assert raw_repo.events["raw-retry-exhausted"].retry_count == 1
+        assert raw_repo.events["raw-retry-exhausted"].processing_attempt_count == 1
         assert raw_repo.attempt_records[-1].attempt_number == 1
         assert raw_repo.attempt_records[-1].status == ProcessingStatus.RETRY
         assert raw_repo.events["raw-retry-exhausted"].next_retry_at is not None
@@ -388,6 +397,7 @@ async def test_worker_deterministic_retry_count_3_marks_failed():
         assert status_2 == ProcessingStatus.RETRY
         assert raw_repo.events["raw-retry-exhausted"].processing_status == ProcessingStatus.RETRY
         assert raw_repo.events["raw-retry-exhausted"].retry_count == 2
+        assert raw_repo.events["raw-retry-exhausted"].processing_attempt_count == 2
         assert raw_repo.attempt_records[-1].attempt_number == 2
         assert raw_repo.attempt_records[-1].status == ProcessingStatus.RETRY
 
@@ -396,6 +406,7 @@ async def test_worker_deterministic_retry_count_3_marks_failed():
         assert status_3 == ProcessingStatus.FAILED
         assert raw_repo.events["raw-retry-exhausted"].processing_status == ProcessingStatus.FAILED
         assert raw_repo.events["raw-retry-exhausted"].retry_count == 3
+        assert raw_repo.events["raw-retry-exhausted"].processing_attempt_count == 3
         assert raw_repo.attempt_records[-1].attempt_number == 3
         assert raw_repo.attempt_records[-1].status == ProcessingStatus.FAILED
         # Khi FAILED, next_retry_at phải bị xóa
@@ -601,4 +612,150 @@ async def test_worker_run_loop_and_stop():
     assert worker._running is True
     worker.stop()
     assert worker._running is False
+
+
+# ==============================================================================
+# 12. TEST RAW EVENT RETRY LIFECYCLE: NO DOUBLE INCREMENT
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_raw_event_retry_lifecycle_no_double_increment():
+    """Vòng đời retry: PENDING -> PROCESSING (attempt=1) -> RETRY (attempt=1)
+    -> PROCESSING (attempt=2) -> FAILED (attempt=2).
+
+    Xác nhận không có trường hợp attempt count bị tăng 2 lần cho cùng 1 lượt attempt.
+    """
+    raw_ev = create_sample_raw_event(
+        event_id="raw-retry-lifecycle-01",
+        content="<p>Em sẽ fix issue OPS-99 ngay lập tức.</p>",
+        retry_count=0,
+    )
+    raw_repo = FakeRawEventRepo([raw_ev])
+
+    failing_extractor = LLMStructuredExtractor(
+        api_key="sk-key",
+        mock_mode=False,
+        allow_heuristic_fallback=False,
+    )
+
+    with patch.object(failing_extractor, "_call_openai_completion", side_effect=Exception("Simulated transient error")):
+        pipeline = ProcessingPipeline(llm_extractor=failing_extractor)
+        # Giả sử max_retries = 2 để test chu kỳ 2 attempts: attempt 1 -> RETRY, attempt 2 -> FAILED
+        worker = ProcessingWorker(
+            raw_event_repo=raw_repo,
+            pipeline=pipeline,
+            max_retries=2,
+            base_backoff_seconds=5.0,
+        )
+
+        # -------------------------------------------------------------
+        # VÒNG 1: PENDING -> PROCESSING (attempt=1) -> RETRY (attempt=1)
+        # -------------------------------------------------------------
+        ev = raw_repo.events["raw-retry-lifecycle-01"]
+        assert ev.processing_attempt_count == 0
+        assert ev.retry_count == 0
+        assert ev.processing_status == ProcessingStatus.PENDING
+
+        status_1 = await worker.process_event(ev)
+        assert status_1 == ProcessingStatus.RETRY
+        assert ev.processing_status == ProcessingStatus.RETRY
+        # Attempt count phải là 1 (tăng 1 lần khi sang PROCESSING, KHÔNG tăng lần 2 khi sang RETRY)
+        assert ev.processing_attempt_count == 1
+        assert ev.retry_count == 1
+        assert ev.next_retry_at is not None
+
+        # Kiểm tra lịch sử gọi mark_event_status của lượt 1
+        calls_for_ev = [c for c in raw_repo.status_calls if c["event_id"] == "raw-retry-lifecycle-01"]
+        assert len(calls_for_ev) == 2
+        # Call 1: PROCESSING -> attempt_count = 1
+        assert calls_for_ev[0]["status"] == ProcessingStatus.PROCESSING
+        assert calls_for_ev[0]["attempt_count"] == 1
+        # Call 2: RETRY -> attempt_count VẪN là 1 (không tăng lần thứ hai!)
+        assert calls_for_ev[1]["status"] == ProcessingStatus.RETRY
+        assert calls_for_ev[1]["attempt_count"] == 1
+
+        # -------------------------------------------------------------
+        # VÒNG 2: RETRY -> PROCESSING (attempt=2) -> FAILED (attempt=2)
+        # -------------------------------------------------------------
+        status_2 = await worker.process_event(ev)
+        assert status_2 == ProcessingStatus.FAILED
+        assert ev.processing_status == ProcessingStatus.FAILED
+        # Attempt count phải là 2 (tăng khi sang PROCESSING lượt 2, KHÔNG tăng khi sang FAILED)
+        assert ev.processing_attempt_count == 2
+        assert ev.retry_count == 2
+        assert ev.next_retry_at is None
+
+        # Kiểm tra lịch sử gọi mark_event_status của cả 2 lượt
+        calls_for_ev = [c for c in raw_repo.status_calls if c["event_id"] == "raw-retry-lifecycle-01"]
+        assert len(calls_for_ev) == 4
+        # Call 3: PROCESSING -> attempt_count = 2
+        assert calls_for_ev[2]["status"] == ProcessingStatus.PROCESSING
+        assert calls_for_ev[2]["attempt_count"] == 2
+        # Call 4: FAILED -> attempt_count VẪN là 2 (không tăng thêm!)
+        assert calls_for_ev[3]["status"] == ProcessingStatus.FAILED
+        assert calls_for_ev[3]["attempt_count"] == 2
+
+
+# ==============================================================================
+# 13. TEST BATCH RETRY LIFECYCLE: 3 ATTEMPTS TO FAILED
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_worker_process_batch_retry_lifecycle_3_attempts():
+    """Test process_batch qua nhiều iterations:
+    PENDING -> PROCESSING (attempt=1) -> RETRY (attempt=1)
+    -> PROCESSING (attempt=2) -> RETRY (attempt=2)
+    -> PROCESSING (attempt=3) -> FAILED (attempt=3).
+    """
+    raw_ev = create_sample_raw_event(
+        event_id="raw-batch-lifecycle",
+        content="<p>Em sẽ xử lý gấp lỗi OPS-100 ngay hôm nay.</p>",
+        retry_count=0,
+    )
+    raw_repo = FakeRawEventRepo([raw_ev])
+
+    failing_extractor = LLMStructuredExtractor(
+        api_key="sk-key",
+        mock_mode=False,
+        allow_heuristic_fallback=False,
+    )
+
+    with patch.object(failing_extractor, "_call_openai_completion", side_effect=Exception("Persistent error")):
+        pipeline = ProcessingPipeline(llm_extractor=failing_extractor)
+        worker = ProcessingWorker(
+            raw_event_repo=raw_repo,
+            pipeline=pipeline,
+            max_retries=3,
+            base_backoff_seconds=0.01,
+        )
+
+        # Batch 1: PENDING -> RETRY (attempt 1)
+        statuses_1 = await worker.process_batch()
+        assert statuses_1 == [ProcessingStatus.RETRY]
+        ev = raw_repo.events["raw-batch-lifecycle"]
+        assert ev.processing_status == ProcessingStatus.RETRY
+        assert ev.processing_attempt_count == 1
+        assert ev.retry_count == 1
+
+        # Reset next_retry_at để batch 2 có thể poll
+        ev.next_retry_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+        # Batch 2: RETRY -> RETRY (attempt 2)
+        statuses_2 = await worker.process_batch()
+        assert statuses_2 == [ProcessingStatus.RETRY]
+        assert ev.processing_status == ProcessingStatus.RETRY
+        assert ev.processing_attempt_count == 2
+        assert ev.retry_count == 2
+
+        # Reset next_retry_at để batch 3 có thể poll
+        ev.next_retry_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+        # Batch 3: RETRY -> FAILED (attempt 3)
+        statuses_3 = await worker.process_batch()
+        assert statuses_3 == [ProcessingStatus.FAILED]
+        assert ev.processing_status == ProcessingStatus.FAILED
+        assert ev.processing_attempt_count == 3
+        assert ev.retry_count == 3
+        assert ev.next_retry_at is None
+
 

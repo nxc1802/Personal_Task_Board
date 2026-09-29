@@ -26,26 +26,46 @@ class AiderWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        paths = []
-        home = os.path.expanduser("~")
-        aider_home = os.path.join(home, ".aider")
-        if os.path.isdir(aider_home):
-            paths.append(aider_home)
-        # Quét thư mục hiện tại
-        paths.append(os.getcwd())
-        return paths
+        """Xác định đường dẫn lưu trữ Aider CLI đa nền tảng qua platformdirs."""
+        paths = self.resolve_home_paths(
+            dot_name=".aider",
+            sub_path="",
+            app_names=["aider", "Aider"],
+        )
+
+        # Quét thư mục làm việc hiện tại CHỈ KHI có file hoặc thư mục của aider
+        cwd = os.getcwd()
+        cwd_history = os.path.join(cwd, ".aider.chat.history.md")
+        cwd_dir = os.path.join(cwd, ".aider")
+        if os.path.isfile(cwd_history) or os.path.isdir(cwd_dir):
+            if cwd not in paths:
+                paths.append(cwd)
+
+        existing = [p for p in paths if os.path.exists(p)]
+        return existing if existing else paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
+        """Quét và trích xuất hội thoại từ file history của Aider."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
-        for p in self.base_paths:
-            if os.path.isfile(p) and p.endswith(".aider.chat.history.md"):
-                all_records.extend(self.extract_from_file(p))
-            elif os.path.isdir(p):
-                for root, _, files in os.walk(p):
-                    for f in files:
-                        if f == ".aider.chat.history.md":
-                            fp = os.path.join(root, f)
-                            all_records.extend(self.extract_from_file(fp))
+        try:
+            for p in self.base_paths:
+                if os.path.isfile(p) and p.endswith(".aider.chat.history.md"):
+                    all_records.extend(self.extract_from_file(p))
+                elif os.path.isdir(p):
+                    try:
+                        for root, _, files in os.walk(p):
+                            for f in files:
+                                if f == ".aider.chat.history.md":
+                                    fp = os.path.join(root, f)
+                                    all_records.extend(self.extract_from_file(fp))
+                    except Exception as walk_err:
+                        logger.debug(f"Error walking dir {p}: {walk_err}")
+                        continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Aider sessions: {e}")
+            return []
         return all_records
 
     def extract_from_file(self, file_path: str) -> List[RawAgentSessionRecord]:

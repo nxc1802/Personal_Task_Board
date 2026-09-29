@@ -28,35 +28,34 @@ class CopilotWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        paths = []
-        home = os.path.expanduser("~")
-        if sys.platform == "darwin":
-            p = os.path.join(home, "Library/Application Support/Code/User/workspaceStorage")
-            if os.path.isdir(p):
-                paths.append(p)
-        elif sys.platform == "win32":
-            appdata = os.getenv("APPDATA")
-            if appdata:
-                p = os.path.join(appdata, "Code", "User", "workspaceStorage")
-                if os.path.isdir(p):
-                    paths.append(p)
-        else:
-            p = os.path.join(home, ".config/Code/User/workspaceStorage")
-            if os.path.isdir(p):
-                paths.append(p)
-        return paths
+        """Xác định đường dẫn workspaceStorage của VS Code Copilot đa nền tảng qua platformdirs."""
+        return self.resolve_platform_paths(
+            app_names=["Code", "Code - Insiders", "code"],
+            sub_path=os.path.join("User", "workspaceStorage"),
+        )
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
+        """Quét tất cả các thư mục workspace của VS Code Copilot và trích xuất sessions."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
-        for storage_dir in self.base_paths:
-            if not os.path.isdir(storage_dir):
-                continue
-            for item in os.listdir(storage_dir):
-                ws_dir = os.path.join(storage_dir, item)
-                db_path = os.path.join(ws_dir, "state.vscdb")
-                if os.path.isfile(db_path):
-                    records = self.extract_from_db(db_path, workspace_id=item)
-                    all_records.extend(records)
+        try:
+            for storage_dir in self.base_paths:
+                if not os.path.isdir(storage_dir):
+                    continue
+                try:
+                    for item in os.listdir(storage_dir):
+                        ws_dir = os.path.join(storage_dir, item)
+                        db_path = os.path.join(ws_dir, "state.vscdb")
+                        if os.path.isfile(db_path):
+                            records = self.extract_from_db(db_path, workspace_id=item)
+                            all_records.extend(records)
+                except Exception as dir_err:
+                    logger.debug(f"Error accessing storage dir {storage_dir}: {dir_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Copilot sessions: {e}")
+            return []
         return all_records
 
     def extract_from_db(self, db_path: str, workspace_id: str = "unknown") -> List[RawAgentSessionRecord]:

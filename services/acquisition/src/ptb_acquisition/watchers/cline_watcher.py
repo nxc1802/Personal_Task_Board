@@ -27,41 +27,54 @@ class ClineWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        paths = []
-        home = os.path.expanduser("~")
-        if sys.platform == "darwin":
-            base = os.path.join(home, "Library/Application Support/Code/User/globalStorage")
-        elif sys.platform == "win32":
-            base = os.path.join(os.getenv("APPDATA", ""), "Code/User/globalStorage")
-        else:
-            base = os.path.join(home, ".config/Code/User/globalStorage")
+        """Xác định đường dẫn tasks của Cline / Roo Code đa nền tảng qua platformdirs."""
+        paths: List[str] = []
+        global_storage_bases = self.resolve_platform_paths(
+            app_names=["Code", "Code - Insiders", "Cursor", "Windsurf", "code"],
+            sub_path=os.path.join("User", "globalStorage"),
+        )
 
-        for ext_name in ("saoudrizwan.claude-dev", "rooveterinaryinc.roo-cline"):
-            p = os.path.join(base, ext_name, "tasks")
-            if os.path.isdir(p):
-                paths.append(p)
-        return paths
+        for base in global_storage_bases:
+            for ext_name in ("saoudrizwan.claude-dev", "rooveterinaryinc.roo-cline"):
+                p = os.path.join(base, ext_name, "tasks")
+                if p not in paths:
+                    paths.append(p)
+
+        unique_paths = list(dict.fromkeys(os.path.normpath(p) for p in paths if p))
+        existing = [p for p in unique_paths if os.path.isdir(p)]
+        return existing if existing else unique_paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
+        """Quét và trích xuất các task session của Cline và Roo Code."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
-        for tasks_dir in self.base_paths:
-            if not os.path.isdir(tasks_dir):
-                continue
-            is_roo = "roo-cline" in tasks_dir
-            agent_type = AgentType.ROO_CODE if is_roo else AgentType.CLINE
-
-            for task_id in os.listdir(tasks_dir):
-                task_dir = os.path.join(tasks_dir, task_id)
-                if not os.path.isdir(task_dir):
+        try:
+            for tasks_dir in self.base_paths:
+                if not os.path.isdir(tasks_dir):
                     continue
+                is_roo = "roo-cline" in tasks_dir
+                agent_type = AgentType.ROO_CODE if is_roo else AgentType.CLINE
 
-                # Tìm ui_messages.json hoặc api_conversation_history.json
-                hist_file = os.path.join(task_dir, "api_conversation_history.json")
-                if not os.path.isfile(hist_file):
-                    hist_file = os.path.join(task_dir, "ui_messages.json")
-                if os.path.isfile(hist_file):
-                    records = self.extract_from_file(hist_file, task_id, agent_type)
-                    all_records.extend(records)
+                try:
+                    for task_id in os.listdir(tasks_dir):
+                        task_dir = os.path.join(tasks_dir, task_id)
+                        if not os.path.isdir(task_dir):
+                            continue
+
+                        # Tìm ui_messages.json hoặc api_conversation_history.json
+                        hist_file = os.path.join(task_dir, "api_conversation_history.json")
+                        if not os.path.isfile(hist_file):
+                            hist_file = os.path.join(task_dir, "ui_messages.json")
+                        if os.path.isfile(hist_file):
+                            records = self.extract_from_file(hist_file, task_id, agent_type)
+                            all_records.extend(records)
+                except Exception as dir_err:
+                    logger.debug(f"Error accessing tasks dir {tasks_dir}: {dir_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Cline/Roo sessions: {e}")
+            return []
         return all_records
 
     def extract_from_file(self, file_path: str, task_id: str, agent_type: AgentType) -> List[RawAgentSessionRecord]:

@@ -54,10 +54,17 @@ class TaskDomainRepository:
             ev_id = ev.id or str(uuid4())
             ev_type = ev.evidence_type.value if hasattr(ev.evidence_type, "value") else str(ev.evidence_type)
             ev_ts = ev.timestamp.isoformat() if hasattr(ev.timestamp, "isoformat") else str(ev.timestamp)
+            source_event_id = getattr(ev, "source_event_id", None) or getattr(ev, "raw_event_id", None)
+            confidence_score = (
+                getattr(ev, "confidence_score", None)
+                if getattr(ev, "confidence_score", None) is not None
+                else getattr(ev, "confidence", 1.0)
+            )
             evidences_data.append({
                 "id": ev_id,
                 "task_id": task_id,
-                "raw_event_id": ev.raw_event_id,
+                "raw_event_id": source_event_id,
+                "source_event_id": source_event_id,
                 "evidence_type": ev_type,
                 "source_type": ev.source_type,
                 "external_url": ev.external_url,
@@ -65,7 +72,8 @@ class TaskDomainRepository:
                 "author_canonical_name": ev.author_canonical_name,
                 "timestamp": ev_ts,
                 "snippet": ev.snippet,
-                "confidence": ev.confidence,
+                "confidence": confidence_score,
+                "confidence_score": confidence_score,
                 "extraction_version": ev.extraction_version,
             })
 
@@ -190,10 +198,12 @@ class TaskDomainRepository:
             SET e.task_id = $task_id,
                 e.snippet = ev.snippet,
                 e.confidence = ev.confidence,
+                e.confidence_score = ev.confidence_score,
                 e.source_type = ev.source_type,
                 e.external_url = ev.external_url,
                 e.timestamp = ev.timestamp,
                 e.raw_event_id = ev.raw_event_id,
+                e.source_event_id = ev.source_event_id,
                 e.author_canonical_id = ev.author_canonical_id,
                 e.author_canonical_name = ev.author_canonical_name,
                 e.evidence_type = ev.evidence_type,
@@ -202,8 +212,8 @@ class TaskDomainRepository:
             WITH e, ev
             CALL {
                 WITH e, ev
-                WITH e, ev WHERE ev.raw_event_id IS NOT NULL
-                MATCH (re:RawEvent {id: ev.raw_event_id})
+                WITH e, ev WHERE ev.source_event_id IS NOT NULL OR ev.raw_event_id IS NOT NULL
+                MATCH (re:RawEvent {id: coalesce(ev.source_event_id, ev.raw_event_id)})
                 MERGE (e)-[:DERIVED_FROM]->(re)
                 RETURN count(re) AS _re_cnt
             }
@@ -559,10 +569,15 @@ class TaskDomainRepository:
         audit_id = audit.id or str(uuid4())
         old_status = audit.old_status.value if hasattr(audit.old_status, "value") else str(audit.old_status)
         new_status = audit.new_status.value if hasattr(audit.new_status, "value") else str(audit.new_status)
-        changed_at = (
-            audit.changed_at.isoformat()
-            if hasattr(audit.changed_at, "isoformat")
-            else str(audit.changed_at)
+        timestamp_dt = (
+            getattr(audit, "timestamp", None)
+            or getattr(audit, "changed_at", None)
+            or datetime.now(timezone.utc)
+        )
+        timestamp_val = (
+            timestamp_dt.isoformat()
+            if hasattr(timestamp_dt, "isoformat")
+            else str(timestamp_dt)
         )
 
         cypher = """
@@ -575,6 +590,7 @@ class TaskDomainRepository:
             reason: $reason,
             source_evidence_ids: $source_evidence_ids,
             confidence: $confidence,
+            timestamp: $timestamp,
             changed_at: $changed_at,
             change_actor: $change_actor
         })
@@ -589,7 +605,8 @@ class TaskDomainRepository:
             "reason": audit.reason,
             "source_evidence_ids": audit.source_evidence_ids,
             "confidence": audit.confidence,
-            "changed_at": changed_at,
+            "timestamp": timestamp_val,
+            "changed_at": timestamp_val,
             "change_actor": audit.change_actor,
         }
         async with driver.session(database=self.neo4j_client.database) as session:
@@ -603,10 +620,15 @@ class TaskDomainRepository:
         """Ghi lại quan hệ MergeAudit liên kết với (:UnifiedTask)."""
         driver = self._get_driver()
         audit_id = audit.id or str(uuid4())
-        created_at_val = (
-            audit.created_at.isoformat()
-            if hasattr(audit.created_at, "isoformat")
-            else str(audit.created_at)
+        merged_at_dt = (
+            getattr(audit, "merged_at", None)
+            or getattr(audit, "created_at", None)
+            or datetime.now(timezone.utc)
+        )
+        merged_at_val = (
+            merged_at_dt.isoformat()
+            if hasattr(merged_at_dt, "isoformat")
+            else str(merged_at_dt)
         )
         cypher = """
         MATCH (t:UnifiedTask {id: $winning_task_id})
@@ -619,6 +641,7 @@ class TaskDomainRepository:
             semantic_score: $semantic_score,
             merge_reason: $merge_reason,
             processor_version: $processor_version,
+            merged_at: $merged_at,
             created_at: $created_at
         })
         CREATE (t)-[:MERGE_AUDIT]->(a)
@@ -633,7 +656,8 @@ class TaskDomainRepository:
             "semantic_score": audit.semantic_score,
             "merge_reason": audit.merge_reason,
             "processor_version": audit.processor_version,
-            "created_at": created_at_val,
+            "merged_at": merged_at_val,
+            "created_at": merged_at_val,
         }
         async with driver.session(database=self.neo4j_client.database) as session:
             result = await session.run(cypher, params)

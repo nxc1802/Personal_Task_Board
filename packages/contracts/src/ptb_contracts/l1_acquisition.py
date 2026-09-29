@@ -16,6 +16,18 @@ class SourceType(str, Enum):
     GIT = "git"
 
 
+class SourceSyncState(str, Enum):
+    DISABLED = "DISABLED"
+    UNCONFIGURED = "UNCONFIGURED"
+    NEVER_SYNCED = "NEVER_SYNCED"
+    STARTING = "STARTING"
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    AUTH_REQUIRED = "AUTH_REQUIRED"
+    ERROR = "ERROR"
+    NOT_INSTALLED = "NOT_INSTALLED"
+
+
 class AgentType(str, Enum):
     CURSOR = "cursor"
     CLAUDE_CODE = "claude_code"
@@ -99,14 +111,23 @@ class RawEventRecord(BaseModel):
 
 
 class IngestionCheckpointRecord(BaseModel):
-    id: str = Field(description="UUID hoặc key của checkpoint")
-    source_type: SourceType
+    id: Optional[str] = Field(default=None, description="UUID hoặc deterministic key của checkpoint")
+    tenant_id: str = Field(default="default", description="Định danh tenant")
+    source_type: SourceType = Field(description="Loại nguồn dữ liệu")
     stream_id: str = Field(description="Định danh stream/channel/repo/session")
-    tenant_id: str = Field(default="default")
     last_external_id: Optional[str] = None
     last_event_timestamp: Optional[datetime] = None
     cursor_token: Optional[str] = None
     updated_at: Optional[datetime] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.id:
+            st_val = self.source_type.value if hasattr(self.source_type, "value") else str(self.source_type)
+            object.__setattr__(self, "id", f"{self.tenant_id}:{st_val}:{self.stream_id}")
+
+
+# Canonical Ontology Aliases
+IngestionCheckpoint = IngestionCheckpointRecord
 
 
 class ProcessingAttemptRecord(BaseModel):

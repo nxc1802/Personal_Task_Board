@@ -28,29 +28,23 @@ class ClaudeCodeWatcher(BaseAgentWatcher):
 
     def get_default_paths(self) -> List[str]:
         """Xác định đường dẫn lưu trữ Claude Code theo hệ điều hành sử dụng platformdirs."""
-        paths = []
-        try:
-            import platformdirs
-            cfg_proj = os.path.join(platformdirs.user_config_dir("claude", appauthor=False), "projects")
-            data_proj = os.path.join(platformdirs.user_data_dir("claude", appauthor=False), "projects")
-            for p in (cfg_proj, data_proj):
-                if p not in paths:
-                    paths.append(p)
-        except Exception as e:
-            logger.debug(f"platformdirs resolution error for Claude: {e}")
-
+        paths = self.resolve_home_paths(
+            dot_name=".claude",
+            sub_path="projects",
+            app_names=["claude", "Claude"],
+        )
         home = os.path.expanduser("~")
-        std_claude_proj = os.path.join(home, ".claude", "projects")
         std_claude_base = os.path.join(home, ".claude")
-        for p in (std_claude_proj, std_claude_base):
-            if p not in paths:
-                paths.append(p)
+        if std_claude_base not in paths:
+            paths.append(std_claude_base)
 
         existing = [p for p in paths if os.path.isdir(p)]
         return existing if existing else paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét tất cả các file transcript trong thư mục projects của Claude Code."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
         try:
             for base_dir in self.base_paths:
@@ -68,6 +62,7 @@ class ClaudeCodeWatcher(BaseAgentWatcher):
                     continue
         except Exception as e:
             logger.warning(f"Lỗi khi quét Claude Code sessions: {e}")
+            return []
         return all_records
 
     def extract_from_transcript_file(self, file_path: str) -> List[RawAgentSessionRecord]:

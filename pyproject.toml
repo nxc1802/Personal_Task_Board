@@ -19,6 +19,13 @@ members = [
 pythonpath = ["."]
 testpaths = ["packages", "services", "integrations", "tests"]
 asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests for isolated domain logic and components without live external services",
+    "contract: Contract, schema, and anti-fallback static/runtime validation tests",
+    "fixture_e2e: End-to-end vertical slice tests using sanitized fixtures and test doubles",
+    "runtime_smoke: Process supervisor and server runtime smoke tests with injected test repositories",
+    "external_integration: Integration tests requiring live external Docker/Neo4j/OpenWebUI infrastructure",
+]
 
 [dependency-groups]
 dev = [

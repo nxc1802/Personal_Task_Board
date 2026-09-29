@@ -49,8 +49,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-packages
 
-      - name: Run test suite
-        run: uv run pytest
+      - name: Run Anti-Fallback & Contract Tests
+        run: uv run pytest -m "contract" -v
 
-      - name: Check CLI syntax
+      - name: Run Unit Tests
+        run: uv run pytest -m "unit" -q
+
+      - name: Run Fixture E2E Tests
+        run: uv run pytest -m "fixture_e2e" -v
+
+      - name: Run Runtime Smoke Tests
+        run: uv run pytest -m "runtime_smoke" -v
+
+      - name: Run Full Non-Docker Suite
+        run: uv run pytest -m "not external_integration" -q
+
+      - name: Verify CLI Help & Doctor Syntax
         run: uv run python scripts/ptb_cli.py --help

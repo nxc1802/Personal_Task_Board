@@ -24,6 +24,11 @@ from ptb_contracts.l1_acquisition import (
 from ptb_database.repositories.raw_event_repo import RawEventRepository
 from ptb_processing.pipeline import PipelineResult, ProcessingPipeline
 
+try:
+    from ptb_intelligence.lifecycle import TaskIntelligenceLifecycle
+except ImportError:
+    TaskIntelligenceLifecycle = Any  # type: ignore
+
 logger = logging.getLogger("ptb.processing.worker")
 
 
@@ -38,6 +43,7 @@ class ProcessingWorker:
         base_backoff_seconds: float = 30.0,
         max_backoff_seconds: float = 3600.0,
         processor_version: str = "v1.0",
+        intelligence_lifecycle: Optional[TaskIntelligenceLifecycle] = None,
     ) -> None:
         self.raw_event_repo = raw_event_repo
         self.pipeline = pipeline
@@ -45,6 +51,13 @@ class ProcessingWorker:
         self.base_backoff_seconds = base_backoff_seconds
         self.max_backoff_seconds = max_backoff_seconds
         self.processor_version = processor_version
+        self.intelligence_lifecycle = (
+            intelligence_lifecycle
+            or getattr(pipeline, "intelligence_lifecycle", None)
+        )
+        if self.intelligence_lifecycle and hasattr(self.pipeline, "intelligence_lifecycle"):
+            if not self.pipeline.intelligence_lifecycle:
+                self.pipeline.intelligence_lifecycle = self.intelligence_lifecycle
         self._running = False
 
     async def process_event(self, raw_event: RawEventRecord) -> ProcessingStatus:
@@ -63,6 +76,9 @@ class ProcessingWorker:
                 status=ProcessingStatus.PROCESSING,
                 processor_version=self.processor_version,
             )
+            raw_event.processing_status = ProcessingStatus.PROCESSING
+            raw_event.processing_attempt_count = attempt_number
+            raw_event.retry_count = attempt_number
         except Exception as mark_err:
             logger.warning(
                 "Failed to mark event %s as PROCESSING: %s", raw_event.id, mark_err
@@ -94,6 +110,8 @@ class ProcessingWorker:
                 processed_at=now_utc,
                 processor_version=self.processor_version,
             )
+            raw_event.processing_status = ProcessingStatus.PROCESSED
+            raw_event.processed_at = now_utc
             logger.info("RawEvent %s processed successfully on attempt %d", raw_event.id, attempt_number)
             return ProcessingStatus.PROCESSED
 
@@ -156,6 +174,9 @@ class ProcessingWorker:
                     next_retry_at=next_retry_at,
                     processor_version=self.processor_version,
                 )
+                raw_event.processing_status = final_status
+                raw_event.last_processing_error = error_msg
+                raw_event.next_retry_at = next_retry_at
             except Exception as mark_err:
                 logger.error("Failed to mark event status as %s: %s", final_status, mark_err)
 

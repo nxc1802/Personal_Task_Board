@@ -28,43 +28,60 @@ class WindsurfWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        paths = []
+        """Xác định đường dẫn workspaceStorage của Windsurf và Codeium đa nền tảng qua platformdirs."""
+        paths: List[str] = []
+        ws_paths = self.resolve_platform_paths(
+            app_names=["Windsurf", "windsurf"],
+            sub_path=os.path.join("User", "workspaceStorage"),
+        )
+        for p in ws_paths:
+            if p not in paths:
+                paths.append(p)
+
+        codeium_paths = self.resolve_platform_paths(
+            app_names=["codeium", "Codeium"],
+            sub_path="windsurf",
+        )
+        for p in codeium_paths:
+            if p not in paths:
+                paths.append(p)
+
         home = os.path.expanduser("~")
-        if sys.platform == "darwin":
-            p = os.path.join(home, "Library/Application Support/Windsurf/User/workspaceStorage")
-            if os.path.isdir(p):
-                paths.append(p)
-        elif sys.platform == "win32":
-            appdata = os.getenv("APPDATA")
-            if appdata:
-                p = os.path.join(appdata, "Windsurf", "User", "workspaceStorage")
-                if os.path.isdir(p):
-                    paths.append(p)
-        else:
-            p = os.path.join(home, ".config/Windsurf/User/workspaceStorage")
-            if os.path.isdir(p):
+        codeium_home = os.path.join(home, ".codeium", "windsurf")
+        windsurf_home = os.path.join(home, ".windsurf")
+        for p in (codeium_home, windsurf_home):
+            if p not in paths:
                 paths.append(p)
 
-        codeium_dir = os.path.join(home, ".codeium", "windsurf")
-        if os.path.isdir(codeium_dir):
-            paths.append(codeium_dir)
-
-        return paths
+        unique_paths = list(dict.fromkeys(os.path.normpath(p) for p in paths if p))
+        existing = [p for p in unique_paths if os.path.isdir(p)]
+        return existing if existing else unique_paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
+        """Quét tất cả các thư mục workspace và logs của Windsurf."""
+        if not self.is_installed:
+            return []
         all_records: List[RawAgentSessionRecord] = []
-        for storage_dir in self.base_paths:
-            if not os.path.isdir(storage_dir):
-                continue
-            for item in os.listdir(storage_dir):
-                ws_dir = os.path.join(storage_dir, item)
-                db_path = os.path.join(ws_dir, "state.vscdb")
-                if os.path.isfile(db_path):
-                    records = self.extract_from_db(db_path, workspace_id=item)
-                    all_records.extend(records)
-                elif item == "cascade" or item == "memories":
-                    records = self.extract_from_codeium_dir(ws_dir)
-                    all_records.extend(records)
+        try:
+            for storage_dir in self.base_paths:
+                if not os.path.isdir(storage_dir):
+                    continue
+                try:
+                    for item in os.listdir(storage_dir):
+                        ws_dir = os.path.join(storage_dir, item)
+                        db_path = os.path.join(ws_dir, "state.vscdb")
+                        if os.path.isfile(db_path):
+                            records = self.extract_from_db(db_path, workspace_id=item)
+                            all_records.extend(records)
+                        elif item in ("cascade", "memories") or os.path.isdir(ws_dir):
+                            records = self.extract_from_codeium_dir(ws_dir)
+                            all_records.extend(records)
+                except Exception as dir_err:
+                    logger.debug(f"Error accessing windsurf storage {storage_dir}: {dir_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Lỗi khi quét Windsurf sessions: {e}")
+            return []
         return all_records
 
     def extract_from_db(self, db_path: str, workspace_id: str = "unknown") -> List[RawAgentSessionRecord]:

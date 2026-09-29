@@ -21,6 +21,10 @@ from ptb_processing.identity import (
     IdentityResolutionResult,
     IdentityResolver,
 )
+from ptb_processing.llm_readiness import (
+    LLMReadinessReport,
+    check_llm_readiness,
+)
 from ptb_processing.parsers import TeamsQuoteReplyParser
 from ptb_processing.pipeline import (
     PipelineResult,
@@ -37,6 +41,9 @@ __all__ = [
     "ProcessingWorker",
     "ProcessingPipeline",
     "PipelineResult",
+    # LLM Readiness
+    "LLMReadinessReport",
+    "check_llm_readiness",
     # Correlation & Merge
     "TaskCandidateMatcher",
     "DeterministicAnchor",

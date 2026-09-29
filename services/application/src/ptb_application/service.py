@@ -1,7 +1,9 @@
 """ApplicationService: Central business use-cases for Personal Task Board (Layer 5)."""
 
 from datetime import datetime, timezone
+import inspect
 import logging
+import os
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
@@ -31,6 +33,7 @@ from ptb_contracts.l5_experience import (
     KnowledgeSearchResponse,
     TaskActionResponse,
 )
+from ptb_contracts.logging import BugCode, log_bug
 from ptb_database.neo4j_client import Neo4jClient
 from ptb_database.repositories import (
     CheckpointRepository,
@@ -71,8 +74,22 @@ class ApplicationService:
         status_machine: Optional[StatusInferenceMachine] = None,
         lifecycle: Optional[TaskIntelligenceLifecycle] = None,
         neo4j_client: Optional[Neo4jClient] = None,
+        processing_pipeline: Optional[Any] = None,
+        processing_worker_status: Optional[str] = None,
+        llm_status: Optional[str] = None,
+        playwright_status: Optional[str] = None,
     ) -> None:
-        client = neo4j_client or Neo4jClient()
+        self._explicit_neo4j_client = neo4j_client is not None
+        repo_dict = getattr(task_repo, "__dict__", {}) if task_repo is not None else {}
+        repo_client = repo_dict.get("neo4j_client") or repo_dict.get("_client")
+        self._has_real_task_repo = (
+            task_repo is None
+            or isinstance(task_repo, TaskDomainRepository)
+            or repo_client is not None
+        )
+        client = neo4j_client or repo_client or Neo4jClient()
+        self._default_neo4j_client = None if self._explicit_neo4j_client else client
+        self.neo4j_client = client
         self.task_repo = task_repo or TaskDomainRepository(client)
         self.raw_event_repo = raw_event_repo or RawEventRepository(client)
         self.checkpoint_repo = checkpoint_repo or CheckpointRepository(client)
@@ -85,6 +102,157 @@ class ApplicationService:
             status_machine=self.status_machine,
             priority_engine=self.priority_engine,
         )
+        self.processing_pipeline = processing_pipeline
+        self.processing_worker_status = processing_worker_status
+        self.llm_status = llm_status
+        self.playwright_status = playwright_status
+
+    async def get_system_health(self) -> Dict[str, Any]:
+        """Kiểm tra tình trạng sức khỏe sâu (deep health) của ApplicationService và các dependencies."""
+        # 1. Kiểm tra kết nối neo4j
+        repo_dict = getattr(self.task_repo, "__dict__", {}) if self.task_repo is not None else {}
+        has_real_repo = (
+            self._has_real_task_repo
+            or isinstance(self.task_repo, TaskDomainRepository)
+            or repo_dict.get("_client") is not None
+            or repo_dict.get("neo4j_client") is not None
+        )
+        client_overridden = (
+            self._explicit_neo4j_client
+            or (self._default_neo4j_client is not None and self.neo4j_client is not self._default_neo4j_client)
+            or ("verify_connectivity" in getattr(self.neo4j_client, "__dict__", {}))
+        )
+
+        neo4j_state = "healthy"
+        if self.neo4j_client is not None and (has_real_repo or client_overridden):
+            try:
+                conn_res = self.neo4j_client.verify_connectivity()
+                if inspect.isawaitable(conn_res):
+                    conn_res = await conn_res
+                if not conn_res:
+                    log_bug(
+                        BugCode.PTB_APP_001,
+                        subsystem="application",
+                        severity="ERROR",
+                        message="Application dependency Neo4j is unhealthy",
+                    )
+                    neo4j_state = "not_ready"
+            except Exception as exc:
+                log_bug(
+                    BugCode.PTB_APP_001,
+                    subsystem="application",
+                    severity="ERROR",
+                    message="Application dependency Neo4j is unhealthy",
+                    exc=exc,
+                )
+                neo4j_state = "not_ready"
+
+        # 2. Kiểm tra graphiti
+        graphiti_state = "healthy"
+        if self.graph_memory is None:
+            log_bug(
+                BugCode.PTB_GRAPH_001,
+                subsystem="graph_memory",
+                severity="WARNING",
+                message="Graphiti memory client is unavailable",
+            )
+            graphiti_state = "degraded"
+        else:
+            try:
+                is_healthy_val = getattr(self.graph_memory, "is_healthy", None)
+                if callable(is_healthy_val):
+                    is_healthy_val = is_healthy_val()
+                    if inspect.isawaitable(is_healthy_val):
+                        is_healthy_val = await is_healthy_val
+
+                check_health_fn = getattr(self.graph_memory, "check_health", None)
+                check_health_val = True
+                if callable(check_health_fn):
+                    check_res = check_health_fn()
+                    if inspect.isawaitable(check_res):
+                        check_res = await check_res
+                    if check_res is False:
+                        check_health_val = False
+
+                if is_healthy_val is False or check_health_val is False:
+                    log_bug(
+                        BugCode.PTB_GRAPH_001,
+                        subsystem="graph_memory",
+                        severity="WARNING",
+                        message="Graphiti memory subsystem is unhealthy",
+                    )
+                    graphiti_state = "degraded"
+            except Exception as exc:
+                log_bug(
+                    BugCode.PTB_GRAPH_001,
+                    subsystem="graph_memory",
+                    severity="WARNING",
+                    message=f"Graphiti health check failed: {exc}",
+                    exc=exc,
+                )
+                graphiti_state = "degraded"
+
+        # 3. Kiểm tra processing_worker
+        processing_worker_state = "healthy"
+        if getattr(self, "processing_worker_status", None) is not None:
+            processing_worker_state = str(self.processing_worker_status).strip().lower()
+        elif self.processing_pipeline is not None:
+            pipe_status = getattr(self.processing_pipeline, "status", None)
+            pipe_healthy = getattr(self.processing_pipeline, "is_healthy", None)
+            if isinstance(pipe_status, str) and pipe_status.strip():
+                processing_worker_state = pipe_status.strip().lower()
+            elif pipe_healthy is False:
+                processing_worker_state = "degraded"
+
+        # 4. Kiểm tra llm
+        llm_state = "healthy"
+        if getattr(self, "llm_status", None) is not None:
+            llm_state = str(self.llm_status).strip().lower()
+        elif self.processing_pipeline is not None:
+            extractor = getattr(self.processing_pipeline, "llm_extractor", None)
+            if extractor is not None:
+                ext_healthy = getattr(extractor, "is_healthy", None)
+                if ext_healthy is False:
+                    llm_state = "degraded"
+                elif hasattr(extractor, "api_key"):
+                    has_key = bool(getattr(extractor, "api_key", None))
+                    is_mock = bool(getattr(extractor, "mock_mode", False))
+                    allow_fb = bool(getattr(extractor, "allow_heuristic_fallback", False))
+                    if not (has_key or is_mock or allow_fb) and (has_real_repo or client_overridden):
+                        llm_state = "degraded"
+
+        # 5. Kiểm tra playwright
+        if getattr(self, "playwright_status", None) is not None:
+            playwright_state = str(self.playwright_status).strip().lower()
+        else:
+            try:
+                from ptb_acquisition.playwright.session import SessionManager
+
+                playwright_state = SessionManager().validate_session().value.lower()
+            except Exception:
+                playwright_state = "unconfigured"
+
+        # 6. Tổng hợp status tổng thể
+        if neo4j_state == "not_ready" or processing_worker_state == "not_ready":
+            overall_status = "not_ready"
+        elif any(
+            st == "degraded"
+            for st in (graphiti_state, processing_worker_state, llm_state)
+        ):
+            overall_status = "degraded"
+        else:
+            overall_status = "healthy"
+
+        return {
+            "status": overall_status,
+            "service": "ptb-application",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "neo4j": neo4j_state,
+            "processing_worker": processing_worker_state,
+            "graphiti": graphiti_state,
+            "llm": llm_state,
+            "playwright": playwright_state,
+        }
 
     async def get_today_plan(self, user_id: str = "default") -> TodayBoardView:
         """Lấy today tasks, waiting on others, forgotten commitments, headline."""
@@ -173,7 +341,18 @@ class ApplicationService:
 
     async def get_review_inbox(self, limit: int = 20) -> list[ReviewQueueItem]:
         """Danh sách task pending review (confidence 0.40 - 0.64 hoặc pending_review)."""
-        return await self.task_repo.get_review_queue(limit=limit)
+        items = await self.task_repo.get_review_queue(limit=limit)
+        filtered: list[ReviewQueueItem] = []
+        for item in items:
+            cand = item.candidate_task
+            if cand.status == TaskStatus.DISMISSED:
+                continue
+            if cand.review_status in ("rejected", "dismissed"):
+                continue
+            if cand.status_authoritative and cand.review_status == "auto_approved":
+                continue
+            filtered.append(item)
+        return filtered[:limit]
 
     async def search_knowledge(
         self,
@@ -322,7 +501,21 @@ class ApplicationService:
         actor: str = "USER",
     ) -> TaskActionResponse:
         """Cập nhật trạng thái task hoặc phê duyệt review task (chỉ gọi nội bộ từ application service hoặc OpenWebUI action)."""
+        canonical_statuses = {
+            TaskStatus.TODO.value,
+            TaskStatus.IN_PROGRESS.value,
+            TaskStatus.BLOCKED.value,
+            TaskStatus.DONE.value,
+            TaskStatus.DISMISSED.value,
+        }
+
         task = await self.task_repo.get_task_by_id(task_id)
+        if not task and task_id.startswith("rev-"):
+            candidate_id = task_id[4:]
+            task = await self.task_repo.get_task_by_id(candidate_id)
+            if task:
+                task_id = task.id
+
         if not task:
             return TaskActionResponse(
                 success=False,
@@ -341,14 +534,14 @@ class ApplicationService:
                     task_id=task_id,
                     message="Missing 'new_status' for UPDATE_STATUS action",
                 )
-            try:
-                target_status = TaskStatus(new_status)
-            except Exception:
+            status_norm = str(new_status).strip().upper()
+            if status_norm not in canonical_statuses:
                 return TaskActionResponse(
                     success=False,
                     task_id=task_id,
                     message=f"Invalid status value: {new_status}",
                 )
+            target_status = TaskStatus(status_norm)
 
             audit = StatusTransitionAuditRecord(
                 id=str(uuid4()),
@@ -379,12 +572,20 @@ class ApplicationService:
             )
 
         elif action_norm == "APPROVE":
+            if new_status is not None:
+                status_norm = str(new_status).strip().upper()
+                if status_norm not in canonical_statuses:
+                    return TaskActionResponse(
+                        success=False,
+                        task_id=task_id,
+                        message=f"Invalid status value: {new_status}",
+                    )
+                target_status = TaskStatus(status_norm)
+            else:
+                target_status = TaskStatus.TODO
+
             task.review_status = "auto_approved"
-            if new_status:
-                try:
-                    task.status = TaskStatus(new_status)
-                except Exception:
-                    pass
+            task.status = target_status
             if actor != "SYSTEM":
                 task.status_authoritative = True
             task.updated_at = now
@@ -443,6 +644,7 @@ class ApplicationService:
             )
 
         elif action_norm == "DISMISS":
+            task.review_status = "rejected"
             task.status = TaskStatus.DISMISSED
             if actor != "SYSTEM":
                 task.status_authoritative = True
@@ -518,13 +720,19 @@ class ApplicationService:
         Gọi TaskDomainRepository.split_task và cập nhật domain graph.
         Bảo toàn 100% Provenance của RawEvent và cập nhật updated_at cho cả 2 tasks.
         """
+        cleaned_evidence_ids = [eid.strip() for eid in (evidence_ids or []) if eid and str(eid).strip()]
+        if not cleaned_evidence_ids:
+            raise ValueError("evidence_ids list cannot be empty")
+
+        clean_title = new_title.strip() if isinstance(new_title, str) and new_title.strip() else None
+
         logger.info(
-            f"Splitting task {task_id}: detaching {len(evidence_ids)} evidences, new_title={new_title}"
+            f"Splitting task {task_id}: detaching {len(cleaned_evidence_ids)} evidences, new_title={clean_title}"
         )
         new_task = await self.task_repo.split_task(
             original_task_id=task_id,
-            evidence_ids_to_detach=evidence_ids,
-            new_task_title=new_title,
+            evidence_ids_to_detach=cleaned_evidence_ids,
+            new_task_title=clean_title,
         )
         # Re-compute intelligence lifecycle on both original task and new task after split
         if hasattr(self, "lifecycle") and self.lifecycle:
@@ -548,8 +756,14 @@ class ApplicationService:
         task_id: str,
         **updates: Any,
     ) -> Optional[UnifiedTaskCandidate]:
-        """Cập nhật các trường thông tin của UnifiedTask (title, description, status, due_date, etc.)."""
+        """Cập nhật các trường thông tin của UnifiedTask (title, description, notes, status, due_date, etc.)."""
         task = await self.task_repo.get_task_by_id(task_id)
+        if not task and task_id.startswith("rev-"):
+            candidate_id = task_id[4:]
+            task = await self.task_repo.get_task_by_id(candidate_id)
+            if task:
+                task_id = task.id
+
         if not task:
             return None
 
@@ -557,18 +771,48 @@ class ApplicationService:
         old_status = task.status
         actor = updates.pop("actor", "USER")
 
+        # Hỗ trợ trường 'notes' ánh xạ sang 'description' của UnifiedTaskCandidate
+        if "notes" in updates:
+            notes_val = updates.pop("notes")
+            if notes_val is not None and ("description" not in updates or updates["description"] is None):
+                updates["description"] = notes_val
+
+        canonical_statuses = {
+            TaskStatus.TODO.value,
+            TaskStatus.IN_PROGRESS.value,
+            TaskStatus.BLOCKED.value,
+            TaskStatus.DONE.value,
+            TaskStatus.DISMISSED.value,
+        }
+
         for field, val in updates.items():
             if val is not None and hasattr(task, field):
-                if field == "status" and isinstance(val, str):
-                    try:
-                        val = TaskStatus(val)
-                    except Exception:
-                        pass
+                if field == "status":
+                    if isinstance(val, str):
+                        status_norm = val.strip().upper()
+                        if status_norm not in canonical_statuses:
+                            raise ValueError(f"Invalid status '{val}'. Must be one of {sorted(canonical_statuses)}")
+                        val = TaskStatus(status_norm)
+                elif field == "due_date":
+                    if isinstance(val, str):
+                        val_str = val.strip()
+                        if not val_str:
+                            val = None
+                        else:
+                            parsed_dt = datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+                            if parsed_dt.tzinfo is None:
+                                parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                            val = parsed_dt
+                    elif isinstance(val, datetime) and val.tzinfo is None:
+                        val = val.replace(tzinfo=timezone.utc)
                 setattr(task, field, val)
 
-        if "status" in updates and actor != "SYSTEM":
+        if "due_date" in updates and task.due_date is not None and "explicit_deadline" not in updates:
+            task.explicit_deadline = True
+
+        if "status" in updates and updates["status"] is not None and actor != "SYSTEM":
             task.status_authoritative = True
-        if "priority_score" in updates and actor != "SYSTEM":
+        if "priority_score" in updates and updates["priority_score"] is not None and actor != "SYSTEM":
             task.priority_override = task.priority_score
 
         task.updated_at = now
@@ -591,5 +835,13 @@ class ApplicationService:
         if hasattr(self, "lifecycle") and self.lifecycle:
             await self.lifecycle.on_task_changed(task, now=now)
 
-        return await self.task_repo.get_task_by_id(task_id) or task
+        fetched = await self.task_repo.get_task_by_id(task_id)
+        if fetched is not None:
+            if "owner_name" in updates and updates["owner_name"] is not None:
+                fetched.owner_name = task.owner_name
+            if "requester_name" in updates and updates["requester_name"] is not None:
+                fetched.requester_name = task.requester_name
+            return fetched
+        return task
+
 
