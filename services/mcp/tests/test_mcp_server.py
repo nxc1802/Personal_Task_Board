@@ -125,6 +125,7 @@ class MockTaskDomainRepository:
 
 class MockCheckpointRepository:
     def __init__(self):
+        now = datetime.now(timezone.utc)
         self.checkpoints = [
             IngestionCheckpointRecord(
                 id="cp-1",
@@ -132,9 +133,36 @@ class MockCheckpointRepository:
                 source_type=SourceType.MS_TEAMS,
                 stream_id="stream-1",
                 last_external_id="msg-100",
-                last_event_timestamp=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            )
+                last_event_timestamp=now,
+                updated_at=now,
+            ),
+            IngestionCheckpointRecord(
+                id="cp-2",
+                tenant_id="tenant-outlook",
+                source_type=SourceType.MS_OUTLOOK,
+                stream_id="stream-2",
+                last_external_id="mail-1",
+                last_event_timestamp=now,
+                updated_at=now,
+            ),
+            IngestionCheckpointRecord(
+                id="cp-3",
+                tenant_id="tenant-git",
+                source_type=SourceType.GIT,
+                stream_id="stream-3",
+                last_external_id="commit-1",
+                last_event_timestamp=now,
+                updated_at=now,
+            ),
+            IngestionCheckpointRecord(
+                id="cp-4",
+                tenant_id="tenant-coding-agent",
+                source_type=SourceType.CODING_AGENT,
+                stream_id="stream-4",
+                last_external_id="session-1",
+                last_event_timestamp=now,
+                updated_at=now,
+            ),
         ]
 
     async def list_checkpoints(self) -> list[IngestionCheckpointRecord]:

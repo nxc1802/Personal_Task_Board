@@ -409,6 +409,33 @@ def app_service(
             last_event_timestamp=datetime.now(timezone.utc) - timedelta(minutes=15),
             updated_at=datetime.now(timezone.utc),
         ),
+        IngestionCheckpointRecord(
+            id="cp-2",
+            tenant_id="tenant-outlook",
+            source_type=SourceType.MS_OUTLOOK,
+            stream_id="stream-2",
+            last_external_id="mail-1",
+            last_event_timestamp=datetime.now(timezone.utc) - timedelta(minutes=15),
+            updated_at=datetime.now(timezone.utc),
+        ),
+        IngestionCheckpointRecord(
+            id="cp-3",
+            tenant_id="tenant-git",
+            source_type=SourceType.GIT,
+            stream_id="stream-3",
+            last_external_id="commit-1",
+            last_event_timestamp=datetime.now(timezone.utc) - timedelta(minutes=15),
+            updated_at=datetime.now(timezone.utc),
+        ),
+        IngestionCheckpointRecord(
+            id="cp-4",
+            tenant_id="tenant-coding-agent",
+            source_type=SourceType.CODING_AGENT,
+            stream_id="stream-4",
+            last_external_id="session-1",
+            last_event_timestamp=datetime.now(timezone.utc) - timedelta(minutes=15),
+            updated_at=datetime.now(timezone.utc),
+        ),
     ])
     graph_memory = MockGraphitiMemoryClient(sample_episodes)
     return ApplicationService(
@@ -546,7 +573,7 @@ async def test_get_sources_health(app_service: ApplicationService):
     """Kiểm tra get_sources_health tổng hợp tenants status."""
     health = await app_service.get_sources_health()
     assert isinstance(health, CoverageStatusResponse)
-    assert len(health.tenants) >= 1
+    assert len(health.tenants) >= 6
     assert health.overall_health == "healthy"
 
 

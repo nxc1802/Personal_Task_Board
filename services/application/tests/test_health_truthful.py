@@ -38,12 +38,13 @@ def test_clean_install_sources_not_healthy(clean_service):
     """1. test_clean_install_sources_not_healthy: Không có checkpoint -> KHÔNG có source nào healthy"""
     import asyncio
     res = asyncio.run(clean_service.get_sources_health())
-    # All tenants should be NEVER_SYNCED or AUTH_REQUIRED or UNCONFIGURED
+    assert len(res.tenants) >= 6
     for t in res.tenants:
         assert t.status in [
             SourceSyncState.NEVER_SYNCED.value.lower(), 
             SourceSyncState.AUTH_REQUIRED.value.lower(), 
-            SourceSyncState.UNCONFIGURED.value.lower()
+            SourceSyncState.UNCONFIGURED.value.lower(),
+            SourceSyncState.DISABLED.value.lower(),
         ]
         assert t.status != "healthy"
 
@@ -89,15 +90,17 @@ def test_no_checkpoint_source_never_synced():
     """4. test_no_checkpoint_source_never_synced: Source chưa sync -> NEVER_SYNCED"""
     service = ApplicationService(
         checkpoint_repo=MockCheckpointRepo([]),
-        playwright_status="healthy"  # so it doesn't return auth_required
+        playwright_status="healthy",  # so it doesn't return auth_required
+        sources_config={"sources": {k: {"enabled": True, "api_token": "mock-token"} for k in ("ms_teams", "ms_outlook", "coding_agent", "git", "jira", "shortcut")}}
     )
     import asyncio
     res = asyncio.run(service.get_sources_health())
+    assert len(res.tenants) >= 6
     for t in res.tenants:
         assert t.status == SourceSyncState.NEVER_SYNCED.value.lower()
 
 def test_stale_checkpoint_degraded():
-    """5. test_stale_checkpoint_degraded: Checkpoint > 7 days -> source DEGRADED"""
+    """5. test_stale_checkpoint_degraded: Checkpoint > 7 days -> source DEGRADED, all canonical sources present"""
     now = datetime.now(timezone.utc)
     stale_cp = IngestionCheckpointRecord(
         id="cp-1",
@@ -112,8 +115,10 @@ def test_stale_checkpoint_degraded():
     )
     import asyncio
     res = asyncio.run(service.get_sources_health())
-    assert len(res.tenants) == 1
-    assert res.tenants[0].status == SourceSyncState.DEGRADED.value.lower()
+    assert len(res.tenants) >= 6
+    teams_tenant = next((t for t in res.tenants if t.source_type == "ms_teams"), None)
+    assert teams_tenant is not None
+    assert teams_tenant.status == SourceSyncState.DEGRADED.value.lower()
 
 def test_overall_never_synced_not_healthy():
     """6. test_overall_never_synced_not_healthy: Tất cả sources NEVER_SYNCED -> overall KHÔNG healthy"""
@@ -125,4 +130,168 @@ def test_overall_never_synced_not_healthy():
     res = asyncio.run(service.get_sources_health())
     assert res.overall_health == "not_ready"
     assert res.overall_health != "healthy"
+
+
+# ==============================================================================
+# DOCS/V1_4 BEHAVIORAL TESTS (A - F)
+# ==============================================================================
+
+def test_a_mixed_state():
+    """Test A — Mixed state:
+    Git checkpoint recent -> HEALTHY
+    Teams no auth -> AUTH_REQUIRED
+    Outlook no checkpoint -> NEVER_SYNCED
+    Jira disabled -> DISABLED
+    Shortcut enabled but no token -> UNCONFIGURED
+    Tất cả phải xuất hiện cùng lúc.
+    """
+    now = datetime.now(timezone.utc)
+    git_cp = IngestionCheckpointRecord(
+        id="cp-git-1",
+        tenant_id="tenant-git",
+        source_type=SourceType.GIT,
+        stream_id="main",
+        last_event_timestamp=now - timedelta(minutes=10),
+        updated_at=now - timedelta(minutes=10),
+    )
+    service = ApplicationService(
+        checkpoint_repo=MockCheckpointRepo([git_cp]),
+        sources_config={
+            "sources": {
+                "git": {"enabled": True},
+                "ms_teams": {"enabled": True},
+                "ms_outlook": {"enabled": True},
+                "jira": {"enabled": False},
+                "shortcut": {"enabled": True, "api_token": ""},
+                "coding_agent": {"enabled": True},
+            }
+        },
+        runtime_statuses={"ms_teams": "auth_required"},
+    )
+    import asyncio
+    res = asyncio.run(service.get_sources_health())
+    tenants_by_type = {t.source_type: t for t in res.tenants}
+
+    assert "git" in tenants_by_type
+    assert "ms_teams" in tenants_by_type
+    assert "ms_outlook" in tenants_by_type
+    assert "jira" in tenants_by_type
+    assert "shortcut" in tenants_by_type
+
+    assert tenants_by_type["git"].status == SourceSyncState.HEALTHY.value.lower()
+    assert tenants_by_type["ms_teams"].status == SourceSyncState.AUTH_REQUIRED.value.lower()
+    assert tenants_by_type["ms_outlook"].status == SourceSyncState.NEVER_SYNCED.value.lower()
+    assert tenants_by_type["jira"].status == SourceSyncState.DISABLED.value.lower()
+    assert tenants_by_type["shortcut"].status == SourceSyncState.UNCONFIGURED.value.lower()
+
+
+def test_b_no_checkpoint_no_source_healthy():
+    """Test B — No checkpoint:
+    Không checkpoint nào -> không source nào HEALTHY.
+    """
+    service = ApplicationService(
+        checkpoint_repo=MockCheckpointRepo([]),
+    )
+    import asyncio
+    res = asyncio.run(service.get_sources_health())
+    assert len(res.tenants) >= 6
+    for t in res.tenants:
+        assert t.status != SourceSyncState.HEALTHY.value.lower()
+
+
+def test_c_disabled_source_wins_over_legacy_checkpoint():
+    """Test C — Disabled wins:
+    Jira disabled, legacy Jira checkpoint exists -> Jira = DISABLED
+    """
+    now = datetime.now(timezone.utc)
+    legacy_jira_cp = IngestionCheckpointRecord(
+        id="cp-jira-legacy",
+        tenant_id="tenant-jira",
+        source_type=SourceType.JIRA,
+        stream_id="stream-jira",
+        last_event_timestamp=now - timedelta(hours=1),
+        updated_at=now - timedelta(hours=1),
+    )
+    service = ApplicationService(
+        checkpoint_repo=MockCheckpointRepo([legacy_jira_cp]),
+        sources_config={"sources": {"jira": {"enabled": False}}},
+    )
+    import asyncio
+    res = asyncio.run(service.get_sources_health())
+    jira_tenant = next(t for t in res.tenants if t.source_type == "jira")
+    assert jira_tenant.status == SourceSyncState.DISABLED.value.lower()
+
+
+def test_d_runtime_error_wins_over_recent_checkpoint():
+    """Test D — Runtime error wins:
+    Git has recent checkpoint, Git runtime adapter ERROR -> Git = ERROR (không HEALTHY).
+    """
+    now = datetime.now(timezone.utc)
+    recent_git_cp = IngestionCheckpointRecord(
+        id="cp-git-recent",
+        tenant_id="tenant-git",
+        source_type=SourceType.GIT,
+        stream_id="main",
+        last_event_timestamp=now - timedelta(minutes=5),
+        updated_at=now - timedelta(minutes=5),
+    )
+    service = ApplicationService(
+        checkpoint_repo=MockCheckpointRepo([recent_git_cp]),
+        runtime_statuses={"git": "error"},
+    )
+    import asyncio
+    res = asyncio.run(service.get_sources_health())
+    git_tenant = next(t for t in res.tenants if t.source_type == "git")
+    assert git_tenant.status == SourceSyncState.ERROR.value.lower()
+    assert git_tenant.status != SourceSyncState.HEALTHY.value.lower()
+
+
+def test_e_multiple_checkpoints_worst_status_wins():
+    """Test E — Multiple checkpoints:
+    Git stream A recent, Git stream B stale -> Git = DEGRADED.
+    """
+    now = datetime.now(timezone.utc)
+    recent_ts = now - timedelta(minutes=5)
+    stale_ts = now - timedelta(days=12)
+
+    cp_a = IngestionCheckpointRecord(
+        id="cp-git-a",
+        tenant_id="tenant-git",
+        source_type=SourceType.GIT,
+        stream_id="repo-a",
+        last_event_timestamp=recent_ts,
+        updated_at=recent_ts,
+    )
+    cp_b = IngestionCheckpointRecord(
+        id="cp-git-b",
+        tenant_id="tenant-git",
+        source_type=SourceType.GIT,
+        stream_id="repo-b",
+        last_event_timestamp=stale_ts,
+        updated_at=stale_ts,
+    )
+    service = ApplicationService(
+        checkpoint_repo=MockCheckpointRepo([cp_a, cp_b]),
+    )
+    import asyncio
+    res = asyncio.run(service.get_sources_health())
+    git_tenant = next(t for t in res.tenants if t.source_type == "git")
+    assert git_tenant.status == SourceSyncState.DEGRADED.value.lower()
+    assert git_tenant.last_successful_sync == recent_ts
+
+
+def test_f_microsoft_auth_valid_but_never_synced():
+    """Test F — Microsoft auth valid but never synced:
+    valid session, no Teams checkpoint -> Teams = NEVER_SYNCED (không HEALTHY).
+    """
+    service = ApplicationService(
+        checkpoint_repo=MockCheckpointRepo([]),
+        playwright_status="healthy",
+    )
+    import asyncio
+    res = asyncio.run(service.get_sources_health())
+    teams_tenant = next(t for t in res.tenants if t.source_type == "ms_teams")
+    assert teams_tenant.status == SourceSyncState.NEVER_SYNCED.value.lower()
+    assert teams_tenant.status != SourceSyncState.HEALTHY.value.lower()
+
 

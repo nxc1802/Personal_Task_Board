@@ -308,6 +308,33 @@ def mock_service() -> ApplicationService:
             last_event_timestamp=now - timedelta(minutes=15),
             updated_at=now,
         ),
+        IngestionCheckpointRecord(
+            id="cp-2",
+            tenant_id="tenant-outlook",
+            source_type=SourceType.MS_OUTLOOK,
+            stream_id="stream-2",
+            last_external_id="mail-1",
+            last_event_timestamp=now - timedelta(minutes=15),
+            updated_at=now,
+        ),
+        IngestionCheckpointRecord(
+            id="cp-3",
+            tenant_id="tenant-git",
+            source_type=SourceType.GIT,
+            stream_id="stream-3",
+            last_external_id="commit-1",
+            last_event_timestamp=now - timedelta(minutes=15),
+            updated_at=now,
+        ),
+        IngestionCheckpointRecord(
+            id="cp-4",
+            tenant_id="tenant-coding-agent",
+            source_type=SourceType.CODING_AGENT,
+            stream_id="stream-4",
+            last_external_id="session-1",
+            last_event_timestamp=now - timedelta(minutes=15),
+            updated_at=now,
+        ),
     ])
     graph_memory = MockGraphitiMemoryClient([
         {
@@ -813,7 +840,7 @@ def test_endpoint_14_sources_health(client: TestClient):
     assert "tenants" in data
     assert "overall_health" in data
     assert data["overall_health"] == "healthy"
-    assert len(data["tenants"]) >= 1
+    assert len(data["tenants"]) >= 6
 
 
 def test_cors_middleware(client: TestClient):

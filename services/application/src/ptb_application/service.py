@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import inspect
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
@@ -78,6 +79,8 @@ class ApplicationService:
         processing_worker_status: Optional[str] = None,
         llm_status: Optional[str] = None,
         playwright_status: Optional[str] = None,
+        sources_config: Optional[Dict[str, Any]] = None,
+        runtime_statuses: Optional[Dict[str, str]] = None,
     ) -> None:
         self._explicit_neo4j_client = neo4j_client is not None
         repo_dict = getattr(task_repo, "__dict__", {}) if task_repo is not None else {}
@@ -106,6 +109,8 @@ class ApplicationService:
         self.processing_worker_status = processing_worker_status
         self.llm_status = llm_status
         self.playwright_status = playwright_status
+        self.sources_config = sources_config
+        self.runtime_statuses = runtime_statuses or {}
 
     async def get_system_health(self) -> Dict[str, Any]:
         """Kiểm tra tình trạng sức khỏe sâu (deep health) của ApplicationService và các dependencies."""
@@ -442,8 +447,114 @@ class ApplicationService:
             synthesis_summary=summary,
         )
 
-    async def get_sources_health(self) -> CoverageStatusResponse:
-        """Tình trạng các tenant và checkpoints."""
+    CANONICAL_SOURCES = [
+        {
+            "key": "ms_teams",
+            "source_type": "ms_teams",
+            "default_name": "Microsoft Teams",
+            "default_tenant_id": "tenant-ms_teams",
+        },
+        {
+            "key": "ms_outlook",
+            "source_type": "ms_outlook",
+            "default_name": "Microsoft Outlook",
+            "default_tenant_id": "tenant-ms_outlook",
+        },
+        {
+            "key": "coding_agent",
+            "source_type": "coding_agent",
+            "default_name": "Coding Agents",
+            "default_tenant_id": "tenant-coding_agent",
+        },
+        {
+            "key": "git",
+            "source_type": "git",
+            "default_name": "Local Git Repositories",
+            "default_tenant_id": "tenant-git",
+        },
+        {
+            "key": "jira",
+            "source_type": "jira",
+            "default_name": "Jira Cloud",
+            "default_tenant_id": "tenant-jira",
+        },
+        {
+            "key": "shortcut",
+            "source_type": "shortcut",
+            "default_name": "Shortcut Stories",
+            "default_tenant_id": "tenant-shortcut",
+        },
+    ]
+
+    @staticmethod
+    def _normalize_source_key(source_type_val: Any) -> str:
+        s = str(source_type_val.value if hasattr(source_type_val, "value") else source_type_val).lower().strip()
+        if s in ("ms_teams", "ms_teams_web", "teams"):
+            return "ms_teams"
+        if s in ("ms_outlook", "ms_outlook_web", "outlook"):
+            return "ms_outlook"
+        if s in (
+            "coding_agent", "coding_agents", "cursor", "claude_code",
+            "antigravity", "codex", "github_copilot", "copilot",
+            "windsurf", "continue", "aider", "cline", "roo_code"
+        ):
+            return "coding_agent"
+        if s in ("git", "git_repo", "local_git"):
+            return "git"
+        if s in ("jira", "jira_cloud", "jira_server"):
+            return "jira"
+        if s in ("shortcut", "shortcut_stories", "clubhouse"):
+            return "shortcut"
+        return s
+
+    @staticmethod
+    def _get_source_config(sources_cfg: Dict[str, Any], key: str) -> Dict[str, Any]:
+        if not isinstance(sources_cfg, dict):
+            return {}
+        sources_dict = sources_cfg.get("sources", sources_cfg) if isinstance(sources_cfg.get("sources"), dict) else sources_cfg
+        if not isinstance(sources_dict, dict):
+            return {}
+        if key in sources_dict and isinstance(sources_dict[key], dict):
+            return sources_dict[key]
+        alias_map = {
+            "coding_agent": ["coding_agents"],
+            "ms_teams": ["teams", "ms_teams_web"],
+            "ms_outlook": ["outlook", "ms_outlook_web"],
+        }
+        for alias in alias_map.get(key, []):
+            if alias in sources_dict and isinstance(sources_dict[alias], dict):
+                return sources_dict[alias]
+        return {}
+
+    @staticmethod
+    def _load_default_sources_config() -> Dict[str, Any]:
+        env_path = os.environ.get("PTB_SOURCES_CONFIG")
+        candidates = []
+        if env_path:
+            candidates.append(Path(env_path))
+        candidates.extend([
+            Path("config/sources.yaml"),
+            Path(__file__).resolve().parents[4] / "config" / "sources.yaml",
+            Path(__file__).resolve().parents[3] / "config" / "sources.yaml",
+        ])
+        for p in candidates:
+            if p and p.exists():
+                try:
+                    import yaml
+                    with open(p, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f) or {}
+                        if isinstance(data, dict):
+                            return data
+                except Exception as ex:
+                    logger.debug("Could not read sources config from %s: %s", p, ex)
+        return {}
+
+    async def get_sources_health(
+        self,
+        runtime_statuses: Optional[Dict[str, str]] = None,
+        sources_config: Optional[Dict[str, Any]] = None,
+    ) -> CoverageStatusResponse:
+        """Tình trạng các tenant và checkpoints cho toàn bộ source registry."""
         try:
             checkpoints = await self.checkpoint_repo.list_checkpoints()
         except Exception as ex:
@@ -451,11 +562,19 @@ class ApplicationService:
             checkpoints = []
         now = datetime.now(timezone.utc)
 
-        tenants_status: list[CoverageTenantStatus] = []
-        has_error = False
-        has_warning = False
-        has_never_synced = False
-        
+        # Merge runtime statuses and sources config
+        effective_runtime = dict(self.runtime_statuses)
+        if runtime_statuses:
+            effective_runtime.update(runtime_statuses)
+
+        if sources_config is not None:
+            effective_sources_cfg = sources_config
+        elif self.sources_config is not None:
+            effective_sources_cfg = self.sources_config
+        else:
+            effective_sources_cfg = self._load_default_sources_config()
+
+        # Playwright status resolution
         playwright_state = "unconfigured"
         if getattr(self, "playwright_status", None) is not None:
             playwright_state = str(self.playwright_status).strip().lower()
@@ -466,66 +585,163 @@ class ApplicationService:
             except Exception as e:
                 logger.debug("Could not validate playwright session: %s", e)
 
-        if checkpoints:
-            for cp in checkpoints:
-                st = cp.source_type.value if hasattr(cp.source_type, "value") else str(cp.source_type)
-                status = SourceSyncState.HEALTHY.value.lower()
-                error_msg = None
-                last_sync = cp.last_event_timestamp or cp.updated_at
+        # Index checkpoints by normalized source key
+        checkpoints_by_key: Dict[str, List[IngestionCheckpointRecord]] = {}
+        for cp in checkpoints:
+            raw_st = cp.source_type.value if hasattr(cp.source_type, "value") else str(cp.source_type)
+            norm_key = self._normalize_source_key(raw_st)
+            checkpoints_by_key.setdefault(norm_key, []).append(cp)
 
+        tenants_status: List[CoverageTenantStatus] = []
+
+        # Canonical sources first, then any extra sources discovered in checkpoints
+        canonical_keys = {c["key"] for c in self.CANONICAL_SOURCES}
+        sources_to_evaluate = list(self.CANONICAL_SOURCES)
+        for extra_key, extra_cps in checkpoints_by_key.items():
+            if extra_key not in canonical_keys:
+                sources_to_evaluate.append({
+                    "key": extra_key,
+                    "source_type": extra_key,
+                    "default_name": f"Source {extra_key}",
+                    "default_tenant_id": f"tenant-{extra_key}",
+                })
+
+        severity_rank = {
+            SourceSyncState.ERROR.value.lower(): 10,
+            SourceSyncState.AUTH_REQUIRED.value.lower(): 9,
+            SourceSyncState.UNCONFIGURED.value.lower(): 8,
+            SourceSyncState.DEGRADED.value.lower(): 7,
+            SourceSyncState.NOT_INSTALLED.value.lower(): 6,
+            SourceSyncState.NEVER_SYNCED.value.lower(): 5,
+            SourceSyncState.HEALTHY.value.lower(): 1,
+        }
+
+        for src_meta in sources_to_evaluate:
+            src_key = src_meta["key"]
+            src_type = src_meta["source_type"]
+            src_cfg = self._get_source_config(effective_sources_cfg, src_key)
+            matching_cps = checkpoints_by_key.get(src_key, [])
+
+            # Check runtime status override (by key or by tenant_id)
+            r_st = (
+                effective_runtime.get(src_key)
+                or effective_runtime.get(src_type)
+                or effective_runtime.get(src_meta["default_tenant_id"])
+                or (effective_runtime.get(matching_cps[0].tenant_id) if matching_cps else None)
+                or ""
+            ).strip().lower()
+
+            # Identify tenant_id and tenant_name
+            if matching_cps:
+                tenant_id = matching_cps[0].tenant_id
+                st_val = matching_cps[0].source_type.value if hasattr(matching_cps[0].source_type, "value") else str(matching_cps[0].source_type)
+                tenant_name = f"{tenant_id} ({st_val})"
+            else:
+                tenant_id = src_meta["default_tenant_id"]
+                tenant_name = src_meta["default_name"]
+
+            # Evaluate checkpoints if present
+            valid_sync_times: List[datetime] = []
+            stream_statuses: List[str] = []
+            items_total = 0
+            for cp in matching_cps:
+                last_sync = cp.last_event_timestamp or cp.updated_at
                 if last_sync:
                     last_sync_utc = last_sync if last_sync.tzinfo else last_sync.replace(tzinfo=timezone.utc)
+                    valid_sync_times.append(last_sync_utc)
                     age_seconds = (now - last_sync_utc).total_seconds()
                     if age_seconds > (7 * 86400):
-                        status = SourceSyncState.DEGRADED.value.lower()
-                        has_warning = True
-                else:
-                    status = SourceSyncState.NEVER_SYNCED.value.lower()
-                    has_never_synced = True
-
-                tenants_status.append(CoverageTenantStatus(
-                    tenant_id=cp.tenant_id,
-                    tenant_name=f"{cp.tenant_id} ({st})",
-                    source_type=st,
-                    status=status,
-                    last_successful_sync=last_sync,
-                    items_synced_total=1 if cp.last_external_id else 0,
-                    error_message=error_msg,
-                ))
-        else:
-            for src, name in [
-                ("ms_teams", "Microsoft Teams"),
-                ("ms_outlook", "Microsoft Outlook"),
-                ("jira", "Jira Cloud"),
-                ("shortcut", "Shortcut Stories"),
-            ]:
-                if src in ("ms_teams", "ms_outlook"):
-                    if playwright_state == "auth_required":
-                        status = SourceSyncState.AUTH_REQUIRED.value.lower()
-                    elif playwright_state in ("unconfigured", "not_installed"):
-                        status = SourceSyncState.UNCONFIGURED.value.lower()
+                        stream_statuses.append(SourceSyncState.DEGRADED.value.lower())
                     else:
-                        status = SourceSyncState.NEVER_SYNCED.value.lower()
+                        stream_statuses.append(SourceSyncState.HEALTHY.value.lower())
+                else:
+                    stream_statuses.append(SourceSyncState.NEVER_SYNCED.value.lower())
+                if cp.last_external_id:
+                    items_total += 1
+
+            last_successful_sync = max(valid_sync_times) if valid_sync_times else None
+
+            # DETERMINISTIC PRECEDENCE:
+            # 1. DISABLED: If enabled=false in config or disabled in runtime
+            is_enabled = src_cfg.get("enabled", True)
+            if is_enabled is False or r_st == "disabled":
+                status = SourceSyncState.DISABLED.value.lower()
+                error_msg = None
+
+            # 2. RUNTIME ERROR: Runtime error wins over healthy checkpoints
+            elif r_st in ("error", "critical", "failed"):
+                status = SourceSyncState.ERROR.value.lower()
+                error_msg = f"Runtime adapter error for {src_key}"
+
+            # 3. AUTH_REQUIRED: Explicit runtime auth required or Microsoft source without valid session
+            elif r_st == "auth_required" or (src_key in ("ms_teams", "ms_outlook") and playwright_state == "auth_required"):
+                status = SourceSyncState.AUTH_REQUIRED.value.lower()
+                error_msg = "Authentication required or session expired"
+
+            # 4. UNCONFIGURED / NOT_INSTALLED
+            elif r_st in ("unconfigured", "not_installed"):
+                status = r_st
+                error_msg = f"Source {src_key} is {r_st}"
+            elif src_key in ("jira", "shortcut"):
+                token = src_cfg.get("api_token") or os.environ.get(f"{src_key.upper()}_API_TOKEN")
+                if not matching_cps and not token:
+                    status = SourceSyncState.UNCONFIGURED.value.lower()
+                    error_msg = f"Credentials missing for {src_key}"
+                elif matching_cps:
+                    worst_status = max(stream_statuses, key=lambda s: severity_rank.get(s, 0)) if stream_statuses else SourceSyncState.NEVER_SYNCED.value.lower()
+                    status = worst_status
+                    error_msg = "Checkpoint stale (> 7 days)" if status == SourceSyncState.DEGRADED.value.lower() else None
                 else:
                     status = SourceSyncState.NEVER_SYNCED.value.lower()
-                
-                tenants_status.append(CoverageTenantStatus(
-                    tenant_id=f"tenant-{src}",
-                    tenant_name=name,
-                    source_type=src,
-                    status=status,
-                    last_successful_sync=None,
-                    items_synced_total=0,
-                    error_message=None,
-                ))
+                    error_msg = None
+            elif src_key in ("ms_teams", "ms_outlook") and not matching_cps and playwright_state in ("unconfigured", "not_installed"):
+                status = SourceSyncState.UNCONFIGURED.value.lower() if playwright_state == "unconfigured" else SourceSyncState.NOT_INSTALLED.value.lower()
+                error_msg = f"Playwright session is {playwright_state}"
 
-        if not tenants_status:
+            # 5. CHECKPOINTS EXIST: Multi-stream aggregation (worst stream wins)
+            elif matching_cps:
+                worst_status = max(stream_statuses, key=lambda s: severity_rank.get(s, 0)) if stream_statuses else SourceSyncState.NEVER_SYNCED.value.lower()
+                if r_st in ("degraded", "warning"):
+                    status = SourceSyncState.DEGRADED.value.lower()
+                    error_msg = f"Runtime adapter degraded for {src_key}"
+                else:
+                    status = worst_status
+                    error_msg = "Checkpoint stale (> 7 days)" if status == SourceSyncState.DEGRADED.value.lower() else None
+
+            # 6. NO CHECKPOINTS: Source has never synced
+            else:
+                if r_st in ("degraded", "warning"):
+                    status = SourceSyncState.DEGRADED.value.lower()
+                    error_msg = f"Runtime adapter degraded for {src_key}"
+                else:
+                    status = SourceSyncState.NEVER_SYNCED.value.lower()
+                    error_msg = None
+
+            tenants_status.append(CoverageTenantStatus(
+                tenant_id=tenant_id,
+                tenant_name=tenant_name,
+                source_type=src_type,
+                status=status,
+                last_successful_sync=last_successful_sync,
+                items_synced_total=items_total,
+                error_message=error_msg,
+            ))
+
+        # Overall health calculation over entire source registry
+        enabled_tenants = [t for t in tenants_status if t.status != SourceSyncState.DISABLED.value.lower()]
+        if not enabled_tenants:
             overall = "not_ready"
-        elif any(t.status == SourceSyncState.ERROR.value.lower() for t in tenants_status) or has_error:
+        elif any(t.status == SourceSyncState.ERROR.value.lower() for t in enabled_tenants):
             overall = "critical"
-        elif all(t.status == SourceSyncState.NEVER_SYNCED.value.lower() for t in tenants_status):
+        elif all(t.status == SourceSyncState.NEVER_SYNCED.value.lower() for t in enabled_tenants):
             overall = "not_ready"
-        elif any(t.status in (SourceSyncState.DEGRADED.value.lower(), SourceSyncState.NEVER_SYNCED.value.lower(), SourceSyncState.AUTH_REQUIRED.value.lower(), SourceSyncState.UNCONFIGURED.value.lower()) for t in tenants_status):
+        elif any(t.status in (
+            SourceSyncState.DEGRADED.value.lower(),
+            SourceSyncState.NEVER_SYNCED.value.lower(),
+            SourceSyncState.AUTH_REQUIRED.value.lower(),
+            SourceSyncState.UNCONFIGURED.value.lower(),
+            SourceSyncState.NOT_INSTALLED.value.lower(),
+        ) for t in enabled_tenants):
             overall = "degraded"
         else:
             overall = "healthy"
