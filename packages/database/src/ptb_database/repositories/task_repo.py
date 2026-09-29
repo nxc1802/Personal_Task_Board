@@ -60,6 +60,10 @@ class TaskDomainRepository:
                 if getattr(ev, "confidence_score", None) is not None
                 else getattr(ev, "confidence", 1.0)
             )
+            graph_sync_status = getattr(ev, "graph_sync_status", None) or "PENDING"
+            graph_sync_attempts = getattr(ev, "graph_sync_attempts", 0)
+            if graph_sync_attempts is None:
+                graph_sync_attempts = 0
             evidences_data.append({
                 "id": ev_id,
                 "task_id": task_id,
@@ -75,6 +79,8 @@ class TaskDomainRepository:
                 "confidence": confidence_score,
                 "confidence_score": confidence_score,
                 "extraction_version": ev.extraction_version,
+                "graph_sync_status": graph_sync_status,
+                "graph_sync_attempts": graph_sync_attempts,
             })
 
         async with driver.session(database=self.neo4j_client.database) as session:
@@ -195,6 +201,8 @@ class TaskDomainRepository:
             MATCH (t:UnifiedTask {id: $task_id})
             UNWIND $evidences AS ev
             MERGE (e:Evidence {id: ev.id})
+            ON CREATE SET e.graph_sync_status = "PENDING",
+                          e.graph_sync_attempts = 0
             SET e.task_id = $task_id,
                 e.snippet = ev.snippet,
                 e.confidence = ev.confidence,
@@ -207,7 +215,9 @@ class TaskDomainRepository:
                 e.author_canonical_id = ev.author_canonical_id,
                 e.author_canonical_name = ev.author_canonical_name,
                 e.evidence_type = ev.evidence_type,
-                e.extraction_version = ev.extraction_version
+                e.extraction_version = ev.extraction_version,
+                e.graph_sync_status = coalesce(e.graph_sync_status, ev.graph_sync_status, "PENDING"),
+                e.graph_sync_attempts = coalesce(e.graph_sync_attempts, ev.graph_sync_attempts, 0)
             MERGE (t)-[:HAS_EVIDENCE]->(e)
             WITH e, ev
             CALL {
@@ -296,6 +306,10 @@ class TaskDomainRepository:
                     ev_data["confidence"] = 1.0
                 if "extraction_version" not in ev_data or ev_data["extraction_version"] is None:
                     ev_data["extraction_version"] = "v1.0"
+                if "graph_sync_status" not in ev_data or ev_data["graph_sync_status"] is None:
+                    ev_data["graph_sync_status"] = "PENDING"
+                if "graph_sync_attempts" not in ev_data or ev_data["graph_sync_attempts"] is None:
+                    ev_data["graph_sync_attempts"] = 0
                 evidences.append(EvidenceRecord.model_validate(ev_data))
         task_dict["evidences"] = evidences
 

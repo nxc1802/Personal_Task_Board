@@ -70,16 +70,22 @@ class GraphMemorySyncWorker:
         """Resolve driver from explicit driver, neo4j_client, or memory_client."""
         if self._driver is not None:
             return self._driver
-        if self._neo4j_client is not None and hasattr(self._neo4j_client, "get_driver"):
-            try:
-                return self._neo4j_client.get_driver()
-            except Exception as e:
-                logger.debug(f"Failed to get driver from _neo4j_client: {e}")
-        if self.memory_client is not None and hasattr(self.memory_client, "get_driver"):
-            try:
-                return self.memory_client.get_driver()
-            except Exception as e:
-                logger.debug(f"Failed to get driver from memory_client: {e}")
+        if self._neo4j_client is not None:
+            if hasattr(self._neo4j_client, "get_driver"):
+                try:
+                    return self._neo4j_client.get_driver()
+                except Exception as e:
+                    logger.debug(f"Failed to get driver from _neo4j_client: {e}")
+            elif hasattr(self._neo4j_client, "session"):
+                return self._neo4j_client
+        if self.memory_client is not None:
+            if hasattr(self.memory_client, "get_driver"):
+                try:
+                    return self.memory_client.get_driver()
+                except Exception as e:
+                    logger.debug(f"Failed to get driver from memory_client: {e}")
+            elif hasattr(self.memory_client, "session"):
+                return self.memory_client
         return None
 
     def _make_key(self, item_type: str, item_id: str) -> str:
@@ -177,7 +183,8 @@ class GraphMemorySyncWorker:
             """
         elif norm_type == "evidence":
             cypher = """
-            MATCH (n:Evidence {id: $item_id})
+            MATCH (n:Evidence)
+            WHERE (n.id = $item_id OR n.evidence_id = $item_id)
             SET n.graph_sync_status = $status,
                 n.graph_sync_attempts = $attempts,
                 n.graph_synced_at = $synced_at,
@@ -236,15 +243,20 @@ class GraphMemorySyncWorker:
         Returns:
             The resulting status as string ("SYNCED", "RETRY", or "FAILED").
         """
-        rec = self._get_or_create_record(item_type, item_id)
-        rec["attempts"] += 1
-        rec["status"] = GraphSyncStatus.SYNCING
-        attempts = rec["attempts"]
-
         norm_type = item_type.lower().strip()
         call_payload = dict(payload) if isinstance(payload, dict) else (
             payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
         )
+
+        rec = self._get_or_create_record(item_type, item_id)
+        if rec["attempts"] == 0 and "graph_sync_attempts" in call_payload:
+            try:
+                rec["attempts"] = int(call_payload["graph_sync_attempts"])
+            except (ValueError, TypeError):
+                pass
+        rec["attempts"] += 1
+        rec["status"] = GraphSyncStatus.SYNCING
+        attempts = rec["attempts"]
 
         await self._update_neo4j_status(
             item_type=norm_type,
@@ -266,11 +278,23 @@ class GraphMemorySyncWorker:
             if norm_type == "evidence":
                 if "id" not in call_payload and item_id:
                     call_payload["id"] = item_id
-                await self.memory_client.add_evidence_episode(
-                    evidence=call_payload,
-                    task_id=call_payload.get("task_id"),
-                    raw_event_id=call_payload.get("raw_event_id"),
-                )
+                if hasattr(self.memory_client, "add_evidence_episode"):
+                    await self.memory_client.add_evidence_episode(
+                        evidence=call_payload,
+                        task_id=call_payload.get("task_id"),
+                        raw_event_id=call_payload.get("raw_event_id"),
+                    )
+                elif hasattr(self.memory_client, "add_episode"):
+                    body = f"Evidence ({call_payload.get('source_type', 'UNKNOWN')}): {call_payload.get('snippet', '')}"
+                    if call_payload.get("external_url"):
+                        body += f"\nURL: {call_payload['external_url']}"
+                    await self.memory_client.add_episode(
+                        name=f"evidence_{item_id}",
+                        episode_body=body,
+                        source_description=f"Task Evidence ({call_payload.get('source_type', 'UNKNOWN')})",
+                        reference_time=call_payload.get("timestamp") or datetime.now(timezone.utc),
+                        uuid=item_id,
+                    )
             elif norm_type == "decision":
                 if "decision_id" not in call_payload and item_id:
                     call_payload["decision_id"] = item_id
@@ -350,12 +374,15 @@ class GraphMemorySyncWorker:
 
             return final_status.value
 
-    async def run_sync_sweep(self, limit: int = 100) -> Dict[str, Any]:
-        """Sweep and synchronize all episodes currently in PENDING or RETRY state.
+    async def sweep_pending_evidence(self, limit: int = 100) -> Dict[str, Any]:
+        """Sweep and synchronize Evidence nodes in Neo4j with status PENDING or RETRY.
 
-        Scans both authoritative store (Neo4j) if available, and any locally enqueued episodes.
+        Queries Neo4j for Evidence nodes with:
+            graph_sync_status IN ['PENDING', 'RETRY']
+            AND graph_sync_attempts < max_retries
+        and synchronizes them to Graphiti.
         """
-        logger.info("Starting Graph memory sync sweep (limit=%d)...", limit)
+        logger.info("Starting Evidence sync sweep (limit=%d)...", limit)
         scanned = 0
         synced = 0
         retried = 0
@@ -364,6 +391,93 @@ class GraphMemorySyncWorker:
 
         driver = self._get_driver()
         if driver is not None and hasattr(driver, "session"):
+            cypher = """
+            MATCH (e:Evidence)
+            WHERE coalesce(e.graph_sync_status, 'PENDING') IN ['PENDING', 'RETRY']
+              AND coalesce(e.graph_sync_attempts, 0) < $max_retries
+            OPTIONAL MATCH (t:UnifiedTask)-[:HAS_EVIDENCE]->(e)
+            OPTIONAL MATCH (e)-[:DERIVED_FROM]->(r:RawEvent)
+            RETURN properties(e) AS props,
+                   head(collect(DISTINCT t.id)) AS task_id,
+                   head(collect(DISTINCT coalesce(r.id, e.raw_event_id, e.source_event_id))) AS raw_event_id
+            LIMIT $limit
+            """
+            try:
+                async with driver.session(database=self._database) as session:
+                    result = await session.run(
+                        cypher,
+                        {"max_retries": self.max_retries, "limit": limit},
+                    )
+                    async for row in result:
+                        scanned += 1
+                        props = (
+                            dict(row["props"])
+                            if hasattr(row.get("props"), "items") or isinstance(row.get("props"), dict)
+                            else {}
+                        )
+                        task_id = row.get("task_id")
+                        raw_event_id = row.get("raw_event_id")
+                        if task_id and "task_id" not in props:
+                            props["task_id"] = task_id
+                        if raw_event_id and "raw_event_id" not in props:
+                            props["raw_event_id"] = raw_event_id
+
+                        iid = props.get("id") or props.get("evidence_id")
+                        if not iid:
+                            continue
+
+                        status = await self.sync_episode(
+                            item_type="evidence",
+                            item_id=str(iid),
+                            payload=props,
+                        )
+                        if status == GraphSyncStatus.SYNCED.value:
+                            synced += 1
+                        elif status == GraphSyncStatus.FAILED.value:
+                            failed += 1
+                        else:
+                            retried += 1
+            except Exception as exc:
+                err_msg = f"Error during Evidence sync sweep query: {exc}"
+                logger.warning(err_msg)
+                errors.append(err_msg)
+
+        summary = {
+            "total_scanned": scanned,
+            "synced": synced,
+            "retried": retried,
+            "failed": failed,
+            "errors": errors,
+        }
+        logger.info("Evidence sync sweep finished: %s", summary)
+        return summary
+
+    async def run_sync_sweep(self, limit: int = 100) -> Dict[str, Any]:
+        """Sweep and synchronize all episodes currently in PENDING or RETRY state.
+
+        Scans both authoritative store (Neo4j) for Evidence, Decisions, Lessons,
+        and any locally enqueued episodes.
+        """
+        logger.info("Starting Graph memory sync sweep (limit=%d)...", limit)
+        scanned = 0
+        synced = 0
+        retried = 0
+        failed = 0
+        errors: List[str] = []
+
+        # 1. Sweep Evidence nodes in Neo4j
+        ev_summary = await self.sweep_pending_evidence(limit=limit)
+        scanned += ev_summary["total_scanned"]
+        synced += ev_summary["synced"]
+        retried += ev_summary["retried"]
+        failed += ev_summary["failed"]
+        errors.extend(ev_summary["errors"])
+
+        remaining_limit = max(0, limit - scanned)
+
+        # 2. Sweep other EpisodicNode (Decisions, Lessons) in Neo4j
+        driver = self._get_driver()
+        if driver is not None and hasattr(driver, "session") and remaining_limit > 0:
             cypher = """
             MATCH (n:EpisodicNode)
             WHERE coalesce(n.graph_sync_status, 'PENDING') IN ['PENDING', 'RETRY']
@@ -385,10 +499,9 @@ class GraphMemorySyncWorker:
                 async with driver.session(database=self._database) as session:
                     result = await session.run(
                         cypher,
-                        {"max_retries": self.max_retries, "limit": limit},
+                        {"max_retries": self.max_retries, "limit": remaining_limit},
                     )
                     async for row in result:
-                        scanned += 1
                         labels = row.get("node_labels") or []
                         props = dict(row["props"]) if hasattr(row.get("props"), "items") or isinstance(row.get("props"), dict) else {}
                         task_id = row.get("task_id")
@@ -424,6 +537,12 @@ class GraphMemorySyncWorker:
                         if not iid:
                             continue
 
+                        # Avoid double-syncing if already synced during evidence sweep
+                        rec = self.get_sync_record(str(iid), itype)
+                        if rec and rec.get("status") == GraphSyncStatus.SYNCED:
+                            continue
+
+                        scanned += 1
                         status = await self.sync_episode(
                             item_type=itype,
                             item_id=str(iid),
@@ -440,7 +559,7 @@ class GraphMemorySyncWorker:
                 logger.warning(err_msg)
                 errors.append(err_msg)
 
-        # Sweep local in-memory enqueued items
+        # 3. Sweep local in-memory enqueued items
         for key, item in list(self._pending_items.items()):
             rec = self.get_sync_record(item["item_id"], item["item_type"])
             curr_status = rec["status"] if rec else GraphSyncStatus.PENDING

@@ -66,6 +66,10 @@ class EvidenceRecord(BaseModel):
     author_canonical_id: Optional[str] = Field(default=None, description="ID người gửi theo Person node")
     author_canonical_name: Optional[str] = Field(default=None, description="Tên canonical người gửi")
     extraction_version: str = Field(default="v1.0")
+    graph_sync_status: Optional[str] = Field(default="PENDING", description="Trạng thái sync sang Graphiti: PENDING, SYNCING, SYNCED, RETRY, FAILED")
+    graph_sync_attempts: Optional[int] = Field(default=0, description="Số lần thử sync sang Graphiti")
+    graph_synced_at: Optional[str] = Field(default=None, description="Thời điểm sync thành công sang Graphiti")
+    graph_last_error: Optional[str] = Field(default=None, description="Lỗi gần nhất khi sync sang Graphiti")
 
     def model_post_init(self, __context: Any) -> None:
         if self.source_event_id and not self.raw_event_id:

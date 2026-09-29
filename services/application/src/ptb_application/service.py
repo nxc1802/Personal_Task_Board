@@ -174,6 +174,13 @@ class ApplicationService:
                     if check_res is False:
                         check_health_val = False
 
+                adapter = getattr(self.graph_memory, "adapter", None)
+                if adapter is not None:
+                    if hasattr(adapter, "is_available") and not adapter.is_available:
+                        check_health_val = False
+                    if getattr(adapter, "last_error", None) is not None:
+                        check_health_val = False
+
                 if is_healthy_val is False or check_health_val is False:
                     log_bug(
                         BugCode.PTB_GRAPH_001,

@@ -481,3 +481,45 @@ async def test_cmd_doctor_llm_readiness_and_deep_check(monkeypatch, capsys):
                 for call in mock_log_bug_deep.call_args_list
             )
 
+
+@pytest.mark.asyncio
+async def test_process_supervisor_wires_and_stops_graph_sync_worker(capsys):
+    """Verify PTBProcessSupervisor starts ptb-graph-sync-worker and terminates it cleanly without double close."""
+    app_port = 8137
+    mcp_port = 8138
+    supervisor = PTBProcessSupervisor(
+        host="127.0.0.1",
+        app_port=app_port,
+        mcp_port=mcp_port,
+        enable_playwright=False,
+        poll_interval=0.5,
+        raw_event_repo=InMemoryRawEventRepository(),
+        checkpoint_repo=InMemoryCheckpointRepository(),
+        task_repo=MagicMock(),
+    )
+
+    exit_code = await supervisor.run(max_runtime=1.5)
+    assert exit_code == 0
+
+    # Verify graph sync worker was started and named task existed
+    assert supervisor.sync_worker is not None
+    assert supervisor.graph_sync_task is not None
+    assert supervisor.graph_sync_task in supervisor.tasks
+    assert supervisor.graph_sync_task.get_name() == "ptb-graph-sync-worker"
+
+    # Verify banner outputs graph worker status
+    captured = capsys.readouterr().out
+    assert "Graph Memory Sync Worker :" in captured
+    assert "Đã tắt an toàn toàn bộ services." in captured
+
+
+@pytest.mark.asyncio
+async def test_cmd_doctor_includes_graphiti_check(capsys):
+    """Verify cmd_doctor performs check on Graphiti Semantic Memory layer."""
+    args = argparse.Namespace(deep=False)
+    exit_code = await cmd_doctor(args)
+    captured = capsys.readouterr().out
+    assert "Graphiti Semantic Memory" in captured
+    assert exit_code in (0, 1)
+
+

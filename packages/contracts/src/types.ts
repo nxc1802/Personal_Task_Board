@@ -117,6 +117,10 @@ export interface EvidenceRecord {
   author_canonical_id?: string | null;
   author_canonical_name?: string | null;
   extraction_version?: string;
+  graph_sync_status?: string | null;
+  graph_sync_attempts?: number;
+  graph_synced_at?: string | null;
+  graph_last_error?: string | null;
 }
 
 export type Evidence = EvidenceRecord;

@@ -15,6 +15,7 @@ Quản trị và vận hành hệ thống Personal Task Board v1 theo docs/v1.md
 
 import argparse
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -251,6 +252,7 @@ class PTBProcessSupervisor:
         git_adapter: Optional[Any] = None,
         jira_adapter: Optional[Any] = None,
         shortcut_adapter: Optional[Any] = None,
+        sync_worker: Optional[Any] = None,
     ):
         self.host = host
         self.app_port = app_port
@@ -264,6 +266,7 @@ class PTBProcessSupervisor:
         self.checkpoint_repo = checkpoint_repo
         self.task_repo = task_repo
         self.application_service = application_service
+        self.sync_worker = sync_worker
 
         self.sources_config = sources_config
         self.sources_config_path = sources_config_path
@@ -279,6 +282,7 @@ class PTBProcessSupervisor:
         self.app_server: Optional[Any] = None
         self.mcp_server: Optional[Any] = None
         self.processing_worker: Optional[Any] = None
+        self.graph_sync_task: Optional[asyncio.Task] = None
         self.playwright_orchestrator: Optional[Any] = None
         self.neo4j_client: Optional[Any] = None
         self.acq_pipeline: Optional[Any] = None
@@ -288,6 +292,75 @@ class PTBProcessSupervisor:
     def trigger_shutdown(self) -> None:
         """Kích hoạt tín hiệu dừng graceful shutdown."""
         self._shutdown_event.set()
+
+    async def get_graph_backlog_count(self) -> int:
+        """Đếm số lượng episodes đang PENDING hoặc RETRY chờ đồng bộ sang Graphiti."""
+        count = 0
+        if self.sync_worker is not None:
+            pending_items = getattr(self.sync_worker, "_pending_items", None)
+            if isinstance(pending_items, dict):
+                count += len(pending_items)
+
+        if self.neo4j_client is not None and hasattr(self.neo4j_client, "get_driver"):
+            try:
+                driver = self.neo4j_client.get_driver()
+                if driver is not None and hasattr(driver, "session"):
+                    cypher = """
+                    MATCH (n:EpisodicNode)
+                    WHERE coalesce(n.graph_sync_status, 'PENDING') IN ['PENDING', 'RETRY']
+                    RETURN count(n) AS cnt
+                    """
+                    async with driver.session() as session:
+                        res = await session.run(cypher)
+                        rec = await res.single()
+                        if rec and "cnt" in rec:
+                            count += rec["cnt"]
+            except Exception as e:
+                logger.debug("Lỗi truy vấn graph backlog từ Neo4j: %s", e)
+        return count
+
+    async def get_system_health(self) -> Dict[str, Any]:
+        """Kiểm tra tình trạng runtime health của toàn bộ supervisor subsystems."""
+        if self.application_service is not None and hasattr(self.application_service, "get_system_health"):
+            health = await self.application_service.get_system_health()
+        else:
+            health = {
+                "status": "healthy" if self.state in ("READY", "READY_WITH_WARNINGS") else self.state.lower(),
+                "service": "ptb-supervisor",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "neo4j": "healthy" if self.neo4j_client else "not_ready",
+                "processing_worker": "healthy" if self.processing_worker and getattr(self.processing_worker, "_running", False) else "not_ready",
+                "graphiti": "healthy",
+            }
+
+        graph_running = bool(self.graph_sync_task and not self.graph_sync_task.done())
+        health["graph_worker"] = "RUNNING" if graph_running else "STOPPED"
+        backlog_count = await self.get_graph_backlog_count()
+        health["graph_backlog"] = backlog_count
+
+        adapter = None
+        if self.sync_worker is not None:
+            mem_client = getattr(self.sync_worker, "memory_client", None)
+            adapter = getattr(mem_client, "adapter", None)
+        if adapter is None and self.application_service is not None:
+            mem_client = getattr(self.application_service, "graph_memory", None)
+            adapter = getattr(mem_client, "adapter", None)
+
+        if adapter is not None:
+            if not getattr(adapter, "is_available", True) or getattr(adapter, "last_error", None) is not None:
+                health["graphiti"] = "degraded"
+                log_bug(
+                    code=BugCode.PTB_GRAPH_001,
+                    subsystem="graph_memory",
+                    severity="WARNING",
+                    message="Graphiti adapter is unavailable or errored",
+                )
+                if health.get("status") == "healthy":
+                    health["status"] = "degraded"
+            else:
+                health["graphiti"] = "healthy"
+
+        return health
 
     async def _poll_health_url(self, url: str, timeout: float = 1.0) -> bool:
         """Kiểm tra HTTP endpoint trả về status 200 và JSON status != 'not_ready' trong separate thread."""
@@ -608,6 +681,15 @@ class PTBProcessSupervisor:
             )
         shared_service = self.application_service
 
+        # 5b. Khởi tạo GraphMemorySyncWorker (chạy nền đồng bộ tri thức sang Graphiti)
+        if self.sync_worker is None:
+            from ptb_graph_memory.sync_worker import GraphMemorySyncWorker
+            mem_client = getattr(self.application_service, "graph_memory", None)
+            self.sync_worker = GraphMemorySyncWorker(
+                memory_client=mem_client,
+                neo4j_client=self.neo4j_client,
+            )
+
         # 6. Inject instance shared_service này vào cả FastAPI app (:8000) và FastMCP server (:8001)
         from ptb_application.api import create_app, set_application_service
         set_application_service(shared_service)
@@ -653,6 +735,72 @@ class PTBProcessSupervisor:
             name="ptb-processing-worker",
         )
         self.tasks.append(worker_task)
+
+        # 3b. GraphMemorySyncWorker Background Loop
+        async def _graph_sync_loop():
+            logger.info("GraphMemorySyncWorker loop started.")
+            if hasattr(self.sync_worker, "run_loop") and callable(self.sync_worker.run_loop):
+                try:
+                    await self.sync_worker.run_loop(poll_interval=self.poll_interval)
+                    return
+                except asyncio.CancelledError:
+                    return
+                except Exception as err:
+                    logger.warning("Graph memory sync worker run_loop error: %s", err)
+                    log_bug(
+                        code=BugCode.PTB_GRAPH_001,
+                        subsystem="graph_memory",
+                        severity="WARNING",
+                        message=f"Graph memory sync worker loop failed: {err}",
+                        exc=err,
+                    )
+
+            if hasattr(self.sync_worker, "start") and callable(self.sync_worker.start):
+                try:
+                    res = self.sync_worker.start()
+                    if inspect.isawaitable(res):
+                        await res
+                        return
+                except asyncio.CancelledError:
+                    return
+                except Exception as err:
+                    logger.warning("Graph memory sync worker start error: %s", err)
+                    log_bug(
+                        code=BugCode.PTB_GRAPH_001,
+                        subsystem="graph_memory",
+                        severity="WARNING",
+                        message=f"Graph memory sync worker start failed: {err}",
+                        exc=err,
+                    )
+
+            while self._running:
+                try:
+                    if hasattr(self.sync_worker, "run_sync_sweep") and callable(self.sync_worker.run_sync_sweep):
+                        sweep_res = self.sync_worker.run_sync_sweep()
+                        if inspect.isawaitable(sweep_res):
+                            await sweep_res
+                except asyncio.CancelledError:
+                    break
+                except Exception as err:
+                    logger.warning("Graph memory sync sweep error: %s", err)
+                    log_bug(
+                        code=BugCode.PTB_GRAPH_001,
+                        subsystem="graph_memory",
+                        severity="WARNING",
+                        message=f"Graph memory sync sweep failed: {err}",
+                        exc=err,
+                    )
+                try:
+                    await asyncio.sleep(self.poll_interval)
+                except asyncio.CancelledError:
+                    break
+            logger.info("GraphMemorySyncWorker loop stopped.")
+
+        self.graph_sync_task = asyncio.create_task(
+            _graph_sync_loop(),
+            name="ptb-graph-sync-worker",
+        )
+        self.tasks.append(self.graph_sync_task)
 
         # 4. Ingestion Adapter Background Polling Tasks (Coding Agents, Git, Jira, Shortcut)
         for a_name, a_runner in self.adapter_runners.items():
@@ -795,6 +943,10 @@ class PTBProcessSupervisor:
             banner_line = "READY: All PTB components operational!"
             pw_state = "ACTIVE" if self.enable_playwright else "DISABLED (--no-playwright)"
 
+        # Determine Graph Worker status and backlog
+        graph_worker_status = "RUNNING" if (self.graph_sync_task and not self.graph_sync_task.done()) else "STOPPED"
+        backlog_count = await self.get_graph_backlog_count()
+
         # In thông báo chuẩn theo yêu cầu thiết kế
         print("\n" + "=" * 70)
         print(banner_line)
@@ -802,6 +954,7 @@ class PTBProcessSupervisor:
         print(f"  • Application Service REST : http://{self.host}:{self.app_port} (/health [PASS])")
         print(f"  • FastMCP Server (SSE)     : http://{self.host}:{self.mcp_port} (/health [PASS])")
         print(f"  • ProcessingWorker Loop    : ACTIVE (poll_interval={self.poll_interval}s)")
+        print(f"  • Graph Memory Sync Worker : {graph_worker_status} (Backlog: {backlog_count})")
         print(f"  • Coding Agent Watchers    : ACTIVE (Cursor, Claude Code, Antigravity)")
         print(f"  • Playwright Acquisition   : {pw_state}")
         for name, runner in self.adapter_runners.items():
@@ -840,6 +993,15 @@ class PTBProcessSupervisor:
             self.processing_worker.stop()
         if self.playwright_orchestrator:
             self.playwright_orchestrator.stop()
+        if self.sync_worker and hasattr(self.sync_worker, "stop") and callable(self.sync_worker.stop):
+            try:
+                self.sync_worker.stop()
+            except Exception as e:
+                logger.debug("Lỗi khi dừng sync_worker: %s", e)
+
+        # Dừng và cancel task ptb-graph-sync-worker
+        if self.graph_sync_task and not self.graph_sync_task.done():
+            self.graph_sync_task.cancel()
 
         # 2. Dừng uvicorn servers
         if self.app_server:
@@ -855,7 +1017,37 @@ class PTBProcessSupervisor:
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
 
-        # 4. Đóng Neo4j client nếu có
+        # 4. Đóng Graphiti client an toàn mà KHÔNG double-close shared neo4j_client
+        if self.sync_worker is not None:
+            mem_client = getattr(self.sync_worker, "memory_client", None)
+            if mem_client is not None:
+                shared_neo = (
+                    getattr(mem_client, "_neo4j_client", None) is self.neo4j_client
+                    or getattr(mem_client, "neo4j_client", None) is self.neo4j_client
+                )
+                if shared_neo:
+                    if hasattr(mem_client, "_neo4j_client"):
+                        mem_client._neo4j_client = None
+                    if hasattr(mem_client, "_driver") and self.neo4j_client is not None:
+                        if mem_client._driver is getattr(self.neo4j_client, "_driver", None):
+                            mem_client._driver = None
+
+                if hasattr(mem_client, "close") and callable(mem_client.close):
+                    try:
+                        res = mem_client.close()
+                        if inspect.isawaitable(res):
+                            await res
+                    except Exception as e:
+                        logger.debug("Lỗi khi đóng Graphiti memory_client lúc tắt: %s", e)
+            elif hasattr(self.sync_worker, "close") and callable(self.sync_worker.close):
+                try:
+                    res = self.sync_worker.close()
+                    if inspect.isawaitable(res):
+                        await res
+                except Exception as e:
+                    logger.debug("Lỗi khi đóng sync_worker lúc tắt: %s", e)
+
+        # 5. Đóng Neo4j client nếu có (duy nhất 1 lần cho shared instance)
         if self.neo4j_client:
             try:
                 await self.neo4j_client.close()
@@ -1172,6 +1364,57 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
         "details": llm_detail,
     })
 
+    # 7. Graphiti Semantic Memory Layer
+    graphiti_ok = False
+    graphiti_detail = ""
+    try:
+        from ptb_graph_memory.adapter import GraphitiAdapter, HAS_GRAPHITI_CORE
+        test_adapter = GraphitiAdapter(
+            uri=os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687"),
+            user=os.getenv("NEO4J_USERNAME", "neo4j"),
+            password=os.getenv("NEO4J_PASSWORD", "taskboard123"),
+            database=os.getenv("NEO4J_DATABASE", "neo4j"),
+        )
+        if test_adapter.is_available:
+            graphiti_ok = True
+            graphiti_detail = "Graphiti adapter initialized & connected to Neo4j"
+        elif not HAS_GRAPHITI_CORE:
+            graphiti_ok = False
+            graphiti_detail = "graphiti-core not available -> Graphiti DEGRADED"
+            log_bug(
+                code=BugCode.PTB_GRAPH_001,
+                subsystem="graph_memory",
+                severity="WARNING",
+                message=graphiti_detail,
+            )
+        else:
+            graphiti_ok = False
+            graphiti_detail = f"Graphiti adapter unavailable ({test_adapter.last_error or 'offline'}) -> Graphiti DEGRADED"
+            log_bug(
+                code=BugCode.PTB_GRAPH_001,
+                subsystem="graph_memory",
+                severity="WARNING",
+                message=graphiti_detail,
+            )
+    except Exception as e:
+        graphiti_ok = False
+        graphiti_detail = f"Graphiti check error: {e} -> Graphiti DEGRADED"
+        log_bug(
+            code=BugCode.PTB_GRAPH_001,
+            subsystem="graph_memory",
+            severity="WARNING",
+            message=graphiti_detail,
+            exc=e,
+        )
+
+    checks.append({
+        "component": "Graphiti Semantic Memory",
+        "status": PASS_SYM if graphiti_ok else WARN_SYM,
+        "is_pass": graphiti_ok,
+        "is_warn": not graphiti_ok,
+        "details": graphiti_detail,
+    })
+
     # In bảng tóm tắt
     print(f"\n{COLOR_BOLD}{'Component':<32} | {'Status':<14} | {'Details / Notes'}{COLOR_RESET}")
     print("-" * 75)
@@ -1357,6 +1600,44 @@ async def cmd_status(args: argparse.Namespace) -> int:
     print(f"    • Git Watcher   : {git_health.get('status', 'unknown').upper()} (Active Repos: {len(git_health.get('valid_git_repos', []))})")
     print(f"    • Jira Cloud    : {jira_health.get('status', 'unknown').upper()} (Configured: {jira_health.get('configured')})")
     print(f"    • Shortcut API  : {shortcut_health.get('status', 'unknown').upper()} (Configured: {shortcut_health.get('configured')})")
+
+    # 6. Graph Memory Sync Worker & Episodic Graph
+    graph_worker_status = "STOPPED"
+    backlog_count = 0
+    graphiti_status = "Unavailable (DEGRADED)"
+    try:
+        from ptb_graph_memory.adapter import GraphitiAdapter
+        test_adapter = GraphitiAdapter()
+        if test_adapter.is_available:
+            graphiti_status = "Available (Healthy)"
+        else:
+            graphiti_status = "Unavailable (DEGRADED)"
+            log_bug(
+                code=BugCode.PTB_GRAPH_001,
+                subsystem="graph_memory",
+                severity="WARNING",
+                message="Graphiti adapter is unavailable during status check",
+            )
+
+        if "Connected" in neo4j_status:
+            from ptb_database.neo4j_client import Neo4jClient
+            client = Neo4jClient()
+            if await client.verify_connectivity():
+                driver = client.get_driver()
+                async with driver.session() as session:
+                    res_b = await session.run(
+                        "MATCH (n:EpisodicNode) WHERE coalesce(n.graph_sync_status, 'PENDING') IN ['PENDING', 'RETRY'] RETURN count(n) as cnt"
+                    )
+                    rec_b = await res_b.single()
+                    if rec_b and "cnt" in rec_b:
+                        backlog_count = rec_b["cnt"]
+                await client.close()
+    except Exception as ge:
+        logger.debug("Graph status check error: %s", ge)
+
+    print(f"\n[6] Graph Memory Sync Worker & Episodic Graph:")
+    print(f"    • Graphiti Layer: {graphiti_status}")
+    print(f"    • Graph Worker  : {graph_worker_status} (Backlog: {backlog_count})")
 
     print("\n" + "=" * 70)
     return 0

@@ -59,6 +59,10 @@ class EvidenceNodeRecord(BaseModel):
     timestamp: datetime
     source_event_id: Optional[str] = None
     raw_event_id: Optional[str] = None
+    graph_sync_status: Optional[str] = Field(default="PENDING", description="Trạng thái sync: PENDING, SYNCING, SYNCED, RETRY, FAILED")
+    graph_sync_attempts: Optional[int] = Field(default=0, description="Số lần thử sync")
+    graph_synced_at: Optional[str] = None
+    graph_last_error: Optional[str] = None
 
     def model_post_init(self, __context: Any) -> None:
         if self.source_event_id and not self.raw_event_id:

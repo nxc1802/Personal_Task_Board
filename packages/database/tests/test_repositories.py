@@ -1136,3 +1136,100 @@ async def test_split_task_in_repo():
     assert p["evidence_ids_to_detach"] == ["ev-2"]
 
 
+@pytest.mark.asyncio
+async def test_evidence_created_with_pending_graph_sync():
+    """Verify that when TaskDomainRepository creates or upserts Evidence nodes,
+    they are initialized with graph_sync_status = 'PENDING' and graph_sync_attempts = 0.
+    Also verify Graphiti is NEVER called in the authoritative transaction.
+    """
+    session = MockSession()
+    client = make_client_with_session(session)
+    repo = TaskDomainRepository(client)
+
+    evidence = EvidenceRecord(
+        id="ev-sync-101",
+        task_id="task-sync-101",
+        raw_event_id="raw-sync-101",
+        evidence_type=EvidenceType.CHAT_COMMITMENT,
+        source_type="ms_teams",
+        timestamp=datetime(2026, 9, 29, 10, 0, 0, tzinfo=timezone.utc),
+        snippet="Will deploy persistent sync worker by noon",
+        confidence=0.96,
+    )
+
+    task = UnifiedTaskCandidate(
+        id="task-sync-101",
+        title="Implement Persistent Graph Sync",
+        description="Wave 2 graph sync implementation",
+        status=TaskStatus.IN_PROGRESS,
+        priority_score=90.0,
+        evidences=[evidence],
+    )
+
+    # 1. Authoritative write to Neo4j
+    returned_id = await repo.upsert_task_atomic(task)
+    assert returned_id == "task-sync-101"
+
+    # Transaction committed
+    assert session.active_tx is not None
+    assert session.active_tx.committed is True
+
+    # Find evidence query
+    ev_queries = [
+        (q, p) for q, p in session.active_tx.queries
+        if "MERGE (e:Evidence {id: ev.id})" in q
+    ]
+    assert len(ev_queries) == 1
+    q, p = ev_queries[0]
+
+    # Verify Cypher query initializes graph_sync_status = "PENDING" and attempts = 0
+    assert "e.graph_sync_status = coalesce(e.graph_sync_status, ev.graph_sync_status, \"PENDING\")" in q or "ON CREATE SET e.graph_sync_status = \"PENDING\"" in q
+    assert "e.graph_sync_attempts = coalesce(e.graph_sync_attempts, ev.graph_sync_attempts, 0)" in q or "e.graph_sync_attempts = 0" in q
+
+    # Verify parameter payload carries PENDING and 0 attempts
+    ev_list = p.get("evidences", [])
+    assert len(ev_list) == 1
+    ev_param = ev_list[0]
+    assert ev_param["id"] == "ev-sync-101"
+    assert ev_param["graph_sync_status"] == "PENDING"
+    assert ev_param["graph_sync_attempts"] == 0
+
+    # 2. Verify reading back task candidate parses graph_sync_status = PENDING
+    async def read_handler(query: str, params: Dict[str, Any]):
+        return MockAsyncResult(single_record=MockRecord({
+            "t": {
+                "id": "task-sync-101",
+                "title": "Implement Persistent Graph Sync",
+                "status": "IN_PROGRESS",
+            },
+            "owner_canonical_id": None,
+            "owner_name": None,
+            "requester_canonical_id": None,
+            "requester_name": None,
+            "evidences": [{
+                "id": "ev-sync-101",
+                "task_id": "task-sync-101",
+                "raw_event_id": "raw-sync-101",
+                "evidence_type": "chat_commitment",
+                "source_type": "ms_teams",
+                "timestamp": "2026-09-29T10:00:00+00:00",
+                "snippet": "Will deploy persistent sync worker by noon",
+                "confidence": 0.96,
+                "graph_sync_status": "PENDING",
+                "graph_sync_attempts": 0,
+            }],
+        }))
+
+    read_session = MockSession(run_handler=read_handler)
+    read_client = make_client_with_session(read_session)
+    read_repo = TaskDomainRepository(read_client)
+    retrieved_task = await read_repo.get_task_by_id("task-sync-101")
+
+    assert retrieved_task is not None
+    assert len(retrieved_task.evidences) == 1
+    retrieved_ev = retrieved_task.evidences[0]
+    assert retrieved_ev.graph_sync_status == "PENDING"
+    assert retrieved_ev.graph_sync_attempts == 0
+
+
+

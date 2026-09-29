@@ -808,3 +808,228 @@ async def test_sync_worker_run_sync_sweep_processes_pending_and_retry():
     assert worker_db.get_sync_status("ev-db1") == GraphSyncStatus.SYNCED
     assert worker_db.get_sync_status("dec-db1") == GraphSyncStatus.SYNCED
 
+
+@pytest.mark.asyncio
+async def test_graph_worker_sweep_syncs_pending_evidence():
+    """Verify that GraphMemorySyncWorker sweep scans Evidence nodes in Neo4j with
+    graph_sync_status IN ['PENDING', 'RETRY'], synchronizes them to Graphiti,
+    and updates status to SYNCED with graph_synced_at timestamp in Neo4j."""
+    executed_queries: List[tuple[str, Dict[str, Any]]] = []
+
+    async def sweep_handler(query: str, params: Dict[str, Any]):
+        executed_queries.append((query, params))
+        if "MATCH (e:Evidence)" in query:
+            return MockAsyncResult(records=[
+                MockRecord({
+                    "props": {
+                        "id": "ev-sweep-001",
+                        "snippet": "User requested database indexing",
+                        "source_type": "ms_teams",
+                        "timestamp": "2026-09-29T10:00:00+00:00",
+                        "graph_sync_status": "PENDING",
+                        "graph_sync_attempts": 0,
+                    },
+                    "task_id": "task-sweep-001",
+                    "raw_event_id": "raw-sweep-001",
+                }),
+                MockRecord({
+                    "props": {
+                        "id": "ev-sweep-002",
+                        "snippet": "Retry evidence after transient network hiccup",
+                        "source_type": "git",
+                        "timestamp": "2026-09-29T10:05:00+00:00",
+                        "graph_sync_status": "RETRY",
+                        "graph_sync_attempts": 1,
+                        "graph_last_error": "Connection timeout",
+                    },
+                    "task_id": "task-sweep-002",
+                    "raw_event_id": "raw-sweep-002",
+                }),
+            ])
+        elif "MATCH (n:Evidence)" in query:
+            return MockAsyncResult(single_record=MockRecord({"updated": 1}))
+        return MockAsyncResult()
+
+    driver = MockDriver(run_handler=sweep_handler)
+
+    mock_client = MagicMock()
+    mock_client.add_evidence_episode = AsyncMock(return_value="synced-ok")
+    mock_client.get_driver = MagicMock(return_value=driver)
+
+    worker = GraphMemorySyncWorker(
+        memory_client=mock_client,
+        driver=driver,
+        max_retries=3,
+    )
+
+    # Execute sweep
+    sweep_summary = await worker.sweep_pending_evidence()
+
+    # 1. Verify sweep summary results
+    assert sweep_summary["total_scanned"] == 2
+    assert sweep_summary["synced"] == 2
+    assert sweep_summary["retried"] == 0
+    assert sweep_summary["failed"] == 0
+    assert len(sweep_summary["errors"]) == 0
+
+    # 2. Verify Graphiti client was invoked for both evidence items
+    assert mock_client.add_evidence_episode.call_count == 2
+    call_args_1 = mock_client.add_evidence_episode.call_args_list[0][1]
+    assert call_args_1["evidence"]["id"] == "ev-sweep-001"
+    assert call_args_1["task_id"] == "task-sweep-001"
+    call_args_2 = mock_client.add_evidence_episode.call_args_list[1][1]
+    assert call_args_2["evidence"]["id"] == "ev-sweep-002"
+    assert call_args_2["task_id"] == "task-sweep-002"
+
+    # 3. Verify in-memory status transitioned to SYNCED
+    assert worker.get_sync_status("ev-sweep-001") == GraphSyncStatus.SYNCED
+    rec1 = worker.get_sync_record("ev-sweep-001")
+    assert rec1 is not None
+    assert rec1["status"] == GraphSyncStatus.SYNCED
+    assert rec1["graph_synced_at"] is not None
+    assert rec1["last_error"] is None
+    assert rec1["attempts"] == 1
+
+    assert worker.get_sync_status("ev-sweep-002") == GraphSyncStatus.SYNCED
+    rec2 = worker.get_sync_record("ev-sweep-002")
+    assert rec2 is not None
+    assert rec2["status"] == GraphSyncStatus.SYNCED
+    assert rec2["graph_synced_at"] is not None
+    assert rec2["last_error"] is None
+    # Previous attempts were 1, so after this successful attempt it is 2
+    assert rec2["attempts"] == 2
+
+    # 4. Verify Neo4j update queries were executed to persist SYNCED state
+    status_update_queries = [
+        (q, p) for q, p in executed_queries
+        if "SET n.graph_sync_status = $status" in q
+    ]
+    assert len(status_update_queries) >= 2
+    synced_updates = [
+        (q, p) for q, p in status_update_queries
+        if p.get("status") == "SYNCED"
+    ]
+    assert len(synced_updates) == 2
+    for _, p in synced_updates:
+        assert p["status"] == "SYNCED"
+        assert p["synced_at"] is not None
+        assert p["last_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_graph_worker_failure_marks_retry_without_task_rollback():
+    """Verify that when Graphiti throws an error during sync:
+    1. Exception does not propagate or crash the worker.
+    2. PTB-GRAPH-001 bug telemetry is logged via log_bug.
+    3. Status transitions to RETRY (if attempts < max_retries) or FAILED (if attempts >= max_retries).
+    4. graph_sync_attempts is incremented and graph_last_error is persisted to Neo4j.
+    5. The authoritative domain task and evidence in Neo4j are completely preserved without rollback.
+    """
+    executed_queries: List[tuple[str, Dict[str, Any]]] = []
+
+    async def sweep_handler(query: str, params: Dict[str, Any]):
+        executed_queries.append((query, params))
+        if "MATCH (e:Evidence)" in query:
+            return MockAsyncResult(records=[
+                MockRecord({
+                    "props": {
+                        "id": "ev-fail-001",
+                        "snippet": "Critical evidence for task-fail-001",
+                        "source_type": "jira",
+                        "timestamp": "2026-09-29T10:10:00+00:00",
+                        "graph_sync_status": "PENDING",
+                        "graph_sync_attempts": 0,
+                    },
+                    "task_id": "task-fail-001",
+                    "raw_event_id": "raw-fail-001",
+                })
+            ])
+        elif "MATCH (n:Evidence)" in query:
+            return MockAsyncResult(single_record=MockRecord({"updated": 1}))
+        return MockAsyncResult()
+
+    driver = MockDriver(run_handler=sweep_handler)
+
+    # Graphiti client that throws error
+    mock_client = MagicMock()
+    mock_client.add_evidence_episode = AsyncMock(
+        side_effect=RuntimeError("Graphiti cluster unreachable / timeout")
+    )
+    mock_client.get_driver = MagicMock(return_value=driver)
+
+    worker = GraphMemorySyncWorker(
+        memory_client=mock_client,
+        driver=driver,
+        max_retries=3,
+    )
+
+    with patch("ptb_graph_memory.sync_worker.log_bug") as mock_log_bug:
+        # First attempt: 0 -> 1 < 3 => RETRY
+        summary = await worker.sweep_pending_evidence()
+
+        assert summary["total_scanned"] == 1
+        assert summary["synced"] == 0
+        assert summary["retried"] == 1
+        assert summary["failed"] == 0
+
+        # Verify log_bug with PTB_GRAPH_001
+        assert mock_log_bug.call_count == 1
+        call_kwargs = mock_log_bug.call_args[1]
+        assert call_kwargs["code"] == BugCode.PTB_GRAPH_001
+        assert call_kwargs["subsystem"] == "graph_memory"
+        assert call_kwargs["severity"] == "WARNING"
+        assert "ev-fail-001" in call_kwargs["message"]
+        assert "Graphiti cluster unreachable" in str(call_kwargs["exc"])
+
+        # Verify status is RETRY
+        assert worker.get_sync_status("ev-fail-001") == GraphSyncStatus.RETRY
+        rec = worker.get_sync_record("ev-fail-001")
+        assert rec["attempts"] == 1
+        assert "Graphiti cluster unreachable" in rec["last_error"]
+
+        # Verify Neo4j update query recorded RETRY status, attempts=1, and last_error
+        retry_updates = [
+            (q, p) for q, p in executed_queries
+            if p.get("status") == "RETRY" and p.get("item_id") == "ev-fail-001"
+        ]
+        assert len(retry_updates) == 1
+        _, p_retry = retry_updates[0]
+        assert p_retry["attempts"] == 1
+        assert "Graphiti cluster unreachable" in p_retry["last_error"]
+
+        # Crucial invariant check: No rollback, no DELETE query was executed
+        assert not any("DELETE" in q.upper() for q, _ in executed_queries)
+        assert not any("ROLLBACK" in q.upper() for q, _ in executed_queries)
+
+    # Now simulate exceeding max_retries (attempt 2 and 3)
+    with patch("ptb_graph_memory.sync_worker.log_bug"):
+        # Attempt 2: 1 -> 2 < 3 => RETRY
+        status_2 = await worker.sync_episode(
+            item_type="evidence",
+            item_id="ev-fail-001",
+            payload={"id": "ev-fail-001", "snippet": "Critical evidence", "graph_sync_attempts": 1},
+        )
+        assert status_2 == GraphSyncStatus.RETRY
+
+        # Attempt 3: 2 -> 3 >= 3 => FAILED
+        status_3 = await worker.sync_episode(
+            item_type="evidence",
+            item_id="ev-fail-001",
+            payload={"id": "ev-fail-001", "snippet": "Critical evidence", "graph_sync_attempts": 2},
+        )
+        assert status_3 == GraphSyncStatus.FAILED
+        assert worker.get_sync_status("ev-fail-001") == GraphSyncStatus.FAILED
+
+        failed_updates = [
+            (q, p) for q, p in executed_queries
+            if p.get("status") == "FAILED" and p.get("item_id") == "ev-fail-001"
+        ]
+        assert len(failed_updates) == 1
+        _, p_failed = failed_updates[0]
+        assert p_failed["attempts"] == 3
+        assert "Graphiti cluster unreachable" in p_failed["last_error"]
+
+        # Invariant maintained: Authoritative Neo4j data never deleted/rolled back
+        assert not any("DELETE" in q.upper() for q, _ in executed_queries)
+
+
