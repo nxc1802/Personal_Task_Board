@@ -10,12 +10,12 @@ description: OpenWebUI Action & Filter for rendering Personal Task Board interac
 import json
 import os
 from pathlib import Path
+import sys
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 import urllib.error
 import urllib.request
 from pydantic import BaseModel, Field
-
-from ptb_contracts.logging import BugCode, log_bug
 
 OFFLINE_ERROR_MESSAGE = (
     "❌ [PTB-OWUI-001] APPLICATION SERVICE OFFLINE "
@@ -24,10 +24,35 @@ OFFLINE_ERROR_MESSAGE = (
 )
 
 
+def _log_owui_error(
+    message: str,
+    exc: Optional[Exception] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Ghi log lỗi nội bộ có cấu trúc ra stderr với mã [PTB-OWUI-001] mà không phụ thuộc ptb_contracts."""
+    payload: Dict[str, Any] = {
+        "bug_code": "PTB-OWUI-001",
+        "subsystem": "openwebui",
+        "severity": "ERROR",
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if context:
+        payload["context"] = context
+    if exc is not None:
+        payload["exception_type"] = type(exc).__name__
+        payload["exception_message"] = str(exc)
+    sys.stderr.write(f"[PTB-OWUI-001] {json.dumps(payload, ensure_ascii=False)}\n")
+    sys.stderr.flush()
+
+
 class Action:
     class Valves(BaseModel):
         app_service_url: str = Field(
-            default="http://localhost:8000",
+            default=os.getenv(
+                "PTB_APP_URL",
+                os.getenv("APP_SERVICE_URL", "http://host.docker.internal:8000")
+            ),
             description="Base URL for PTB Application Service"
         )
         board_html_path: str = Field(
@@ -40,7 +65,11 @@ class Action:
         )
 
     def __init__(self):
-        self.valves = self.Valves()
+        env_url = os.getenv("PTB_APP_URL") or os.getenv("APP_SERVICE_URL")
+        if env_url:
+            self.valves = self.Valves(app_service_url=env_url)
+        else:
+            self.valves = self.Valves()
         self._last_http_error_logged: bool = False
 
     def _resolve_board_html_path(self) -> Path:
@@ -49,34 +78,41 @@ class Action:
             custom_path = Path(self.valves.board_html_path)
             if custom_path.exists():
                 return custom_path
+            return custom_path
 
-        # Check default locations
+        # Check default locations (no developer hardcoded paths)
         candidate_paths = [
-            Path(__file__).parent.parent / "board" / "ptb_board.html",
-            Path("/Volumes/WorkSpace/Project/Personal_Task_Board/integrations/openwebui/board/ptb_board.html"),
+            Path(__file__).resolve().parent.parent / "board" / "ptb_board.html",
             Path("/app/backend/data/board/ptb_board.html"),
+            Path("./data/openwebui/board/ptb_board.html"),
             Path("integrations/openwebui/board/ptb_board.html"),
         ]
         for p in candidate_paths:
-            if p.exists():
+            if p.exists() and p.is_file():
                 return p
 
-        # Fallback to the same directory or raise
+        # Fallback to standard integration board path
         return candidate_paths[0]
 
     def load_board_html(self) -> str:
-        """Loads and returns the HTML content of ptb_board.html."""
+        """Loads and returns the HTML content of ptb_board.html.
+
+        If the file does not exist, logs [PTB-OWUI-001] to stderr and returns
+        an explicit text error message. Never returns synthetic HTML.
+        """
         path = self._resolve_board_html_path()
-        if path.exists():
+        if path.exists() and path.is_file():
             return path.read_text(encoding="utf-8")
-        
-        # Minimal embedded fallback if file is not found
-        return (
-            "<!DOCTYPE html><html><body>"
-            "<h2>Personal Task Board</h2>"
-            "<p>Error: ptb_board.html not found. Please verify mount path.</p>"
-            "</body></html>"
+
+        error_message = (
+            f"❌ [PTB-OWUI-001] Board HTML file not found at '{path}'. "
+            "Run 'ptb openwebui install' to install board assets."
         )
+        _log_owui_error(
+            f"Board HTML file not found at '{path}'",
+            context={"path": str(path)},
+        )
+        return error_message
 
     def format_as_artifact(self, html_content: str, title: Optional[str] = None) -> str:
         """Formats HTML content as an OpenWebUI compatible interactive artifact."""
@@ -107,34 +143,25 @@ class Action:
                     raw_content = response.read().decode("utf-8")
                     return json.loads(raw_content) if raw_content else {}
             self._last_http_error_logged = True
-            log_bug(
-                BugCode.PTB_OWUI_001,
-                subsystem="openwebui",
-                severity="ERROR",
-                message="OpenWebUI cannot reach Application API",
+            _log_owui_error(
+                "OpenWebUI cannot reach Application API",
                 context={"endpoint": endpoint, "method": method, "url": url},
             )
         except Exception as exc:
             self._last_http_error_logged = True
-            log_bug(
-                BugCode.PTB_OWUI_001,
-                subsystem="openwebui",
-                severity="ERROR",
-                message="OpenWebUI cannot reach Application API",
-                context={"endpoint": endpoint, "method": method, "url": url},
+            _log_owui_error(
+                "OpenWebUI cannot reach Application API",
                 exc=exc,
+                context={"endpoint": endpoint, "method": method, "url": url},
             )
             return None
         return None
 
     def _offline_error(self, endpoint: str = "") -> str:
-        """Emits log_bug(PTB_OWUI_001) if not already logged and returns APPLICATION SERVICE OFFLINE error."""
+        """Emits _log_owui_error if not already logged and returns APPLICATION SERVICE OFFLINE error."""
         if not getattr(self, "_last_http_error_logged", False):
-            log_bug(
-                BugCode.PTB_OWUI_001,
-                subsystem="openwebui",
-                severity="ERROR",
-                message="OpenWebUI cannot reach Application API",
+            _log_owui_error(
+                "OpenWebUI cannot reach Application API",
                 context={"endpoint": endpoint} if endpoint else None,
             )
         self._last_http_error_logged = False
@@ -158,6 +185,19 @@ class Action:
             })
 
         html = self.load_board_html()
+        if html.startswith("❌ [PTB-OWUI-001]"):
+            content = html
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {"description": "Lỗi: Không tìm thấy file board HTML", "done": True}
+                })
+                await __event_emitter__({
+                    "type": "message",
+                    "data": {"content": content}
+                })
+            return {"content": content}
+
         artifact_md = self.format_as_artifact(html)
 
         content = (
@@ -203,12 +243,15 @@ class Action:
 
             if subcommand in ("view", "open"):
                 html = self.load_board_html()
-                artifact_md = self.format_as_artifact(html)
-                response_text = (
-                    f"### 🎯 Personal Task Board (Interactive Artifact)\n\n"
-                    f"{artifact_md}\n\n"
-                    f"💡 *Gợi ý: Dùng `/board review` để xem nhanh hàng đợi duyệt hoặc `/board today` để tóm tắt 5 việc hôm nay.*"
-                )
+                if html.startswith("❌ [PTB-OWUI-001]"):
+                    response_text = html
+                else:
+                    artifact_md = self.format_as_artifact(html)
+                    response_text = (
+                        f"### 🎯 Personal Task Board (Interactive Artifact)\n\n"
+                        f"{artifact_md}\n\n"
+                        f"💡 *Gợi ý: Dùng `/board review` để xem nhanh hàng đợi duyệt hoặc `/board today` để tóm tắt 5 việc hôm nay.*"
+                    )
 
             elif subcommand == "review":
                 endpoint = "/api/review"

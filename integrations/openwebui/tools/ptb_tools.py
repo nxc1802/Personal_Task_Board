@@ -10,12 +10,12 @@ description: Bộ công cụ truy vấn và thao tác Personal Task Board cho Op
 import json
 import os
 from pathlib import Path
+import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import urllib.error
 import urllib.request
 from pydantic import BaseModel, Field
-
-from ptb_contracts.logging import BugCode, log_bug
 
 OFFLINE_ERROR_MESSAGE = (
     "❌ [PTB-OWUI-001] APPLICATION SERVICE OFFLINE "
@@ -24,10 +24,35 @@ OFFLINE_ERROR_MESSAGE = (
 )
 
 
+def _log_owui_error(
+    message: str,
+    exc: Optional[Exception] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Ghi log lỗi nội bộ có cấu trúc ra stderr với mã [PTB-OWUI-001] mà không phụ thuộc ptb_contracts."""
+    payload: Dict[str, Any] = {
+        "bug_code": "PTB-OWUI-001",
+        "subsystem": "openwebui",
+        "severity": "ERROR",
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if context:
+        payload["context"] = context
+    if exc is not None:
+        payload["exception_type"] = type(exc).__name__
+        payload["exception_message"] = str(exc)
+    sys.stderr.write(f"[PTB-OWUI-001] {json.dumps(payload, ensure_ascii=False)}\n")
+    sys.stderr.flush()
+
+
 class Tools:
     class Valves(BaseModel):
         app_service_url: str = Field(
-            default="http://localhost:8000",
+            default=os.getenv(
+                "PTB_APP_URL",
+                os.getenv("APP_SERVICE_URL", "http://host.docker.internal:8000")
+            ),
             description="URL của PTB Application Service"
         )
         board_html_path: str = Field(
@@ -36,7 +61,11 @@ class Tools:
         )
 
     def __init__(self):
-        self.valves = self.Valves()
+        env_url = os.getenv("PTB_APP_URL") or os.getenv("APP_SERVICE_URL")
+        if env_url:
+            self.valves = self.Valves(app_service_url=env_url)
+        else:
+            self.valves = self.Valves()
         self._last_http_error_logged: bool = False
 
     def _http_call(
@@ -59,22 +88,16 @@ class Tools:
                     raw_content = response.read().decode("utf-8")
                     return json.loads(raw_content) if raw_content else {}
             self._last_http_error_logged = True
-            log_bug(
-                BugCode.PTB_OWUI_001,
-                subsystem="openwebui",
-                severity="ERROR",
-                message="OpenWebUI cannot reach Application API",
+            _log_owui_error(
+                "OpenWebUI cannot reach Application API",
                 context={"endpoint": endpoint, "method": method, "url": url},
             )
         except Exception as exc:
             self._last_http_error_logged = True
-            log_bug(
-                BugCode.PTB_OWUI_001,
-                subsystem="openwebui",
-                severity="ERROR",
-                message="OpenWebUI cannot reach Application API",
-                context={"endpoint": endpoint, "method": method, "url": url},
+            _log_owui_error(
+                "OpenWebUI cannot reach Application API",
                 exc=exc,
+                context={"endpoint": endpoint, "method": method, "url": url},
             )
             return None
         return None
@@ -82,11 +105,8 @@ class Tools:
     def _offline_error(self, endpoint: str = "") -> str:
         """Ghi log PTB-OWUI-001 (nếu chưa ghi trong _http_call) và trả về thông báo APPLICATION SERVICE OFFLINE."""
         if not getattr(self, "_last_http_error_logged", False):
-            log_bug(
-                BugCode.PTB_OWUI_001,
-                subsystem="openwebui",
-                severity="ERROR",
-                message="OpenWebUI cannot reach Application API",
+            _log_owui_error(
+                "OpenWebUI cannot reach Application API",
                 context={"endpoint": endpoint} if endpoint else None,
             )
         self._last_http_error_logged = False
@@ -329,18 +349,24 @@ class Tools:
         # Resolve board HTML
         candidate_paths = [
             Path(self.valves.board_html_path) if self.valves.board_html_path else None,
-            Path(__file__).parent.parent / "board" / "ptb_board.html",
-            Path("/Volumes/WorkSpace/Project/Personal_Task_Board/integrations/openwebui/board/ptb_board.html"),
+            Path(__file__).resolve().parent.parent / "board" / "ptb_board.html",
             Path("/app/backend/data/board/ptb_board.html"),
+            Path("./data/openwebui/board/ptb_board.html"),
+            Path("integrations/openwebui/board/ptb_board.html"),
         ]
         html_content = ""
         for p in candidate_paths:
-            if p and p.exists():
+            if p and p.exists() and p.is_file():
                 html_content = p.read_text(encoding="utf-8")
                 break
 
         if not html_content:
-            html_content = "<div>Personal Task Board Artifact loaded.</div>"
+            err_msg = (
+                "❌ [PTB-OWUI-001] Board HTML file not found. "
+                "Run 'ptb openwebui install' to install board assets."
+            )
+            _log_owui_error("Board HTML file not found for artifact rendering")
+            return err_msg
 
         return f"""
 :::artifact{{type="text/html" title="Personal Task Board"}}

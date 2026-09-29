@@ -247,6 +247,58 @@ async def test_openwebui_installer_install_components_and_summary(tmp_path: Path
     assert "ptb_board_action.py" in summary
     assert "ptb_board.html" in summary
     assert "ptb_manifest.json" in summary
+    assert "PASSED (validation_ok=True)" in summary
+
+
+@pytest.mark.asyncio
+async def test_installer_validates_components_on_disk(tmp_path: Path):
+    """Verify post-installation validation checks all components on disk, verifies file sizes > 0,
+    and fails fast on missing or empty files."""
+    installer = OpenWebUIInstaller(default_data_dir=tmp_path)
+    result = await installer.install_components(openwebui_data_dir=tmp_path)
+
+    # 1. Validation passed
+    assert result["validation_ok"] is True
+    assert result["status"] == "success"
+    assert len(result["validated_files"]) == 6
+
+    validated_paths = [vf["path"] for vf in result["validated_files"]]
+    assert "tools/ptb_tools.py" in validated_paths
+    assert "tools/ptb_tools.json" in validated_paths
+    assert "functions/ptb_board_action.py" in validated_paths
+    assert "functions/ptb_board_action.json" in validated_paths
+    assert "board/ptb_board.html" in validated_paths
+    assert "ptb_manifest.json" in validated_paths
+
+    # Verify sizes > 0
+    for vf in result["validated_files"]:
+        assert vf["size_bytes"] > 0
+        assert vf["status"] == "OK"
+
+    # Verify summary reflects validation_ok
+    summary = installer.get_install_summary()
+    assert "PASSED (validation_ok=True)" in summary
+    assert "tools/ptb_tools.py" in summary
+
+    # 2. Test validation failure on missing file
+    (tmp_path / "board" / "ptb_board.html").unlink()
+    with pytest.raises(RuntimeError) as exc_info:
+        installer.validate_installation(dest_dir=tmp_path, raise_on_error=True)
+    assert "board/ptb_board.html" in str(exc_info.value)
+
+    val_res = installer.validate_installation(dest_dir=tmp_path, raise_on_error=False)
+    assert val_res["validation_ok"] is False
+    assert "board/ptb_board.html" in val_res["missing_files"]
+
+    # 3. Test validation failure on empty (0 byte) file
+    (tmp_path / "board" / "ptb_board.html").write_text("", encoding="utf-8")
+    with pytest.raises(RuntimeError) as exc_info2:
+        installer.validate_installation(dest_dir=tmp_path, raise_on_error=True)
+    assert "board/ptb_board.html" in str(exc_info2.value)
+
+    val_res_empty = installer.validate_installation(dest_dir=tmp_path, raise_on_error=False)
+    assert val_res_empty["validation_ok"] is False
+    assert "board/ptb_board.html" in val_res_empty["empty_files"]
 
 
 @pytest.mark.asyncio
@@ -370,6 +422,46 @@ async def test_ptb_board_action_function():
             or "PTB-OWUI-001" in offline_msg
             or "Không thể kết nối" in offline_msg
         )
+
+
+@pytest.mark.asyncio
+async def test_board_action_missing_file_raises_explicit_error(capsys):
+    """Verify that when ptb_board.html is missing, Action logs PTB-OWUI-001 to stderr
+    and returns an explicit text error message instead of synthetic HTML fallback."""
+    action = Action()
+    action.valves.board_html_path = "/nonexistent/custom/path/ptb_board.html"
+
+    # 1. load_board_html() returns explicit text error
+    html = action.load_board_html()
+    assert "❌ [PTB-OWUI-001]" in html
+    assert "Board HTML file not found" in html
+    assert "Run 'ptb openwebui install'" in html
+    assert "<!DOCTYPE html>" not in html
+    assert "<html" not in html
+    assert "<h2>Personal Task Board</h2>" not in html
+
+    # Stderr check
+    captured = capsys.readouterr()
+    assert "[PTB-OWUI-001]" in captured.err
+
+    # 2. action() returns explicit error message instead of artifact
+    result = await action.action(body={"messages": []})
+    assert result is not None
+    assert "❌ [PTB-OWUI-001]" in result["content"]
+    assert ":::artifact" not in result["content"]
+
+    # 3. inlet /board shortcut returns explicit error without artifact wrapper
+    emitted = []
+
+    async def mock_emitter(event):
+        emitted.append(event)
+
+    body = {"messages": [{"role": "user", "content": "/board view"}]}
+    await action.inlet(body=body, __event_emitter__=mock_emitter)
+    assert len(emitted) > 0
+    inlet_msg = emitted[0]["data"]["content"]
+    assert "❌ [PTB-OWUI-001]" in inlet_msg
+    assert ":::artifact" not in inlet_msg
 
 
 def test_ptb_tools_live_and_offline():

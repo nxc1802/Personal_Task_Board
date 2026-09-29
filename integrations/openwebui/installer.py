@@ -205,9 +205,17 @@ class OpenWebUIInstaller:
             str(deployed_manifest),
         ]
 
+        # 4. Post-installation validation on disk
+        validation = self.validate_installation(
+            dest_dir=dest_dir,
+            raise_on_error=True,
+        )
+
         result = {
-            "status": "success",
-            "success": True,
+            "status": "success" if validation["validation_ok"] else "failed",
+            "success": validation["validation_ok"],
+            "validation_ok": validation["validation_ok"],
+            "validated_files": validation["validated_files"],
             "pinned_version": PINNED_OPENWEBUI_VERSION,
             "target_dir": str(dest_dir),
             "manifest_path": str(deployed_manifest),
@@ -225,12 +233,73 @@ class OpenWebUIInstaller:
         self._last_result = result
         return result
 
+    @class_or_instance_method
+    def validate_installation(
+        self,
+        openwebui_data_dir: Optional[Union[Path, str]] = None,
+        dest_dir: Optional[Union[Path, str]] = None,
+        raise_on_error: bool = True,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Xác thực các thành phần đã cài đặt trên đĩa (tồn tại và dung lượng > 0 bytes)."""
+        raw_dir = openwebui_data_dir or dest_dir or kwargs.get("data_dir")
+        target_dir = Path(raw_dir).expanduser() if raw_dir is not None else self.default_data_dir
+
+        expected_files = [
+            "tools/ptb_tools.py",
+            "tools/ptb_tools.json",
+            "functions/ptb_board_action.py",
+            "functions/ptb_board_action.json",
+            "board/ptb_board.html",
+            "ptb_manifest.json",
+        ]
+
+        validated_files: List[Dict[str, Any]] = []
+        missing_files: List[str] = []
+        empty_files: List[str] = []
+
+        for rel_path in expected_files:
+            file_path = target_dir / rel_path
+            if not file_path.exists() or not file_path.is_file():
+                missing_files.append(rel_path)
+            elif file_path.stat().st_size == 0:
+                empty_files.append(rel_path)
+            else:
+                validated_files.append({
+                    "path": rel_path,
+                    "size_bytes": file_path.stat().st_size,
+                    "status": "OK",
+                })
+
+        failures = missing_files + empty_files
+        validation_ok = (len(failures) == 0)
+
+        validation_result: Dict[str, Any] = {
+            "validation_ok": validation_ok,
+            "target_dir": str(target_dir),
+            "validated_files": validated_files,
+            "missing_files": missing_files,
+            "empty_files": empty_files,
+            "failures": failures,
+        }
+
+        if not validation_ok and raise_on_error:
+            raise RuntimeError(
+                f"OpenWebUI post-install validation failed for directory '{target_dir}': "
+                f"missing={missing_files}, empty={empty_files}"
+            )
+
+        return validation_result
+
     def get_install_summary(self) -> str:
         """Trả về báo cáo cài đặt chi tiết cho người dùng."""
         if not self._last_result:
             return "Chưa có thành phần nào được cài đặt. Vui lòng chạy install_components()."
 
         res = self._last_result
+        validation_ok = res.get("validation_ok", False)
+        validation_label = "PASSED (validation_ok=True)" if validation_ok else "FAILED (validation_ok=False)"
+
         lines = [
             "=" * 70,
             "BÁO CÁO CÀI ĐẶT OPENWEBUI AUTO-INSTALLER",
@@ -238,11 +307,21 @@ class OpenWebUIInstaller:
             f"Trạng thái      : {res.get('status', '').upper()}",
             f"Pinned Version  : {res.get('pinned_version', PINNED_OPENWEBUI_VERSION)}",
             f"Thư mục đích    : {res.get('target_dir')}",
+            f"Validation      : {validation_label}",
             "Thành phần đã cài:",
             "  • Tools       : tools/ptb_tools.py (kèm schema tools/ptb_tools.json)",
             "  • Functions   : functions/ptb_board_action.py (kèm schema functions/ptb_board_action.json)",
             "  • Board       : board/ptb_board.html",
             "  • Manifest    : ptb_manifest.json",
-            "=" * 70,
         ]
+
+        validated_files = res.get("validated_files", [])
+        if validated_files:
+            lines.append("Files đã xác thực trên đĩa:")
+            for vf in validated_files:
+                p = vf.get("path") if isinstance(vf, dict) else str(vf)
+                size_str = f" ({vf['size_bytes']} bytes)" if isinstance(vf, dict) and "size_bytes" in vf else ""
+                lines.append(f"  ✓ {p}{size_str}")
+
+        lines.append("=" * 70)
         return "\n".join(lines)

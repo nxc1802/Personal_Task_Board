@@ -8,6 +8,7 @@ Validates static and runtime contracts of the OpenWebUI integration without brow
 5. test_canonical_source_states_enum
 """
 
+import ast
 from pathlib import Path
 import re
 
@@ -189,3 +190,53 @@ def test_canonical_source_states_enum():
     assert "renderHealthView" in board_content, "ptb_board.html must define renderHealthView()"
     assert "/api/sources/health" in board_content, "ptb_board.html must fetch /api/sources/health"
     assert "src.status" in board_content, "ptb_board.html must display source status from API payload"
+
+
+def test_board_action_no_hardcoded_paths():
+    """6. Verify ptb_board_action.py and ptb_tools.py contain no hardcoded developer paths."""
+    target_files = [FUNCTIONS_PY_PATH, TOOLS_PY_PATH]
+    forbidden_tokens = [
+        "/Volumes/WorkSpace",
+        "/Users/",
+        "Personal_Task_Board/integrations",
+    ]
+    for file_path in target_files:
+        assert file_path.exists(), f"File not found: {file_path}"
+        content = file_path.read_text(encoding="utf-8")
+        for token in forbidden_tokens:
+            assert token not in content, (
+                f"{file_path.name} must not contain hardcoded developer path token: '{token}'"
+            )
+
+
+def test_plugins_have_no_internal_ptb_dependencies():
+    """7. Verify OpenWebUI plugins (ptb_tools.py, ptb_board_action.py) do not import ptb_contracts or other internal PTB packages."""
+    target_files = [TOOLS_PY_PATH, FUNCTIONS_PY_PATH]
+    forbidden_packages = {
+        "ptb_contracts",
+        "ptb_application",
+        "ptb_acquisition",
+        "ptb_processing",
+        "ptb_database",
+        "ptb_graph_memory",
+        "ptb_mcp",
+    }
+    for file_path in target_files:
+        assert file_path.exists(), f"File not found: {file_path}"
+        content = file_path.read_text(encoding="utf-8")
+
+        # AST inspection for true Python import statements
+        tree = ast.parse(content, filename=str(file_path))
+        imported_modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported_modules.add(alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imported_modules.add(node.module.split(".")[0])
+
+        conflicts = forbidden_packages.intersection(imported_modules)
+        assert not conflicts, (
+            f"{file_path.name} must be self-contained and not import internal PTB packages: {sorted(conflicts)}"
+        )
