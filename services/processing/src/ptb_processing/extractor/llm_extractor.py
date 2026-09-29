@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from ptb_contracts import BugCode, log_bug
 from ptb_contracts.l1_acquisition import RawEventRecord
 from ptb_contracts.l2_processing import (
     EvidenceRecord,
@@ -299,6 +300,12 @@ class LLMStructuredExtractor:
                         actual_author=actual_author,
                     )
                 else:
+                    log_bug(
+                        code=BugCode.PTB_LLM_001,
+                        subsystem="llm",
+                        severity="ERROR",
+                        message="OPENAI_API_KEY is not configured and PTB_ALLOW_HEURISTIC_FALLBACK is False",
+                    )
                     raise LLMExtractionError(
                         "OPENAI_API_KEY is not configured and PTB_ALLOW_HEURISTIC_FALLBACK is False"
                     )
@@ -320,6 +327,13 @@ class LLMStructuredExtractor:
                     else:
                         logger.error(
                             "LLM API call failed and heuristic fallback is disabled: %s", e
+                        )
+                        log_bug(
+                            code=BugCode.PTB_LLM_001,
+                            subsystem="llm",
+                            severity="ERROR",
+                            message=f"LLM API call failed: {e}",
+                            exc=e,
                         )
                         raise LLMExtractionError(f"LLM extraction failed: {e}") from e
 

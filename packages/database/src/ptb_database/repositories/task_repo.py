@@ -234,6 +234,7 @@ class TaskDomainRepository:
                 MERGE (e)-[:DERIVED_FROM]->(re)
                 RETURN count(re) AS _re_cnt
             }
+            RETURN count(e) AS evidence_count
             """
             await runner.run(evidences_cypher, {
                 "task_id": task_id,

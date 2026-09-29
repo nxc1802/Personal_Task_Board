@@ -31,6 +31,24 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import urllib.error
 import urllib.request
 
+# Ensure UTF-8 output on Windows consoles to prevent UnicodeEncodeError with Vietnamese text
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        try:
+            sys.stdout.reconfigure(errors="replace")
+        except (AttributeError, OSError, ValueError):
+            _sys_stdout_err = True
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        try:
+            sys.stderr.reconfigure(errors="replace")
+        except (AttributeError, OSError, ValueError):
+            _sys_stderr_err = True
+
 # Thêm root workspace vào sys.path để các module có thể import lẫn nhau
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR / "packages" / "contracts" / "src"))
