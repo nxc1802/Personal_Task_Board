@@ -5,9 +5,20 @@ Tự động thực thi toàn bộ constraints và seed data lên Neo4j:
 """
 
 import asyncio
+import io
 import os
 import sys
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+elif hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+elif hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 from ptb_database.neo4j_client import Neo4jClient
 

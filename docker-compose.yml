@@ -34,11 +34,71 @@ services:
       - ./data/openwebui:/app/backend/data
     environment:
       - WEBUI_AUTH=False
-      - ENABLE_OLLAMA_API=True
-      - OPENAI_API_BASE_URLS=${LLM_BASE_URL:-http://127.0.0.1:11434/v1}
+      - ENABLE_OLLAMA_API=False
+      - OPENAI_API_BASE_URLS=${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      - OPENAI_API_KEYS=${LLM_API_KEY:-}
       - WEBUI_NAME=Personal Task Board
     depends_on:
       - neo4j
+    networks:
+      - ptb_network
+
+  # Qwen3: Embedding 0.6B (OpenAI-compatible /v1/embeddings)
+  qwen3-embedding:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: ptb_qwen3_embedding
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - ../Qwen3:/models/qwen3:ro
+    command: >
+      -m /models/qwen3/Qwen3-Embedding-0.6B-Q8_0.gguf
+      --alias qwen3-embedding-0.6b
+      --embedding --pooling last
+      --host 0.0.0.0 --port 8082
+      -c 4096 -b 512 -ub 512 -np 1 -ngl 99 --no-ui
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8082/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ptb_network
+
+  # Kev: Decision 0.8B (OpenAI-compatible /v1/chat/completions)
+  kev-decision:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: ptb_kev_decision
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ../Kev:/models/kev:ro
+    command: >
+      -m /models/kev/Kev-0.8B-Q8_0.gguf
+      --alias kev-0.8b
+      --host 0.0.0.0 --port 8081
+      -c 4096 -b 512 -ub 512 -np 1 -ngl 99 --no-ui
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8081/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - ptb_network
 

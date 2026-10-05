@@ -40,7 +40,7 @@ logger = logging.getLogger("ptb.processing.extractor.llm_extractor")
 class LLMExtractedSchema(BaseModel):
     """Schema Pydantic trung gian chứa thông tin trích xuất từ LLM."""
 
-    title: str = Field(description="Tiêu đề chuẩn hóa của task hoặc cam kết")
+    title: Optional[str] = Field(default=None, description="Tiêu đề chuẩn hóa của task hoặc cam kết")
     description: Optional[str] = Field(default=None, description="Mô tả chi tiết bối cảnh")
     owner_name: Optional[str] = Field(default=None, description="Tên người chịu trách nhiệm thực hiện")
     requester_name: Optional[str] = Field(default=None, description="Tên người yêu cầu hoặc giao việc")
@@ -52,7 +52,7 @@ class LLMExtractedSchema(BaseModel):
         le=1.0,
         description="Độ tin cậy trích xuất: >=0.65 (auto), 0.4-0.64 (review), <0.4 (ignore)",
     )
-    evidence_snippet: str = Field(description="Đoạn trích bằng chứng nguyên văn")
+    evidence_snippet: Optional[str] = Field(default="", description="Đoạn trích bằng chứng nguyên văn")
 
 
 def classify_review_status(confidence: float) -> str:
@@ -118,7 +118,7 @@ class LLMStructuredExtractor:
             or os.getenv("LLM_MODEL", "gpt-4o-mini")
         )
         self.mock_mode = mock_mode
-        self.timeout = timeout
+        self.timeout = float(os.getenv("LLM_TIMEOUT", str(timeout)))
         if allow_heuristic_fallback is not None:
             self.allow_heuristic_fallback = allow_heuristic_fallback
         else:
@@ -133,30 +133,69 @@ class LLMStructuredExtractor:
         self._mock_handler = handler
 
     def _call_openai_completion(self, prompt: str) -> Dict[str, Any]:
-        """Gọi OpenAI-compatible API qua HTTP POST bằng urllib."""
+        """Gọi OpenAI-compatible API qua HTTP POST bằng urllib với retry."""
+        import time
+
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
+
+        # Normalize model name for OpenAI-compatible endpoint (strip models/ if present)
+        model_name = self.model
+        if model_name.startswith("models/"):
+            model_name = model_name[len("models/"):]
+
+        clean_prompt = prompt[:3500] if len(prompt) > 3500 else prompt
         payload = {
-            "model": self.model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": clean_prompt},
             ],
             "temperature": 0.1,
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2048")),
         }
 
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self.timeout) as response:
-            res_body = response.read().decode("utf-8")
-            return json.loads(res_body)
+        req_data = json.dumps(payload).encode("utf-8")
+        max_attempts = 3
+        last_error = None
+
+        for attempt in range(1, max_attempts + 1):
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers=headers,
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                    res_body = response.read().decode("utf-8")
+                    return json.loads(res_body)
+            except urllib.error.HTTPError as e:
+                last_error = e
+                # Retry on 500, 502, 503, 504
+                if e.code in (500, 502, 503, 504) and attempt < max_attempts:
+                    logger.warning(
+                        "LLM HTTP %d on attempt %d/%d. Retrying in %ds...",
+                        e.code, attempt, max_attempts, attempt * 3
+                    )
+                    time.sleep(attempt * 3)
+                    continue
+                raise
+            except (TimeoutError, urllib.error.URLError) as e:
+                last_error = e
+                if attempt < max_attempts:
+                    logger.warning(
+                        "LLM connection error '%s' on attempt %d/%d. Retrying in %ds...",
+                        e, attempt, max_attempts, attempt * 3
+                    )
+                    time.sleep(attempt * 3)
+                    continue
+                raise
+
+        raise last_error or RuntimeError("LLM request failed after retries")
 
     @staticmethod
     def _parse_json_from_llm_response(text: str) -> Dict[str, Any]:
@@ -173,8 +212,8 @@ class LLMStructuredExtractor:
 
         cleaned = text.strip()
 
-        # Remove <think>...</think> blocks (Qwen thinking mode)
-        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
+        # Remove <think>...</think> and <thought>...</thought> blocks (Qwen/Gemma thinking mode)
+        cleaned = re.sub(r"<(think|thought)>.*?</\1>", "", cleaned, flags=re.DOTALL).strip()
 
         # Try direct JSON parse first
         try:
@@ -340,6 +379,8 @@ class LLMStructuredExtractor:
         # 3. Phân loại review_status
         confidence = extracted_schema.extraction_confidence
         review_status = classify_review_status(confidence)
+        if not extracted_schema.title or confidence < 0.40:
+            review_status = "ignore"
 
         # 4. Tạo UnifiedTaskCandidate
         task_id = str(uuid4())
@@ -362,7 +403,7 @@ class LLMStructuredExtractor:
 
         return UnifiedTaskCandidate(
             id=task_id,
-            title=extracted_schema.title,
+            title=extracted_schema.title or "(Không phải task)",
             description=extracted_schema.description,
             status=TaskStatus.TODO,
             owner_name=extracted_schema.owner_name,

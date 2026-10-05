@@ -55,20 +55,25 @@ class AntigravityWatcher(BaseAgentWatcher):
                 if not os.path.isdir(brain_dir):
                     continue
                 try:
-                    for sid in os.listdir(brain_dir):
-                        session_dir = os.path.join(brain_dir, sid)
-                        if not os.path.isdir(session_dir):
-                            continue
-
+                    session_dirs = [
+                        os.path.join(brain_dir, sid)
+                        for sid in os.listdir(brain_dir)
+                        if os.path.isdir(os.path.join(brain_dir, sid))
+                    ]
+                    # Sắp xếp theo session mới nhất trước, lấy tối đa 5 sessions gần nhất
+                    session_dirs.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                    for session_dir in session_dirs[:5]:
+                        sid = os.path.basename(session_dir)
                         log_dir = os.path.join(session_dir, ".system_generated", "logs")
-                        transcript_path = os.path.join(log_dir, "transcript_full.jsonl")
+                        transcript_path = os.path.join(log_dir, "transcript.jsonl")
                         if not os.path.isfile(transcript_path):
-                            transcript_path = os.path.join(log_dir, "transcript.jsonl")
+                            transcript_path = os.path.join(log_dir, "transcript_full.jsonl")
                         if not os.path.isfile(transcript_path):
                             continue
 
                         records = self.extract_from_transcript(transcript_path, session_id=sid, session_dir=session_dir)
-                        all_records.extend(records)
+                        # Lấy tối đa 10 turn gần nhất của mỗi session để giữ focus vào task/cam kết hiện tại
+                        all_records.extend(records[-10:])
                 except Exception as dir_err:
                     logger.debug(f"Error accessing brain dir {brain_dir}: {dir_err}")
                     continue
@@ -88,7 +93,7 @@ class AntigravityWatcher(BaseAgentWatcher):
             source = step.get("source", "")
             content = step.get("content", "")
 
-            # Phân loại role
+            # Phân loại role: chỉ giữ user (yêu cầu) và assistant (phản hồi/cam kết)
             if step_type == "USER_INPUT" or source == "USER_EXPLICIT":
                 role = "user"
                 # Làm sạch các tag <USER_SETTINGS_CHANGE> nếu có
@@ -96,10 +101,8 @@ class AntigravityWatcher(BaseAgentWatcher):
             elif step_type == "PLANNER_RESPONSE" or source == "MODEL":
                 role = "assistant"
                 clean_content = content.strip()
-            elif "TOOL" in step_type:
-                role = "tool_result"
-                clean_content = content.strip()
             else:
+                # Bỏ qua các tool execution results (terminal output, diffs, inspects) vì không chứa intent/cam kết
                 continue
 
             if not clean_content:

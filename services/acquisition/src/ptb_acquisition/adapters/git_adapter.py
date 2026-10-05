@@ -320,7 +320,7 @@ class GitWatcherAdapter(AcquisitionAdapter):
             if not await self._is_git_repo(path):
                 continue
             info = await self._get_repo_info(path)
-            commits = await self._scan_commits(path, since_datetime=since)
+            commits = await self._scan_commits(path, since_datetime=since, max_count=30 if not since else None)
             for c in commits:
                 yield self.commit_to_raw_event(
                     commit=c,

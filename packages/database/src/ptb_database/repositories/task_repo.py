@@ -295,21 +295,29 @@ class TaskDomainRepository:
         task_dict["merge_reason"] = row.get("merge_reason") or task_dict.get("merge_reason")
 
         for dt_field in ["due_date", "created_at", "updated_at"]:
-            if dt_field in task_dict and isinstance(task_dict[dt_field], str):
-                try:
-                    task_dict[dt_field] = datetime.fromisoformat(task_dict[dt_field])
-                except ValueError:
-                    pass
+            if dt_field in task_dict and task_dict[dt_field] is not None:
+                val = task_dict[dt_field]
+                if hasattr(val, "to_native"):
+                    task_dict[dt_field] = val.to_native()
+                elif isinstance(val, str):
+                    try:
+                        task_dict[dt_field] = datetime.fromisoformat(val)
+                    except ValueError:
+                        pass
 
         evidences: List[EvidenceRecord] = []
         for ev_node in (row.get("evidences") or []):
             if ev_node is not None:
                 ev_data = dict(ev_node)
-                if "timestamp" in ev_data and isinstance(ev_data["timestamp"], str):
-                    try:
-                        ev_data["timestamp"] = datetime.fromisoformat(ev_data["timestamp"])
-                    except ValueError:
-                        pass
+                if "timestamp" in ev_data and ev_data["timestamp"] is not None:
+                    ev_val = ev_data["timestamp"]
+                    if hasattr(ev_val, "to_native"):
+                        ev_data["timestamp"] = ev_val.to_native()
+                    elif isinstance(ev_val, str):
+                        try:
+                            ev_data["timestamp"] = datetime.fromisoformat(ev_val)
+                        except ValueError:
+                            pass
                 if "confidence" not in ev_data or ev_data["confidence"] is None:
                     ev_data["confidence"] = 1.0
                 if "extraction_version" not in ev_data or ev_data["extraction_version"] is None:
