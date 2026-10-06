@@ -227,6 +227,7 @@ class InMemoryTaskDomainRepository:
         self,
         initial_tasks: Optional[List[UnifiedTaskCandidate]] = None,
         graph_sync_worker: Optional[Any] = None,
+        embedding_service: Optional[Any] = None,
     ) -> None:
         self.tasks: Dict[str, UnifiedTaskCandidate] = {
             t.id: t.model_copy(deep=True) for t in (initial_tasks or [])
@@ -236,6 +237,8 @@ class InMemoryTaskDomainRepository:
         self.merge_audits: List[MergeAuditRecord] = []
         self.commitments: List[CommitmentRecord] = []
         self.graph_sync_worker = graph_sync_worker
+        self.embedding_service = embedding_service
+        self.embeddings: Dict[str, List[float]] = {}
 
     async def upsert_task_atomic(self, task: UnifiedTaskCandidate) -> str:
         task_id = task.id or str(uuid4())
@@ -266,7 +269,27 @@ class InMemoryTaskDomainRepository:
                     self.graph_sync_worker.enqueue_sync("evidence", ev.id, ev_payload)
                     await self.graph_sync_worker.sync_episode("evidence", ev.id, ev_payload)
 
+        if self.embedding_service is not None:
+            try:
+                task_text = f"{task.title}. {task.description or ''}".strip()
+                embed_fn = getattr(self.embedding_service, "embed_text", None)
+                if callable(embed_fn):
+                    vec = embed_fn(task_text)
+                    if inspect.isawaitable(vec):
+                        vec = await vec
+                    await self.set_task_embedding(task_id, vec)
+            except Exception:
+                pass
+
         return task_id
+
+    async def set_task_embedding(self, task_id: str, embedding: List[float]) -> None:
+        """Set dense embedding vector for UnifiedTask."""
+        self.embeddings[task_id] = list(embedding)
+
+    async def get_task_embedding(self, task_id: str) -> Optional[List[float]]:
+        """Retrieve dense embedding vector for UnifiedTask."""
+        return self.embeddings.get(task_id)
 
     async def get_task_by_id(self, task_id: str) -> Optional[UnifiedTaskCandidate]:
         t = self.tasks.get(task_id)

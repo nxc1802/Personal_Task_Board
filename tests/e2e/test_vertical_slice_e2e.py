@@ -413,3 +413,114 @@ async def test_vertical_slice_e2e_outlook_flow():
     # 5. Idempotency: re-ingest duplicate email
     assert await pipeline.ingest_event(email_record) is False
     assert len(await task_repo.list_tasks()) == 1
+
+
+@pytest.mark.fixture_e2e
+@pytest.mark.asyncio
+async def test_vertical_slice_e2e_ignore_and_vietnamese_task_flow():
+    """Vertical slice E2E test verifying ignore events, Vietnamese task commitment, and manual priority override."""
+    from uuid import uuid4
+
+    raw_event_repo = InMemoryRawEventRepository()
+    checkpoint_repo = InMemoryCheckpointRepository()
+    fake_graphiti = FakeGraphitiAdapter()
+    graph_sync_worker = GraphMemorySyncWorker(memory_client=fake_graphiti)
+    task_repo = InMemoryTaskDomainRepository(graph_sync_worker=graph_sync_worker)
+    llm_extractor = FakeDeterministicLLMExtractor()
+
+    priority_engine = DeterministicPriorityEngine(config_path="config/priority.yaml")
+    lifecycle = TaskIntelligenceLifecycle(task_repo=task_repo, priority_engine=priority_engine)
+
+    processing_pipeline = ProcessingPipeline(
+        task_repo=task_repo,
+        llm_extractor=llm_extractor,
+        intelligence_lifecycle=lifecycle,
+    )
+    worker = ProcessingWorker(
+        raw_event_repo=raw_event_repo,
+        pipeline=processing_pipeline,
+        intelligence_lifecycle=lifecycle,
+    )
+
+    # --------------------------------------------------------------------------
+    # BƯỚC 1: Xử lý Casual chatter message -> Heuristic / Ignore filter
+    # --------------------------------------------------------------------------
+    casual_event = RawEventRecord(
+        id=str(uuid4()),
+        external_id="msg-casual-001",
+        tenant_id="tenant-e2e-vi",
+        source_type=SourceType.MS_TEAMS,
+        idempotency_key=hashlib.sha256(b"casual-lunch-chat").hexdigest(),
+        event_timestamp=datetime.now(timezone.utc),
+        author_external_id="user-vi-1",
+        author_display_name="Lan Anh",
+        conversation_or_project_id="19:channel-lunch@thread.tacv2",
+        normalized_text="Trưa nay mọi người đi ăn ở đâu thế?",
+        raw_payload={"body": {"content": "Trưa nay mọi người đi ăn ở đâu thế?"}},
+    )
+    await raw_event_repo.persist_raw_event(casual_event)
+    await worker.process_batch(limit=1)
+
+    # Đảm bảo không tạo bất kỳ UnifiedTask nào từ tin nhắn casual
+    assert len(await task_repo.list_tasks()) == 0
+
+    # --------------------------------------------------------------------------
+    # BƯỚC 2: Xử lý Vietnamese Task Commitment -> Trích xuất & Persist
+    # --------------------------------------------------------------------------
+    vi_task_text = "Em sẽ hoàn thành báo cáo tài chính quý 3 trước 17h thứ 6."
+    vi_event = RawEventRecord(
+        id=str(uuid4()),
+        external_id="msg-vi-002",
+        tenant_id="tenant-e2e-vi",
+        source_type=SourceType.MS_TEAMS,
+        idempotency_key=hashlib.sha256(vi_task_text.encode("utf-8")).hexdigest(),
+        event_timestamp=datetime.now(timezone.utc),
+        author_external_id="user-vi-2",
+        author_display_name="Đức Trọng",
+        conversation_or_project_id="19:channel-finance@thread.tacv2",
+        normalized_text=vi_task_text,
+        raw_payload={"body": {"content": vi_task_text}},
+    )
+    await raw_event_repo.persist_raw_event(vi_event)
+    batch_res = await worker.process_batch(limit=1)
+    assert batch_res == [ProcessingStatus.PROCESSED]
+
+    # Task đã được persist vào repository
+    vi_tasks = await task_repo.list_tasks()
+    assert len(vi_tasks) == 1
+    task = vi_tasks[0]
+    assert task.status == TaskStatus.TODO
+    assert "tài chính" in task.title.lower() or "báo cáo" in task.title.lower()
+    assert task.explicit_deadline is True
+    assert task.priority_score >= 0.0
+
+    # --------------------------------------------------------------------------
+    # BƯỚC 3: User Manual Priority Override & Today View Verification
+    # --------------------------------------------------------------------------
+    task.priority_override = 95.0
+    await lifecycle.on_task_changed(task)
+
+    saved_task = await task_repo.get_task_by_id(task.id)
+    assert saved_task is not None
+    assert saved_task.priority_score == 95.0
+    assert saved_task.inferred_priority_score is not None
+
+    app_service = ApplicationService(
+        task_repo=task_repo,
+        raw_event_repo=raw_event_repo,
+        checkpoint_repo=checkpoint_repo,
+        priority_engine=priority_engine,
+        lifecycle=lifecycle,
+        graph_memory=fake_graphiti,
+        processing_pipeline=processing_pipeline,
+    )
+    app.dependency_overrides[get_application_service] = lambda: app_service
+    with TestClient(app) as client:
+        today_resp = client.get("/api/today?user_id=default")
+        assert today_resp.status_code == 200
+        today_json = today_resp.json()
+        assert len(today_json["top_tasks"]) >= 1
+        assert today_json["top_tasks"][0]["task_id"] == task.id
+        assert today_json["top_tasks"][0]["priority"]["total_score"] == 95.0
+    app.dependency_overrides.clear()
+

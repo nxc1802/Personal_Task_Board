@@ -26,8 +26,9 @@ logger = logging.getLogger("ptb.database.repositories.task_repo")
 class TaskDomainRepository:
     """Repository quản lý UnifiedTask domain, Evidence provenance và Task State Machine audit trong Neo4j."""
 
-    def __init__(self, neo4j_client: Neo4jClient) -> None:
+    def __init__(self, neo4j_client: Neo4jClient, embedding_service: Optional[Any] = None) -> None:
         self.neo4j_client = neo4j_client
+        self.embedding_service = embedding_service
 
     def _get_driver(self) -> AsyncDriver:
         return self.neo4j_client.get_driver()
@@ -101,6 +102,17 @@ class TaskDomainRepository:
                     if inspect.isawaitable(rb_res):
                         await rb_res
                 raise
+        if self.embedding_service is not None:
+            try:
+                task_text = f"{task.title}. {task.description or ''}".strip()
+                embed_fn = getattr(self.embedding_service, "embed_text", None)
+                if callable(embed_fn):
+                    vec = embed_fn(task_text)
+                    if inspect.isawaitable(vec):
+                        vec = await vec
+                    await self.set_task_embedding(task_id, vec)
+            except Exception as emb_err:
+                logger.warning("Failed calculating/persisting embedding for task %s: %s", task_id, emb_err)
         return task_id
 
     async def _execute_upsert_task(
@@ -835,4 +847,28 @@ class TaskDomainRepository:
             updated_at=now_utc,
             evidences=[e.model_copy(update={"task_id": new_task_id}) for e in detached_evidences],
         )
+
+    async def set_task_embedding(self, task_id: str, embedding: List[float]) -> None:
+        """Set dense embedding vector for UnifiedTask (task_node.embedding in Neo4j)."""
+        driver = self._get_driver()
+        query = """
+        MATCH (task_node:UnifiedTask {id: $task_id})
+        SET task_node.embedding = $embedding
+        """
+        async with driver.session(database=self.neo4j_client.database) as session:
+            await session.run(query, {"task_id": task_id, "embedding": embedding})
+
+    async def get_task_embedding(self, task_id: str) -> Optional[List[float]]:
+        """Retrieve dense embedding vector for UnifiedTask (task_node.embedding in Neo4j)."""
+        driver = self._get_driver()
+        query = """
+        MATCH (task_node:UnifiedTask {id: $task_id})
+        RETURN task_node.embedding AS embedding
+        """
+        async with driver.session(database=self.neo4j_client.database) as session:
+            result = await session.run(query, {"task_id": task_id})
+            record = await result.single()
+            if record and record.get("embedding"):
+                return record["embedding"]
+            return None
 

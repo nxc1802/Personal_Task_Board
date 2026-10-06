@@ -176,6 +176,22 @@ class ProcessingPipeline:
                 )
                 raise
 
+            # 3b. Gate: ignore candidates không được persist thành Task
+            if getattr(candidate, "review_status", None) == "ignore":
+                logger.info(
+                    "RawEvent %s → candidate confidence %.2f (review_status='ignore'). "
+                    "Marking PROCESSED without creating UnifiedTask.",
+                    raw_event.id,
+                    getattr(candidate, "extraction_confidence", 0.0),
+                )
+                return PipelineResult(
+                    raw_event_id=raw_event.id,
+                    status=ProcessingStatus.PROCESSED,
+                    should_extract=True,
+                    candidate=None,
+                    merged=False,
+                )
+
             # 4. AttributionValidator: Xác thực owner / requester
             validated_candidate, attr_report = self.attribution_validator.validate_and_enforce(
                 candidate, parsed

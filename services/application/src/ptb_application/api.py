@@ -543,6 +543,11 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
     @app.get("/portal", response_class=HTMLResponse)
     async def get_portal():
         """Phục vụ giao diện Web Control Center để quản trị và nạp dữ liệu cá nhân trực quan."""
+        if os.getenv("PTB_DEV_PORTAL", "true").lower() not in ("true", "1", "yes"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Developer control center portal is disabled. Set PTB_DEV_PORTAL=true to enable.",
+            )
         return HTMLResponse(content=PORTAL_HTML)
 
     # --------------------------------------------------------------------------
@@ -553,103 +558,86 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         req: IngestMessageRequest,
         service: ApplicationService = Depends(get_application_service),
     ) -> Dict[str, Any]:
-        """Bóc tách tin nhắn thực tế qua AI pipeline (Gemma 4 26B, Qwen3, Kev) và lưu vào Neo4j."""
-        import os
-        from ptb_contracts.l2_processing import ParsedMessageContent
-        from ptb_processing.extractor.llm_extractor import LLMStructuredExtractor
-        try:
-            from ai_service import Qwen3EmbeddingService, KevDecisionReranker
-        except ImportError:
-            from packages.ai_service import Qwen3EmbeddingService, KevDecisionReranker
-        from neo4j import GraphDatabase
+        """Nạp tin nhắn qua canonical pipeline: RawEvent → Processing → Task."""
+        import hashlib
+        from uuid import uuid4
+        from ptb_contracts.l1_acquisition import (
+            ProcessingStatus,
+            RawEventRecord,
+            SourceType,
+        )
+        from ptb_processing.pipeline import ProcessingPipeline
 
         raw_msg = (req.message or "").strip()
         if not raw_msg:
             raise HTTPException(status_code=400, detail="Nội dung tin nhắn không được để trống")
 
-        # 1. Trích xuất với Gemma 4 26B
-        extractor = LLMStructuredExtractor(
-            base_url=os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"),
-            api_key=os.getenv("LLM_API_KEY"),
-            model=os.getenv("LLM_MODEL", "gemma-4-26b-a4b-it"),
-            timeout=90.0,
+        tenant_id = os.getenv("TENANT_ID", "local-user")
+        event_id = str(uuid4())
+        now = datetime.now(timezone.utc)
+        ext_id = f"portal-{hashlib.sha256(raw_msg.encode('utf-8')).hexdigest()[:16]}"
+        idempotency_key = hashlib.sha256(
+            f"{tenant_id}:coding_agent:{ext_id}:{raw_msg}".encode("utf-8")
+        ).hexdigest()
+
+        raw_event = RawEventRecord(
+            id=event_id,
+            tenant_id=tenant_id,
+            source_type=SourceType.CODING_AGENT,
+            external_id=ext_id,
+            idempotency_key=idempotency_key,
+            event_timestamp=now,
+            captured_at=now,
+            author_external_id=req.sender or "user@portal.local",
+            author_display_name=req.sender or "User",
+            conversation_or_project_id="portal-web",
+            raw_payload={"body": {"content": raw_msg}, "from": {"displayName": req.sender or "User"}},
+            normalized_text=raw_msg,
+            processing_status=ProcessingStatus.PENDING,
         )
-        parsed = ParsedMessageContent(
-            actual_content_text=raw_msg,
-            actual_author_raw=req.sender or "User"
-        )
-        candidate = extractor.extract_from_parsed(parsed)
 
-        # 2. Tạo vector nhúng Qwen3
-        try:
-            emb_svc = Qwen3EmbeddingService()
-            vec = emb_svc.embed_text(f"{candidate.title}: {candidate.description}")
-        except Exception:
-            vec = []
+        # 1. Persist RawEvent vào repository chuẩn
+        raw_repo = service.raw_event_repo
+        if raw_repo:
+            if hasattr(raw_repo, "persist_raw_event"):
+                await raw_repo.persist_raw_event(raw_event)
+            elif hasattr(raw_repo, "upsert"):
+                await raw_repo.upsert(raw_event)
 
-        # 3. Phân loại ưu tiên bằng Kev 0.8B
-        try:
-            kev_svc = KevDecisionReranker()
-            urgency = kev_svc.classify_task_urgency(f"{candidate.title} - {candidate.description}")
-        except Exception:
-            urgency = {"urgency_score": 1.0, "priority_level": "Medium", "is_task_probability": 0.8}
+        # 2. Xử lý qua ProcessingPipeline canonical (Attribution, Identity, TaskDomainRepo, Lifecycle)
+        proc_pipe = getattr(service, "processing_pipeline", None) or getattr(service, "_processing_pipeline", None)
+        if proc_pipe is None:
+            proc_pipe = ProcessingPipeline(task_repo=service.task_repo, intelligence_lifecycle=service.lifecycle)
 
-        # 4. Lưu trực tiếp vào Neo4j
-        uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
-        user = os.getenv("NEO4J_USERNAME", "neo4j")
-        pwd = os.getenv("NEO4J_PASSWORD", "personal_task_board_2026")
+        result = await proc_pipe.process(raw_event)
 
-        cypher = """
-        MERGE (t:UnifiedTask {id: $task_id})
-        SET t.title = $title,
-            t.description = $description,
-            t.status = 'TODO',
-            t.owner_name = $owner_name,
-            t.requester_name = $requester_name,
-            t.due_date = $due_date,
-            t.confidence = $confidence,
-            t.priority_level = $priority_level,
-            t.review_status = $review_status,
-            t.source = $source,
-            t.created_at = $created_at
-
-        MERGE (p_owner:Person {canonical_name: $owner_name})
-        MERGE (t)-[:ASSIGNED_TO]->(p_owner)
-        RETURN t.id AS id, t.title AS title
-        """
-        now_iso = datetime.now(timezone.utc).isoformat()
-        with GraphDatabase.driver(uri, auth=(user, pwd)) as driver:
-            with driver.session() as session:
-                session.run(
-                    cypher,
-                    task_id=candidate.id,
-                    title=candidate.title,
-                    description=candidate.description or "",
-                    owner_name=candidate.owner_name or req.sender or "User",
-                    requester_name=candidate.requester_name or "Self",
-                    due_date=candidate.due_date.isoformat() if candidate.due_date else None,
-                    confidence=candidate.extraction_confidence,
-                    priority_level=urgency.get("priority_level", "Medium"),
-                    review_status=candidate.review_status,
-                    source=req.source or "Web Portal Input",
-                    created_at=now_iso
-                )
-
-        return {
-            "status": "success",
-            "task": {
-                "id": candidate.id,
-                "title": candidate.title,
-                "description": candidate.description,
-                "owner_name": candidate.owner_name,
-                "requester_name": candidate.requester_name,
-                "due_date": candidate.due_date.isoformat() if candidate.due_date else None,
-                "priority_level": urgency.get("priority_level", "Medium"),
-                "urgency_score": round(urgency.get("urgency_score", 1.0), 2),
-                "review_status": candidate.review_status,
-                "status": "TODO"
+        if result.candidate:
+            c = result.candidate
+            priority_score = float(getattr(c, "priority_score", 0.0) or 0.0)
+            priority_level = (
+                "High" if priority_score >= 70 else ("Medium" if priority_score >= 40 else "Low")
+            )
+            return {
+                "status": "success",
+                "task": {
+                    "id": c.id,
+                    "title": c.title,
+                    "description": c.description or "",
+                    "owner_name": c.owner_name or req.sender or "User",
+                    "requester_name": c.requester_name or "Self",
+                    "due_date": c.due_date.isoformat() if getattr(c, "due_date", None) else None,
+                    "priority_level": priority_level,
+                    "urgency_score": round(priority_score, 2),
+                    "review_status": getattr(c, "review_status", "auto_approved"),
+                    "status": c.status.value if hasattr(c.status, "value") else str(c.status),
+                },
             }
-        }
+        else:
+            return {
+                "status": "processed",
+                "message": "Tin nhắn đã được xử lý nhưng không phát hiện task/cam kết.",
+                "raw_event_id": event_id,
+            }
 
     class Layer1Request(BaseModel):
         repo_path: Optional[str] = None
@@ -663,34 +651,28 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         req: Optional[Layer1Request] = None,
         service: ApplicationService = Depends(get_application_service),
     ) -> Dict[str, Any]:
-        """Kích hoạt quét toàn bộ Layer 1 (Git & Coding Agents) và lưu vào Neo4j."""
+        """Kích hoạt quét Layer 1 (Git & Coding Agents) qua shared ApplicationService."""
         from ptb_acquisition.adapters import AgentWatchersAdapter, GitWatcherAdapter
         from ptb_acquisition.pipeline import AcquisitionPipeline
-        from ptb_database.neo4j_client import Neo4jClient
-        from ptb_database.repositories import CheckpointRepository, RawEventRepository, TaskDomainRepository
         from ptb_processing.pipeline import ProcessingPipeline
         from ptb_processing.worker import ProcessingWorker
 
-        client = Neo4jClient()
-        if not await client.verify_connectivity():
-            raise HTTPException(status_code=500, detail="Neo4j không khả dụng")
-
-        raw_repo = RawEventRepository(client)
-        ckpt_repo = CheckpointRepository(client)
-        task_repo = TaskDomainRepository(client)
+        raw_repo = service.raw_event_repo
+        ckpt_repo = service.checkpoint_repo
+        task_repo = service.task_repo
+        if raw_repo is None or ckpt_repo is None:
+            raise HTTPException(status_code=500, detail="ApplicationService chưa được cấu hình đầy đủ repos")
 
         pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="local-user")
-        
-        # Đường dẫn Git: nếu người dùng chỉ định thì dùng, nếu không thì dùng workspace PTB
-        repo_paths = [r"d:\Working\PTB\Personal_Task_Board-main"]
+
+        workspace = os.getenv("PTB_WORKSPACE_ROOT", str(ROOT_DIR))
+        repo_paths = [workspace] if os.path.isdir(os.path.join(workspace, ".git")) else []
         if req and req.repo_path and os.path.exists(req.repo_path):
             repo_paths = [req.repo_path]
-        elif os.path.exists(r"d:\Working\PTB"):
-            repo_paths.append(r"d:\Working\PTB")
 
         adapters = [
             AgentWatchersAdapter(tenant_id="local-user"),
-            GitWatcherAdapter(repo_paths=repo_paths, tenant_id="local-user")
+            GitWatcherAdapter(repo_paths=repo_paths, tenant_id="local-user"),
         ]
 
         total_ingested = 0
@@ -705,25 +687,32 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                 logger.warning("Adapter %s sync error: %s", adp_name, e)
                 adapter_details[adp_name] = f"Error: {e}"
 
-        # Chạy worker xử lý 3 events trong foreground để HTTP phản hồi nhanh, phần còn lại lưu trong DB
-        batch_limit = min(req.limit if req and req.limit else 3, 3)
-        proc_pipe = ProcessingPipeline(task_repo=task_repo)
+        batch_limit = min(req.limit if req and req.limit else 3, 5)
+        proc_pipe = getattr(service, "processing_pipeline", None) or getattr(service, "_processing_pipeline", None)
+        if proc_pipe is None:
+            proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
+
         worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
         processed_statuses = await worker.process_batch(limit=batch_limit)
 
-        await client.close()
+        failed_count = sum(1 for s in processed_statuses if str(s) in ("FAILED", "RETRY"))
+        status_label = "success" if failed_count == 0 else "partial"
+
         return {
-            "status": "success",
+            "status": status_label,
             "ingested": total_ingested,
             "processed": len(processed_statuses),
-            "details": adapter_details
+            "failed": failed_count,
+            "details": adapter_details,
         }
 
     # --------------------------------------------------------------------------
     # 18. POST /api/database/init (Initialize Constraints & Schema)
     # --------------------------------------------------------------------------
     @app.post("/api/database/init")
-    async def init_database_api() -> Dict[str, Any]:
+    async def init_database_api(
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
         """Khởi tạo schema constraints và indexes trên Neo4j (không xóa dữ liệu)."""
         from ptb_database.setup_all import setup_neo4j
         ok = await setup_neo4j()
@@ -733,19 +722,25 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
     # 19. POST /api/database/reset (Clean Database Reset & Re-init)
     # --------------------------------------------------------------------------
     @app.post("/api/database/reset")
-    async def reset_database_api() -> Dict[str, Any]:
-        """Xóa sạch database và nạp lại 19 schema constraints ban đầu."""
-        from neo4j import GraphDatabase
+    async def reset_database_api(
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
+        """Xóa sạch database và nạp lại 19 schema constraints ban đầu (yêu cầu env flag)."""
+        if os.getenv("PTB_ENABLE_DESTRUCTIVE_API", "false").lower() not in ("true", "1"):
+            raise HTTPException(
+                status_code=403,
+                detail="Destructive API disabled. Set PTB_ENABLE_DESTRUCTIVE_API=true to enable.",
+            )
+
+        if service.neo4j_client and hasattr(service.neo4j_client, "execute_write"):
+            await service.neo4j_client.execute_write("MATCH (n) DETACH DELETE n")
+        else:
+            from ptb_database.neo4j_client import Neo4jClient
+            client = Neo4jClient()
+            await client.execute_write("MATCH (n) DETACH DELETE n")
+            await client.close()
+
         from ptb_database.setup_all import setup_neo4j
-
-        uri = os.getenv("NEO4J_URI", "bolt://127.0.0.1:7687")
-        user = os.getenv("NEO4J_USERNAME", "neo4j")
-        pwd = os.getenv("NEO4J_PASSWORD", "personal_task_board_2026")
-
-        with GraphDatabase.driver(uri, auth=(user, pwd)) as driver:
-            with driver.session() as session:
-                session.run("MATCH (n) DETACH DELETE n")
-
         ok = await setup_neo4j()
         return {"status": "success", "constraints_restored": ok}
 

@@ -251,7 +251,7 @@ class LLMStructuredExtractor:
         lower_text = text.lower()
 
         # Kiểm tra cam kết
-        is_commitment = any(kw in lower_text for kw in ["để em", "em sẽ", "mình sẽ", "on it", "will do", "will fix", "đang check"])
+        is_commitment = any(kw in lower_text for kw in ["để em", "em sẽ", "mình sẽ", "on it", "will do", "will fix", "đang check", "đang xử lý"])
         is_request = any(kw in lower_text for kw in ["anh check", "nhờ em", "cần làm", "pls fix", "please check", "can you check"])
 
         # Xác định owner & requester

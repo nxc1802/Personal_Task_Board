@@ -101,6 +101,10 @@ class TodayBoardPlanner:
 
             input_obj = ctx if ctx is not None else candidate
             breakdown = self.priority_engine.calculate_priority(input_obj, now=ref_time)
+            if getattr(candidate, "priority_override", None) is not None:
+                breakdown = breakdown.model_copy(update={"total_score": float(candidate.priority_override)})
+            elif getattr(candidate, "priority_score", None) is not None and candidate.priority_score > 0.0 and breakdown.total_score == 0.0:
+                breakdown = breakdown.model_copy(update={"total_score": float(candidate.priority_score)})
 
             # Determine risk
             is_at_risk = False

@@ -80,7 +80,7 @@ Không sử dụng LLM\-as\-a\-judge làm ground truth cho các quyết định 
 | Graphiti | Episode sync\, semantic retrieval\, temporal data\, retry |
 | **L4 — Intelligence** | Priority\, manual override\, status inference\, status audit |
 | Today\/Waiting\/Forgotten | Ranking\, filtering\, overdue\/stale detection |
-| **L5 — REST** | Tất cả 14 endpoints\, query và mutation |
+| **L5 — REST** | Tất cả 14 business endpoints và 6 ingestion/portal endpoints (tổng cộng 20 endpoints), query và mutation |
 | MCP | Cả 10 read\-only tools và consistency với REST |
 | OpenWebUI | Các board views\, review\, task actions\, error handling |
 | **Runtime** | Supervisor\, source health\, restart\, dependency failure |

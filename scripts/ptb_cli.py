@@ -1403,27 +1403,30 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
             password=os.getenv("NEO4J_PASSWORD", "taskboard123"),
             database=os.getenv("NEO4J_DATABASE", "neo4j"),
         )
-        if test_adapter.is_available:
-            graphiti_ok = True
-            graphiti_detail = "Graphiti adapter initialized & connected to Neo4j"
-        elif not HAS_GRAPHITI_CORE:
-            graphiti_ok = False
-            graphiti_detail = "graphiti-core not available -> Graphiti DEGRADED"
-            log_bug(
-                code=BugCode.PTB_GRAPH_001,
-                subsystem="graph_memory",
-                severity="WARNING",
-                message=graphiti_detail,
-            )
-        else:
-            graphiti_ok = False
-            graphiti_detail = f"Graphiti adapter unavailable ({test_adapter.last_error or 'offline'}) -> Graphiti DEGRADED"
-            log_bug(
-                code=BugCode.PTB_GRAPH_001,
-                subsystem="graph_memory",
-                severity="WARNING",
-                message=graphiti_detail,
-            )
+        try:
+            if test_adapter.is_available:
+                graphiti_ok = True
+                graphiti_detail = "Graphiti adapter initialized & connected to Neo4j"
+            elif not HAS_GRAPHITI_CORE:
+                graphiti_ok = False
+                graphiti_detail = "graphiti-core not available -> Graphiti DEGRADED"
+                log_bug(
+                    code=BugCode.PTB_GRAPH_001,
+                    subsystem="graph_memory",
+                    severity="WARNING",
+                    message=graphiti_detail,
+                )
+            else:
+                graphiti_ok = False
+                graphiti_detail = f"Graphiti adapter unavailable ({test_adapter.last_error or 'offline'}) -> Graphiti DEGRADED"
+                log_bug(
+                    code=BugCode.PTB_GRAPH_001,
+                    subsystem="graph_memory",
+                    severity="WARNING",
+                    message=graphiti_detail,
+                )
+        finally:
+            await test_adapter.close()
     except Exception as e:
         graphiti_ok = False
         graphiti_detail = f"Graphiti check error: {e} -> Graphiti DEGRADED"
@@ -1441,6 +1444,51 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
         "is_pass": graphiti_ok,
         "is_warn": not graphiti_ok,
         "details": graphiti_detail,
+    })
+
+    # 8. Qwen3 Embedding Service (Port 8082 / local-ai)
+    qwen_ok = False
+    qwen_detail = ""
+    qwen_url = os.getenv("EMBEDDING_BASE_URL", "http://127.0.0.1:8082/v1")
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1.5)
+        # Parse port from URL or default 8082
+        s.connect(("127.0.0.1", 8082))
+        s.close()
+        qwen_ok = True
+        qwen_detail = f"Qwen3 Embedding listening on {qwen_url}"
+    except Exception:
+        qwen_detail = "Port 8082 closed (local-ai profile: docker compose --profile local-ai up -d)"
+
+    checks.append({
+        "component": "Qwen3 Embedding (Port 8082)",
+        "status": PASS_SYM if qwen_ok else WARN_SYM,
+        "is_pass": qwen_ok,
+        "is_warn": not qwen_ok,
+        "details": qwen_detail,
+    })
+
+    # 9. Kev Decision & Reranker Service (Port 8081 / local-ai)
+    kev_ok = False
+    kev_detail = ""
+    kev_url = os.getenv("DECISION_BASE_URL", "http://127.0.0.1:8081/v1")
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1.5)
+        s.connect(("127.0.0.1", 8081))
+        s.close()
+        kev_ok = True
+        kev_detail = f"Kev Decision & Reranker listening on {kev_url}"
+    except Exception:
+        kev_detail = "Port 8081 closed (local-ai profile: docker compose --profile local-ai up -d)"
+
+    checks.append({
+        "component": "Kev Reranker (Port 8081)",
+        "status": PASS_SYM if kev_ok else WARN_SYM,
+        "is_pass": kev_ok,
+        "is_warn": not kev_ok,
+        "details": kev_detail,
     })
 
     # In bảng tóm tắt

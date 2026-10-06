@@ -84,9 +84,9 @@ Trong môi trường làm việc kỹ thuật hiện đại, công việc và ca
                     ▼                                 ▼
  ┌────────────────────────────────────┐ ┌─────────────────────────────────┐
  │ Layer 5A: FastAPI REST (:8000)     │ │ Layer 5B: FastMCP Server (:8001)│
- │  • Deep /health, /api/tasks        │ │  • Deep /health & 10 Read-Only  │
- │  • /api/today, /api/review         │ │    Query Tools (SSE / Stdio)    │
- │  • /api/sources,Real Mutations Only│ │  • Dành cho Coding Agents       │
+ │  • 20 Endpoints (14 Business + 6)  │ │  • Deep /health & 10 Read-Only  │
+ │  • /api/today, /api/tasks, /health │ │    Query Tools (SSE / Stdio)    │
+ │  • Dev Control Center (/portal)    │ │  • Dành cho Coding Agents       │
  └──────────────────┬─────────────────┘ └─────────────────┬───────────────┘
                     │                                     │
                     ▼                                     ▼
@@ -125,7 +125,11 @@ cp config/models.example.yaml config/models.yaml
 ### Bước 3: Neo4j Available (Khởi động hạ tầng container)
 Khởi chạy container Neo4j Single-Store (`127.0.0.1:7687`) và OpenWebUI (`127.0.0.1:3000` gắn kết trực tiếp thư mục `./data/openwebui`):
 ```bash
+# Khởi chạy hạ tầng cốt lõi (Neo4j & OpenWebUI):
 docker compose up -d
+
+# Tùy chọn: Khởi chạy kèm cụm mô hình AI cục bộ Qwen3-Embedding (8082) & Kev-Reranker (8081):
+docker compose --profile local-ai up -d
 ```
 
 ### Bước 4: `ptb init` (Khởi tạo Neo4j Constraints & Schema)

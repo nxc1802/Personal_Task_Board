@@ -449,8 +449,8 @@ PORTAL_HTML = r"""<!DOCTYPE html>
 
           <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 12px;">
             <div class="form-group">
-              <label for="gitRepoPath">Thư mục Git Repo (mặc định workspace hiện tại):</label>
-              <input type="text" id="gitRepoPath" value="d:\Working\PTB\Personal_Task_Board-main" placeholder="Đường dẫn repo Git cá nhân...">
+              <label for="gitRepoPath">Thư mục Git Repo (để trống để tự động quét workspace hiện tại):</label>
+              <input type="text" id="gitRepoPath" value="" placeholder="Mặc định: workspace hiện tại hoặc thư mục mẹ...">
             </div>
 
             <button id="btnScanL1" class="btn btn-primary" style="width: 100%;" onclick="runLayer1Scan()">

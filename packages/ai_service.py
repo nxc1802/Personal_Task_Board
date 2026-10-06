@@ -3,12 +3,16 @@ Module tích hợp Qwen3-Embedding & Kev-0.8B (Decision & Reranker)
 cho dự án Personal Task Board thông qua chuẩn OpenAI API.
 """
 
-import os
-import numpy as np
-import urllib.request
 import json
-from typing import List, Dict, Any, Optional
+import logging
+import os
+import urllib.request
+from typing import Any, Dict, List, Optional
+import numpy as np
 from openai import OpenAI
+
+logger = logging.getLogger("ptb.ai_service")
+
 
 class Qwen3EmbeddingService:
     """Service tạo vector embedding 1024 chiều bằng Qwen3-Embedding-0.6B qua OpenAI API."""
@@ -116,8 +120,8 @@ class KevDecisionReranker:
                     ranked = ranked[:top_k]
                 return ranked
         except Exception as e:
-            # Fallback nếu gặp lỗi mạng
-            return [{"index": i, "document": doc, "score": 1.0 / (i + 1)} for i, doc in enumerate(documents)]
+            logger.warning("Kev rerank error: %s", e)
+            raise RuntimeError(f"Kev Decision Reranker is unavailable: {e}") from e
 
     def classify_task_urgency(self, task_text: str) -> Dict[str, Any]:
         """Đánh giá mức độ ưu tiên & tính khả thi của task bằng Kev System 1."""
@@ -141,22 +145,26 @@ class KevDecisionReranker:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            res = json.loads(response.read().decode("utf-8"))
-            answers = res["answers"]
-            is_task_prob = answers["is_actionable"]["noul"]
-            urgency_score = answers["urgency"]["score"] # 0 - 3
-            
-            # Map sang priority level
-            if urgency_score >= 2.0:
-                priority = "High"
-            elif urgency_score >= 1.0:
-                priority = "Medium"
-            else:
-                priority = "Low"
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                res = json.loads(response.read().decode("utf-8"))
+                answers = res["answers"]
+                is_task_prob = answers["is_actionable"]["noul"]
+                urgency_score = answers["urgency"]["score"] # 0 - 3
+                
+                # Map sang priority level
+                if urgency_score >= 2.0:
+                    priority = "High"
+                elif urgency_score >= 1.0:
+                    priority = "Medium"
+                else:
+                    priority = "Low"
 
-            return {
-                "is_task_probability": is_task_prob,
-                "urgency_score": urgency_score,
-                "priority_level": priority,
-            }
+                return {
+                    "is_task_probability": is_task_prob,
+                    "urgency_score": urgency_score,
+                    "priority_level": priority,
+                }
+        except Exception as e:
+            logger.warning("Kev classification error: %s", e)
+            raise RuntimeError(f"Kev Decision Classifier is unavailable: {e}") from e

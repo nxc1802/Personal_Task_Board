@@ -252,13 +252,42 @@ class ApplicationService:
             except Exception:
                 playwright_state = "unconfigured"
 
-        # 6. Tổng hợp status tổng thể
+        # 6. Kiểm tra Qwen3 Embedding (Port 8082 / local-ai)
+        if getattr(self, "qwen3_status", None) is not None:
+            qwen3_state = str(self.qwen3_status).strip().lower()
+        else:
+            try:
+                import socket
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.3)
+                s.connect(("127.0.0.1", 8082))
+                s.close()
+                qwen3_state = "healthy"
+            except Exception:
+                qwen3_state = "unconfigured"
+
+        # 7. Kiểm tra Kev Decision Reranker (Port 8081 / local-ai)
+        if getattr(self, "kev_status", None) is not None:
+            kev_state = str(self.kev_status).strip().lower()
+        else:
+            try:
+                import socket
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.3)
+                s.connect(("127.0.0.1", 8081))
+                s.close()
+                kev_state = "healthy"
+            except Exception:
+                kev_state = "unconfigured"
+
+        # 8. Tổng hợp status tổng thể
+        require_local_ai = os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1")
         if neo4j_state == "not_ready" or processing_worker_state == "not_ready":
             overall_status = "not_ready"
         elif any(
             st == "degraded"
             for st in (graphiti_state, processing_worker_state, llm_state)
-        ):
+        ) or (require_local_ai and (qwen3_state != "healthy" or kev_state != "healthy")):
             overall_status = "degraded"
         else:
             overall_status = "healthy"
@@ -272,6 +301,8 @@ class ApplicationService:
             "graphiti": graphiti_state,
             "llm": llm_state,
             "playwright": playwright_state,
+            "qwen3": qwen3_state,
+            "kev": kev_state,
         }
 
     async def get_today_plan(self, user_id: str = "default") -> TodayBoardView:

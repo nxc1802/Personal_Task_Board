@@ -5,9 +5,10 @@ or the environment is offline / lacks LLM API credentials, the system
 falls back gracefully without breaking domain flows.
 """
 
+import asyncio
 from datetime import datetime, timezone
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger("ptb.graph_memory.adapter")
 
@@ -17,11 +18,106 @@ try:
     from graphiti_core import Graphiti
     from graphiti_core.nodes import EpisodeType
     HAS_GRAPHITI_CORE = True
+
+    try:
+        from graphiti_core.driver.neo4j_driver import Neo4jDriver, get_range_indices, get_fulltext_indices
+
+        async def _safe_build_indices_and_constraints(self, delete_existing: bool = False):
+            """Safely execute indices setup without leaving unawaited coroutines if connection fails."""
+            try:
+                if delete_existing:
+                    await self.delete_all_indexes()
+                range_indices = get_range_indices(self.provider)
+                fulltext_indices = get_fulltext_indices(self.provider)
+                for q in range_indices + fulltext_indices:
+                    try:
+                        await self._execute_index_query(q)
+                    except Exception:
+                        break
+            except Exception:
+                pass
+
+        Neo4jDriver.build_indices_and_constraints = _safe_build_indices_and_constraints
+    except Exception as patch_exc:
+        logger.debug("Could not patch Neo4jDriver.build_indices_and_constraints: %s", patch_exc)
+
 except (ImportError, Exception) as exc:
     HAS_GRAPHITI_CORE = False
     Graphiti = None
     EpisodeType = None
     logger.info("graphiti-core is not available (%s). Operating in graceful fallback mode.", exc)
+
+
+try:
+    from graphiti_core.embedder.client import EmbedderClient
+except Exception:
+    class EmbedderClient:  # type: ignore
+        pass
+
+try:
+    from graphiti_core.cross_encoder.client import CrossEncoderClient
+except Exception:
+    class CrossEncoderClient:  # type: ignore
+        pass
+
+
+class GraphitiQwen3Embedder(EmbedderClient):
+    """Adapter wrapping Qwen3EmbeddingService for Graphiti-Core."""
+
+    def __init__(self, embedding_service: Optional[Any] = None) -> None:
+        self.embedding_service = embedding_service
+
+    def _get_service(self) -> Any:
+        if self.embedding_service is None:
+            try:
+                from packages.ai_service import Qwen3EmbeddingService
+            except ImportError:
+                from ai_service import Qwen3EmbeddingService
+            self.embedding_service = Qwen3EmbeddingService()
+        return self.embedding_service
+
+    async def create(self, input_data: Any) -> List[float]:
+        service = self._get_service()
+        if isinstance(input_data, str):
+            return await asyncio.to_thread(service.embed_text, input_data)
+        elif isinstance(input_data, list) and input_data and isinstance(input_data[0], str):
+            res = await asyncio.to_thread(service.embed_batch, input_data)
+            return res[0] if res else []
+        return []
+
+    async def create_batch(self, input_data_list: List[str]) -> List[List[float]]:
+        service = self._get_service()
+        return await asyncio.to_thread(service.embed_batch, input_data_list)
+
+
+class GraphitiKevCrossEncoder(CrossEncoderClient):
+    """Adapter wrapping KevDecisionReranker for Graphiti-Core."""
+
+    def __init__(self, reranker_service: Optional[Any] = None) -> None:
+        self.reranker_service = reranker_service
+
+    def _get_service(self) -> Any:
+        if self.reranker_service is None:
+            try:
+                from packages.ai_service import KevDecisionReranker
+            except ImportError:
+                from ai_service import KevDecisionReranker
+            self.reranker_service = KevDecisionReranker()
+        return self.reranker_service
+
+    async def rank(self, query: str, passages: List[str]) -> List[Tuple[str, float]]:
+        if not passages:
+            return []
+        service = self._get_service()
+        try:
+            results = await asyncio.to_thread(service.rerank, query, passages)
+            ranked = []
+            for item in results:
+                ranked.append((item.get("document", ""), float(item.get("score", 0.0))))
+            return sorted(ranked, key=lambda x: x[1], reverse=True)
+        except Exception as exc:
+            logger.warning("Kev cross-encoder ranking failed: %s", exc)
+            return [(p, 1.0 / (i + 1)) for i, p in enumerate(passages)]
 
 
 class GraphitiAdapter:
@@ -58,6 +154,13 @@ class GraphitiAdapter:
 
         if HAS_GRAPHITI_CORE and Graphiti is not None and uri:
             try:
+                # Use Qwen3 embedder if not explicitly provided
+                if embedder is None:
+                    try:
+                        embedder = GraphitiQwen3Embedder()
+                    except Exception as e_err:
+                        logger.debug("Failed initializing GraphitiQwen3Embedder: %s", e_err)
+
                 # Attempt to initialize Graphiti with provided connection details
                 self._graphiti = Graphiti(
                     uri=uri,
