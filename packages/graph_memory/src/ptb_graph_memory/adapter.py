@@ -8,6 +8,7 @@ falls back gracefully without breaking domain flows.
 import asyncio
 from datetime import datetime, timezone
 import logging
+import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger("ptb.graph_memory.adapter")
@@ -158,31 +159,24 @@ class GraphitiAdapter:
 
         if HAS_GRAPHITI_CORE and Graphiti is not None and uri:
             try:
-                # Wire Qwen3 embedder if configured / enabled and not explicitly provided
-                if embedder is None:
-                    is_qwen_configured = bool(
-                        os.getenv("EMBEDDING_BASE_URL")
-                        or os.getenv("QWEN_EMBEDDING_URL")
-                        or os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
-                    )
-                    if is_qwen_configured:
-                        try:
-                            embedder = GraphitiQwen3Embedder()
-                        except Exception as e_err:
-                            logger.debug("Failed initializing GraphitiQwen3Embedder: %s", e_err)
+                is_local_ai_enabled = (
+                    os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                    or os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                )
 
-                # Wire Kev cross-encoder if configured / enabled and not explicitly provided
-                if cross_encoder is None:
-                    is_kev_configured = bool(
-                        os.getenv("DECISION_BASE_URL")
-                        or os.getenv("KEV_DECISION_URL")
-                        or os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
-                    )
-                    if is_kev_configured:
-                        try:
-                            cross_encoder = GraphitiKevCrossEncoder()
-                        except Exception as k_err:
-                            logger.debug("Failed initializing GraphitiKevCrossEncoder: %s", k_err)
+                # Wire Qwen3 embedder only if local AI is enabled and not explicitly provided
+                if embedder is None and is_local_ai_enabled:
+                    try:
+                        embedder = GraphitiQwen3Embedder()
+                    except Exception as e_err:
+                        logger.debug("Failed initializing GraphitiQwen3Embedder: %s", e_err)
+
+                # Wire Kev cross-encoder only if local AI is enabled and not explicitly provided
+                if cross_encoder is None and is_local_ai_enabled:
+                    try:
+                        cross_encoder = GraphitiKevCrossEncoder()
+                    except Exception as k_err:
+                        logger.debug("Failed initializing GraphitiKevCrossEncoder: %s", k_err)
 
                 self.embedder = embedder
                 self.cross_encoder = cross_encoder

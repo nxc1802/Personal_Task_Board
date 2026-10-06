@@ -459,11 +459,16 @@ class PTBProcessSupervisor:
                     self.raw_event_repo = RawEventRepository(client)
                     self.checkpoint_repo = CheckpointRepository(client)
                     emb_svc = None
-                    try:
-                        from packages.ai_service import Qwen3EmbeddingService
-                        emb_svc = Qwen3EmbeddingService()
-                    except Exception as e_emb:
-                        logger.debug("Qwen3 embedding service not loaded in supervisor: %s", e_emb)
+                    is_local_ai_enabled = (
+                        os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                        or os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                    )
+                    if is_local_ai_enabled:
+                        try:
+                            from packages.ai_service import Qwen3EmbeddingService
+                            emb_svc = Qwen3EmbeddingService()
+                        except Exception as e_emb:
+                            logger.debug("Qwen3 embedding service not loaded in supervisor: %s", e_emb)
                     self.task_repo = TaskDomainRepository(client, embedding_service=emb_svc)
                     print("  [✓] Đã kết nối Neo4j Persistence Engine (Authoritative Domain Store)")
                 else:
@@ -497,11 +502,16 @@ class PTBProcessSupervisor:
         if self.task_repo is None and self.neo4j_client:
             from ptb_database.repositories import TaskDomainRepository
             emb_svc = None
-            try:
-                from packages.ai_service import Qwen3EmbeddingService
-                emb_svc = Qwen3EmbeddingService()
-            except Exception as e_emb:
-                logger.debug("Qwen3 embedding service not loaded in supervisor: %s", e_emb)
+            is_local_ai_enabled = (
+                os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                or os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+            )
+            if is_local_ai_enabled:
+                try:
+                    from packages.ai_service import Qwen3EmbeddingService
+                    emb_svc = Qwen3EmbeddingService()
+                except Exception as e_emb:
+                    logger.debug("Qwen3 embedding service not loaded in supervisor: %s", e_emb)
             self.task_repo = TaskDomainRepository(self.neo4j_client, embedding_service=emb_svc)
 
         # 2. Pipeline thu nạp (Acquisition) & Configured Adapters
@@ -1569,16 +1579,26 @@ async def cmd_openwebui(args: argparse.Namespace) -> int:
             target_path = Path(data_dir) if data_dir else None
             installer = OpenWebUIInstaller(base_url=url, default_data_dir=target_path)
             res = await installer.install_components(openwebui_data_dir=target_path, base_url=url)
-            if res.get("success") or res.get("status") == "success":
+            if res.get("success") is True and res.get("status") == "success":
                 print(f"\n[✓] {res.get('message')}")
                 print(f"    • Target Directory   : {res.get('target_dir')}")
                 print(f"    • Pinned Version     : {res.get('pinned_version')}")
+                if res.get("database_registered"):
+                    print(f"    • Database Plugin    : [✓] Registered ({res.get('tools_specs_count', 0)} tool specs in webui.db)")
+                else:
+                    print("    • Database Plugin    : [✗] Not registered in SQLite")
+                if res.get("api_registered"):
+                    print("    • OpenWebUI API      : [✓] Registered & Verified online")
+                else:
+                    print("    • OpenWebUI API      : [i] Skipped (API offline or unauthenticated)")
                 print(f"    • Components Installed:")
                 for c in res.get("components_installed", []):
                     print(f"      - {c}")
                 return 0
             else:
                 print(f"\n[✗] Cài đặt thất bại: {res.get('message')}")
+                if not res.get("database_registered") and not res.get("api_registered"):
+                    print("    • Cảnh báo: Plugin chưa được đăng ký vào OpenWebUI (cả SQLite DB lẫn REST API đều chưa nạp thành công).")
                 return 1
         except Exception as e:
             print(f"\n[✗] Ngoại lệ khi cài đặt OpenWebUI: {e}", file=sys.stderr)
@@ -1929,11 +1949,16 @@ async def cmd_serve(args: argparse.Namespace) -> int:
             raw_repo = RawEventRepository(client)
             ckpt_repo = CheckpointRepository(client)
             emb_svc = None
-            try:
-                from packages.ai_service import Qwen3EmbeddingService
-                emb_svc = Qwen3EmbeddingService()
-            except Exception as e_emb:
-                logger.debug("Qwen3 embedding service not loaded in cmd_serve: %s", e_emb)
+            is_local_ai_enabled = (
+                os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                or os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+            )
+            if is_local_ai_enabled:
+                try:
+                    from packages.ai_service import Qwen3EmbeddingService
+                    emb_svc = Qwen3EmbeddingService()
+                except Exception as e_emb:
+                    logger.debug("Qwen3 embedding service not loaded in cmd_serve: %s", e_emb)
             task_repo = TaskDomainRepository(client, embedding_service=emb_svc)
             proc_pipeline = ProcessingPipeline(task_repo=task_repo)
             lifecycle = TaskIntelligenceLifecycle(task_repo=task_repo)

@@ -218,24 +218,79 @@ class OpenWebUIInstaller:
 
         # 5. Optional API Registration if online
         api_reg_ok = False
+        api_reg_error: Optional[str] = None
         api_token = os.getenv("OPENWEBUI_API_KEY")
         if await self.check_connection(self.base_url) and api_token:
+            headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+            tool_payload = {
+                "id": "ptb_tools",
+                "name": tools_manifest.get("title", "Personal Task Board Tools"),
+                "content": tools_code,
+                "meta": {
+                    "description": tools_manifest.get("description", "Bộ công cụ truy vấn Personal Task Board cho OpenWebUI (Live-Only)"),
+                    "manifest": tools_manifest,
+                },
+            }
+            action_payload = {
+                "id": "ptb_board_action",
+                "name": action_manifest.get("title", "PTB Board Action & Assistant"),
+                "content": actions_code,
+                "meta": {
+                    "description": action_manifest.get("description", "Action and prompt shortcut filter for Personal Task Board (Live-Only)"),
+                    "manifest": action_manifest,
+                },
+            }
             try:
-                headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
                 async with httpx.AsyncClient(timeout=4.0) as client:
-                    await client.post(
+                    # Register / update Tools
+                    t_resp = await client.post(
                         f"{self.base_url}/api/v1/tools/create",
                         headers=headers,
-                        json={"id": "ptb_tools", "name": "Personal Task Board Tools", "content": tools_code},
+                        json=tool_payload,
                     )
-                    await client.post(
+                    if t_resp.status_code == 400 and ("ID_TAKEN" in t_resp.text or "already taken" in t_resp.text.lower()):
+                        t_resp = await client.post(
+                            f"{self.base_url}/api/v1/tools/id/ptb_tools/update",
+                            headers=headers,
+                            json=tool_payload,
+                        )
+                    if not (200 <= t_resp.status_code < 300):
+                        raise RuntimeError(f"Tools registration failed with HTTP {t_resp.status_code}: {t_resp.text}")
+
+                    # Register / update Functions
+                    f_resp = await client.post(
                         f"{self.base_url}/api/v1/functions/create",
                         headers=headers,
-                        json={"id": "ptb_board_action", "name": "PTB Board Action & Assistant", "content": actions_code, "type": "action"},
+                        json=action_payload,
                     )
+                    if f_resp.status_code == 400 and ("ID_TAKEN" in f_resp.text or "already taken" in f_resp.text.lower()):
+                        f_resp = await client.post(
+                            f"{self.base_url}/api/v1/functions/id/ptb_board_action/update",
+                            headers=headers,
+                            json=action_payload,
+                        )
+                    if not (200 <= f_resp.status_code < 300):
+                        raise RuntimeError(f"Functions registration failed with HTTP {f_resp.status_code}: {f_resp.text}")
+
+                    # Verify via GET
+                    v_t_resp = await client.get(
+                        f"{self.base_url}/api/v1/tools/id/ptb_tools",
+                        headers=headers,
+                    )
+                    if not (200 <= v_t_resp.status_code < 300):
+                        raise RuntimeError(f"Tools verification failed with HTTP {v_t_resp.status_code}: {v_t_resp.text}")
+
+                    v_f_resp = await client.get(
+                        f"{self.base_url}/api/v1/functions/id/ptb_board_action",
+                        headers=headers,
+                    )
+                    if not (200 <= v_f_resp.status_code < 300):
+                        raise RuntimeError(f"Functions verification failed with HTTP {v_f_resp.status_code}: {v_f_resp.text}")
+
                     api_reg_ok = True
             except Exception as e_api:
-                logger.debug("API registration attempt note: %s", e_api)
+                api_reg_error = str(e_api)
+                logger.warning("OpenWebUI API registration failed: %s", e_api)
 
         # 6. Post-installation validation on disk
         validation = self.validate_installation(
@@ -243,14 +298,30 @@ class OpenWebUIInstaller:
             raise_on_error=True,
         )
 
+        db_registered = db_reg.get("registered", False)
+        plugins_registered = db_registered or api_reg_ok
+        install_success = validation["validation_ok"] and plugins_registered
+
+        if install_success:
+            msg = f"Successfully installed PTB components and verified plugin registration for OpenWebUI {PINNED_OPENWEBUI_VERSION}"
+            status_label = "success"
+        elif validation["validation_ok"]:
+            msg = f"Deployed integration files on disk, but plugin registration into OpenWebUI failed (DB: {db_reg.get('error', 'unverified')}, API: {api_reg_error or 'offline/unauthenticated'})."
+            status_label = "partial"
+        else:
+            msg = "Failed to deploy integration files to OpenWebUI data directory."
+            status_label = "failed"
+
         result = {
-            "status": "success" if validation["validation_ok"] else "failed",
-            "success": validation["validation_ok"],
+            "status": status_label,
+            "success": install_success,
             "validation_ok": validation["validation_ok"],
-            "database_registered": db_reg.get("registered", False),
+            "database_registered": db_registered,
             "tools_registered": db_reg.get("tools", []),
             "functions_registered": db_reg.get("functions", []),
+            "tools_specs_count": db_reg.get("specs_count", 0),
             "api_registered": api_reg_ok,
+            "api_error": api_reg_error,
             "db_path": db_reg.get("db_path"),
             "validated_files": validation["validated_files"],
             "pinned_version": PINNED_OPENWEBUI_VERSION,
@@ -265,10 +336,166 @@ class OpenWebUIInstaller:
                 "ptb_board.html",
                 "ptb_manifest.json",
             ],
-            "message": f"Successfully installed PTB components and registered plugins for OpenWebUI {PINNED_OPENWEBUI_VERSION}",
+            "message": msg,
         }
         self._last_result = result
         return result
+
+    @classmethod
+    def generate_tools_specs(cls, tools_source: Optional[Union[Path, str, Any]] = None) -> List[Dict[str, Any]]:
+        """Tự động trích xuất JSON specs chuẩn OpenAI Function calling từ class Tools trong ptb_tools.py."""
+        import inspect
+        import re
+
+        target_cls = None
+        if isinstance(tools_source, type):
+            target_cls = tools_source
+        else:
+            try:
+                from integrations.openwebui.tools.ptb_tools import Tools as PtbTools
+                target_cls = PtbTools
+            except Exception as e_cls:
+                logger.debug("Failed importing PtbTools class for specs generation: %s", e_cls)
+
+        if target_cls is not None:
+            specs: List[Dict[str, Any]] = []
+            for attr_name in sorted(dir(target_cls)):
+                if attr_name.startswith("_"):
+                    continue
+                attr = getattr(target_cls, attr_name)
+                if not callable(attr) or inspect.isclass(attr):
+                    continue
+                sig = inspect.signature(attr)
+                doc = inspect.getdoc(attr) or ""
+                lines = [l.strip() for l in doc.splitlines() if l.strip()]
+                desc = lines[0] if lines else attr_name
+                params_doc: Dict[str, str] = {}
+                for line in lines:
+                    m = re.match(r":param\s+(\w+):\s*(.+)", line)
+                    if m:
+                        params_doc[m.group(1)] = m.group(2)
+
+                props: Dict[str, Any] = {}
+                required: List[str] = []
+                for p_name, p in sig.parameters.items():
+                    if p_name in ("self", "extra_params", "__user__"):
+                        continue
+                    p_type = "string"
+                    if p.annotation in (int, "int"):
+                        p_type = "integer"
+                    elif p.annotation in (float, "float"):
+                        p_type = "number"
+                    elif p.annotation in (bool, "bool"):
+                        p_type = "boolean"
+                    p_desc = params_doc.get(p_name, f"Parameter {p_name}")
+                    props[p_name] = {"type": p_type, "description": p_desc}
+                    if p.default == inspect.Parameter.empty:
+                        required.append(p_name)
+                specs.append({
+                    "name": attr_name,
+                    "description": desc,
+                    "parameters": {
+                        "type": "object",
+                        "properties": props,
+                        "required": required,
+                    },
+                })
+            if specs:
+                return specs
+
+        # Canonical fallback specs khớp 100% 11 methods của Tools trong ptb_tools.py
+        return [
+            {
+                "name": "get_today_tasks",
+                "description": "Lấy danh sách các công việc ưu tiên cao nhất hôm nay kèm hệ số điểm (0-100), breakdown chi tiết và lý do.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"limit": {"type": "integer", "description": "Số lượng task tối đa cần lấy (mặc định 5)."}},
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_tasks",
+                "description": "Tra cứu danh sách công việc trong Task Board với bộ lọc đa tiêu chí (status, project, source).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "description": "Trạng thái cần lọc ('TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE')"},
+                        "project_key": {"type": "string", "description": "Mã dự án (e.g., 'OPS', 'CORE', 'PTB')"},
+                        "source": {"type": "string", "description": "Nguồn bắt đầu ('ms_teams', 'outlook', 'jira', 'cursor')"},
+                        "limit": {"type": "integer", "description": "Giới hạn số lượng trả về (mặc định 10)."},
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_review_queue",
+                "description": "Lấy danh sách các task trích xuất tự động (Confidence 0.40 - 0.64) đang chờ người dùng phê duyệt.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+            {
+                "name": "approve_task",
+                "description": "Phê duyệt một task candidate từ review queue đưa vào bảng công việc chính thức.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"review_id": {"type": "string", "description": "Mã ID của review item cần duyệt."}},
+                    "required": ["review_id"],
+                },
+            },
+            {
+                "name": "dismiss_task",
+                "description": "Từ chối hoặc loại bỏ một task candidate khỏi review queue.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"review_id": {"type": "string", "description": "Mã ID của review item cần loại bỏ."}},
+                    "required": ["review_id"],
+                },
+            },
+            {
+                "name": "update_task_status",
+                "description": "Cập nhật trạng thái của task (TODO, IN_PROGRESS, BLOCKED, DONE, DISMISSED).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string", "description": "Mã UUID của task cần cập nhật."},
+                        "new_status": {"type": "string", "description": "Trạng thái mới ('TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'DISMISSED')."},
+                    },
+                    "required": ["task_id", "new_status"],
+                },
+            },
+            {
+                "name": "get_waiting_items",
+                "description": "Lấy danh sách các việc đang bị nghẽn (BLOCKED) do chờ người khác.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+            {
+                "name": "get_forgotten_commitments",
+                "description": "Lấy danh sách các cam kết bằng lời hứa trong chat đã trôi quá hạn cần theo dõi (follow-up).",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+            {
+                "name": "search_knowledge",
+                "description": "Tìm kiếm các Quyết định Kiến trúc (decisions) và Bài học Kinh nghiệm sửa lỗi (lessons).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Từ khóa tìm kiếm"},
+                        "knowledge_type": {"type": "string", "description": "Loại tri thức ('decision', 'lesson', 'all')"},
+                    },
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "get_source_health",
+                "description": "Kiểm tra tình trạng hoạt động và đồng bộ của các Adapter nguồn dữ liệu.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+            {
+                "name": "render_board_artifact",
+                "description": "Trả về Personal Task Board Artifact để OpenWebUI hiển thị trực quan trong panel tương tác bên cạnh.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        ]
 
     @classmethod
     def register_database_components(
@@ -315,6 +542,7 @@ class OpenWebUIInstaller:
                     )
                 """)
                 now_ts = int(time.time())
+                specs_list = cls.generate_tools_specs(tools_code)
                 cursor.execute("""
                     INSERT INTO tool (id, user_id, name, content, specs, meta, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -329,8 +557,11 @@ class OpenWebUIInstaller:
                     "system",
                     tools_meta.get("title", "Personal Task Board Tools"),
                     tools_code,
-                    json.dumps([{"name": "query_tasks", "description": "Query PTB tasks"}]),
-                    json.dumps(tools_meta, ensure_ascii=False),
+                    json.dumps(specs_list, ensure_ascii=False),
+                    json.dumps({
+                        "description": tools_meta.get("description", "Personal Task Board Tools"),
+                        "manifest": tools_meta,
+                    }, ensure_ascii=False),
                     now_ts,
                     now_ts,
                 ))
@@ -351,22 +582,29 @@ class OpenWebUIInstaller:
                     actions_meta.get("title", "PTB Board Action & Assistant"),
                     "action",
                     actions_code,
-                    json.dumps(actions_meta, ensure_ascii=False),
+                    json.dumps({
+                        "description": actions_meta.get("description", "PTB Board Action & Assistant"),
+                        "manifest": actions_meta,
+                    }, ensure_ascii=False),
                     1,
                     1,
                     now_ts,
                     now_ts,
                 ))
                 conn.commit()
-                cursor.execute("SELECT id FROM tool WHERE id = 'ptb_tools'")
-                has_tool = cursor.fetchone() is not None
+                cursor.execute("SELECT id, specs FROM tool WHERE id = 'ptb_tools'")
+                tool_row = cursor.fetchone()
                 cursor.execute("SELECT id FROM function WHERE id = 'ptb_board_action'")
-                has_func = cursor.fetchone() is not None
+                func_row = cursor.fetchone()
+                has_tool = tool_row is not None
+                has_func = func_row is not None
+                parsed_specs = json.loads(tool_row[1]) if has_tool and tool_row[1] else []
                 return {
-                    "registered": bool(has_tool and has_func),
+                    "registered": bool(has_tool and has_func and len(parsed_specs) > 0),
                     "db_path": str(db_path),
                     "tools": ["ptb_tools"] if has_tool else [],
                     "functions": ["ptb_board_action"] if has_func else [],
+                    "specs_count": len(parsed_specs),
                 }
             finally:
                 conn.close()
@@ -378,6 +616,7 @@ class OpenWebUIInstaller:
                 "error": str(e_db),
                 "tools": [],
                 "functions": [],
+                "specs_count": 0,
             }
 
     @class_or_instance_method

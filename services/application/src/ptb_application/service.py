@@ -79,6 +79,8 @@ class ApplicationService:
         processing_worker_status: Optional[str] = None,
         llm_status: Optional[str] = None,
         playwright_status: Optional[str] = None,
+        qwen3_status: Optional[str] = None,
+        kev_status: Optional[str] = None,
         sources_config: Optional[Dict[str, Any]] = None,
         runtime_statuses: Optional[Dict[str, str]] = None,
     ) -> None:
@@ -94,11 +96,16 @@ class ApplicationService:
         self._default_neo4j_client = None if self._explicit_neo4j_client else client
         self.neo4j_client = client
         emb_svc = None
-        try:
-            from packages.ai_service import Qwen3EmbeddingService
-            emb_svc = Qwen3EmbeddingService()
-        except Exception as e_emb:
-            logger.debug("Qwen3 embedding service not loaded in ApplicationService: %s", e_emb)
+        is_local_ai_enabled = (
+            os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+            or os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+        )
+        if is_local_ai_enabled:
+            try:
+                from packages.ai_service import Qwen3EmbeddingService
+                emb_svc = Qwen3EmbeddingService()
+            except Exception as e_emb:
+                logger.debug("Qwen3 embedding service not loaded in ApplicationService: %s", e_emb)
         self.task_repo = task_repo or TaskDomainRepository(client, embedding_service=emb_svc)
         self.raw_event_repo = raw_event_repo or RawEventRepository(client)
         self.checkpoint_repo = checkpoint_repo or CheckpointRepository(client)
@@ -115,11 +122,18 @@ class ApplicationService:
         self.processing_worker_status = processing_worker_status
         self.llm_status = llm_status
         self.playwright_status = playwright_status
+        self.qwen3_status = qwen3_status
+        self.kev_status = kev_status
         self.sources_config = sources_config
         self.runtime_statuses = runtime_statuses or {}
 
     async def get_system_health(self) -> Dict[str, Any]:
         """Kiểm tra tình trạng sức khỏe sâu (deep health) của ApplicationService và các dependencies."""
+        is_local_ai_enabled = (
+            os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+            or os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+        )
+
         # 1. Kiểm tra kết nối neo4j
         repo_dict = getattr(self.task_repo, "__dict__", {}) if self.task_repo is not None else {}
         has_real_repo = (
@@ -195,15 +209,20 @@ class ApplicationService:
                     if (
                         adapter_embedder is not None
                         and "Qwen3" in type(adapter_embedder).__name__
+                        and is_local_ai_enabled
                     ):
-                        try:
-                            import socket
-                            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            s.settimeout(0.2)
-                            s.connect(("127.0.0.1", 8082))
-                            s.close()
-                        except Exception:
-                            check_health_val = False
+                        if getattr(self, "qwen3_status", None) is not None:
+                            if str(self.qwen3_status).strip().lower() != "healthy":
+                                check_health_val = False
+                        else:
+                            try:
+                                import socket
+                                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                s.settimeout(0.2)
+                                s.connect(("127.0.0.1", 8082))
+                                s.close()
+                            except Exception:
+                                check_health_val = False
 
                 if is_healthy_val is False or check_health_val is False:
                     log_bug(
@@ -273,6 +292,8 @@ class ApplicationService:
         # 6. Kiểm tra Qwen3 Embedding (Port 8082 / local-ai)
         if getattr(self, "qwen3_status", None) is not None:
             qwen3_state = str(self.qwen3_status).strip().lower()
+        elif not is_local_ai_enabled:
+            qwen3_state = "disabled"
         else:
             try:
                 import socket
@@ -282,11 +303,13 @@ class ApplicationService:
                 s.close()
                 qwen3_state = "healthy"
             except Exception:
-                qwen3_state = "unconfigured"
+                qwen3_state = "unavailable"
 
         # 7. Kiểm tra Kev Decision Reranker (Port 8081 / local-ai)
         if getattr(self, "kev_status", None) is not None:
             kev_state = str(self.kev_status).strip().lower()
+        elif not is_local_ai_enabled:
+            kev_state = "disabled"
         else:
             try:
                 import socket
@@ -296,16 +319,15 @@ class ApplicationService:
                 s.close()
                 kev_state = "healthy"
             except Exception:
-                kev_state = "unconfigured"
+                kev_state = "unavailable"
 
         # 8. Tổng hợp status tổng thể
-        require_local_ai = os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1")
         if neo4j_state == "not_ready" or processing_worker_state == "not_ready":
             overall_status = "not_ready"
         elif any(
             st == "degraded"
             for st in (graphiti_state, processing_worker_state, llm_state)
-        ) or (require_local_ai and (qwen3_state != "healthy" or kev_state != "healthy")):
+        ) or (is_local_ai_enabled and (qwen3_state != "healthy" or kev_state != "healthy")):
             overall_status = "degraded"
         else:
             overall_status = "healthy"

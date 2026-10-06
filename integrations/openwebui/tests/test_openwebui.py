@@ -248,18 +248,33 @@ async def test_openwebui_installer_install_components_and_summary(tmp_path: Path
     import sqlite3
     conn = sqlite3.connect(str(db_file))
     cur = conn.cursor()
-    cur.execute("SELECT id, name FROM tool WHERE id = 'ptb_tools'")
+    cur.execute("SELECT id, name, specs, meta FROM tool WHERE id = 'ptb_tools'")
     tool_row = cur.fetchone()
     assert tool_row is not None
     assert tool_row[0] == "ptb_tools"
+    tool_specs = json.loads(tool_row[2])
+    spec_names = [s.get("name") for s in tool_specs]
+    assert "query_tasks" not in spec_names, "Stored specs must NOT contain hardcoded non-existent query_tasks"
+    assert "get_today_tasks" in spec_names
+    assert "get_tasks" in spec_names
+    assert "get_review_queue" in spec_names
+    assert "approve_task" in spec_names
+    assert "update_task_status" in spec_names
+    assert len(spec_names) >= 11
+    tool_meta = json.loads(tool_row[3])
+    assert "manifest" in tool_meta
+    assert "description" in tool_meta
 
-    cur.execute("SELECT id, name, type, is_active, is_global FROM function WHERE id = 'ptb_board_action'")
+    cur.execute("SELECT id, name, type, meta, is_active, is_global FROM function WHERE id = 'ptb_board_action'")
     func_row = cur.fetchone()
     assert func_row is not None
     assert func_row[0] == "ptb_board_action"
     assert func_row[2] == "action"
-    assert func_row[3] == 1
+    func_meta = json.loads(func_row[3])
+    assert "manifest" in func_meta
+    assert "description" in func_meta
     assert func_row[4] == 1
+    assert func_row[5] == 1
     conn.close()
 
     # Verify install summary
@@ -671,3 +686,93 @@ def test_ptb_tools_live_and_offline():
     art_res = tools.render_board_artifact()
     assert ":::artifact" in art_res
     assert "<!DOCTYPE html>" in art_res
+
+
+# ==============================================================================
+# 5. DYNAMIC SPECS GENERATION & REGISTRATION VERIFICATION TESTS
+# ==============================================================================
+def test_openwebui_installer_dynamic_specs_generation():
+    """Verify OpenWebUIInstaller.generate_tools_specs dynamically extracts all 11 Tools methods."""
+    specs = OpenWebUIInstaller.generate_tools_specs(Tools)
+    assert len(specs) >= 11
+    names = [s["name"] for s in specs]
+    assert "query_tasks" not in names
+    expected_methods = [
+        "approve_task",
+        "dismiss_task",
+        "get_forgotten_commitments",
+        "get_review_queue",
+        "get_source_health",
+        "get_tasks",
+        "get_today_tasks",
+        "get_waiting_items",
+        "render_board_artifact",
+        "search_knowledge",
+        "update_task_status",
+    ]
+    for m in expected_methods:
+        assert m in names, f"Method {m} must be present in extracted tool specs"
+
+    # Verify parameters structure for update_task_status
+    status_spec = next(s for s in specs if s["name"] == "update_task_status")
+    assert "task_id" in status_spec["parameters"]["properties"]
+    assert "new_status" in status_spec["parameters"]["properties"]
+    assert "task_id" in status_spec["parameters"]["required"]
+
+
+@pytest.mark.asyncio
+async def test_openwebui_installer_api_registration_schema_and_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Verify API registration sends schema-compliant payloads with meta and fails on 422."""
+    monkeypatch.setenv("OPENWEBUI_API_KEY", "sk-test-token")
+    installer = OpenWebUIInstaller(base_url="http://127.0.0.1:3000", default_data_dir=tmp_path)
+
+    recorded_requests = []
+
+    async def fake_post(url, *args, **kwargs):
+        recorded_requests.append({"url": str(url), "json": kwargs.get("json")})
+        # Simulate 422 Unprocessable Entity if meta is missing
+        json_data = kwargs.get("json", {})
+        if "meta" not in json_data:
+            return httpx.Response(status_code=422, json={"detail": "Field required: meta"})
+        return httpx.Response(status_code=200, json={"status": "ok"})
+
+    async def fake_get(url, *args, **kwargs):
+        return httpx.Response(status_code=200, json={"id": "ptb_tools"})
+
+    with patch.object(installer, "check_connection", new_callable=AsyncMock, return_value=True), \
+         patch.object(httpx.AsyncClient, "post", side_effect=fake_post), \
+         patch.object(httpx.AsyncClient, "get", side_effect=fake_get):
+        res = await installer.install_components(openwebui_data_dir=tmp_path)
+        assert res["api_registered"] is True
+        assert len(recorded_requests) >= 2
+        for req in recorded_requests:
+            assert "meta" in req["json"], f"Request payload to {req['url']} must include 'meta' per OpenWebUI Form schemas"
+            assert "description" in req["json"]["meta"]
+            assert "manifest" in req["json"]["meta"]
+
+
+@pytest.mark.asyncio
+async def test_openwebui_installer_no_false_green(tmp_path: Path):
+    """Verify installer and CLI report failure when plugins cannot be registered (no false-green)."""
+    installer = OpenWebUIInstaller(default_data_dir=tmp_path)
+
+    # Force database registration to fail
+    with patch.object(installer, "register_database_components", return_value={"registered": False, "error": "Simulated DB failure"}), \
+         patch.object(installer, "check_connection", new_callable=AsyncMock, return_value=False):
+        res = await installer.install_components(openwebui_data_dir=tmp_path)
+        assert res["validation_ok"] is True  # Files copied
+        assert res["database_registered"] is False
+        assert res["api_registered"] is False
+        assert res["success"] is False  # Must NOT report success when plugins not registered!
+        assert res["status"] == "partial"
+        assert "plugin registration into OpenWebUI failed" in res["message"]
+
+    # Verify CLI cmd_openwebui returns non-zero exit code
+    import argparse
+    from scripts.ptb_cli import cmd_openwebui
+    args = argparse.Namespace(owui_action="install", url="http://127.0.0.1:3000", data_dir=str(tmp_path))
+
+    with patch.object(OpenWebUIInstaller, "install_components", new_callable=AsyncMock, return_value=res):
+        exit_code = await cmd_openwebui(args)
+        assert exit_code == 1, "CLI must exit 1 when plugin registration fails"
+

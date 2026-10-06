@@ -296,3 +296,58 @@ def test_f_microsoft_auth_valid_but_never_synced():
     assert teams_tenant.status != SourceSyncState.HEALTHY.value.lower()
 
 
+def test_local_ai_disabled_reports_disabled_and_healthy(monkeypatch):
+    """Test Local AI Disabled invariant: PTB_ENABLE_LOCAL_AI=false -> qwen/kev = disabled, status = healthy."""
+    monkeypatch.setenv("PTB_ENABLE_LOCAL_AI", "false")
+    monkeypatch.delenv("PTB_REQUIRE_LOCAL_AI", raising=False)
+
+    service = ApplicationService(
+        neo4j_client=MockNeo4j(),
+        processing_worker_status="healthy",
+        llm_status="healthy",
+        playwright_status="healthy",
+    )
+    import asyncio
+    health = asyncio.run(service.get_system_health())
+    assert health["qwen3"] == "disabled"
+    assert health["kev"] == "disabled"
+    assert health["status"] == "healthy"
+
+
+def test_local_ai_enabled_unreachable_reports_degraded(monkeypatch):
+    """Test Local AI Enabled invariant: PTB_ENABLE_LOCAL_AI=true -> unreachable -> unavailable & status = degraded."""
+    monkeypatch.setenv("PTB_ENABLE_LOCAL_AI", "true")
+
+    service = ApplicationService(
+        neo4j_client=MockNeo4j(),
+        processing_worker_status="healthy",
+        llm_status="healthy",
+        playwright_status="healthy",
+    )
+    import asyncio
+    health = asyncio.run(service.get_system_health())
+    assert health["qwen3"] == "unavailable"
+    assert health["kev"] == "unavailable"
+    assert health["status"] == "degraded"
+
+
+def test_local_ai_enabled_healthy_reports_healthy(monkeypatch):
+    """Test Local AI Enabled invariant: PTB_ENABLE_LOCAL_AI=true with healthy services -> status = healthy."""
+    monkeypatch.setenv("PTB_ENABLE_LOCAL_AI", "true")
+
+    service = ApplicationService(
+        neo4j_client=MockNeo4j(),
+        processing_worker_status="healthy",
+        llm_status="healthy",
+        playwright_status="healthy",
+        qwen3_status="healthy",
+        kev_status="healthy",
+    )
+    import asyncio
+    health = asyncio.run(service.get_system_health())
+    assert health["qwen3"] == "healthy"
+    assert health["kev"] == "healthy"
+    assert health["status"] == "healthy"
+
+
+
