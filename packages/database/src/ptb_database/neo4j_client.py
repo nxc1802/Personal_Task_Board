@@ -91,6 +91,31 @@ class Neo4jClient:
                     results.append(stmt.splitlines()[0])
                     logger.info("Thực thi thành công: %s", stmt.splitlines()[0])
                 except Exception as e:
+                    err_msg = str(e)
+                    if (
+                        "only supported on Neo4j Enterprise Edition" in err_msg
+                        or "UnsupportedAdministrationCommand" in err_msg
+                        or "Enterprise Edition" in err_msg
+                    ):
+                        logger.warning(
+                            "Statement requires Enterprise Edition; falling back to index: %s (%s)",
+                            stmt.splitlines()[0],
+                            err_msg,
+                        )
+                        idx_stmt = re.sub(
+                            r"CREATE\s+CONSTRAINT\s+(\w+)\s+IF\s+NOT\s+EXISTS\s+FOR\s+\(([^)]+)\)\s+REQUIRE\s+\(([^)]+)\)\s+IS\s+UNIQUE",
+                            r"CREATE INDEX \1 IF NOT EXISTS FOR (\2) ON (\3)",
+                            stmt,
+                            flags=re.IGNORECASE,
+                        )
+                        try:
+                            await session.run(idx_stmt)
+                            results.append(idx_stmt.splitlines()[0])
+                            logger.info("Thực thi index thay thế thành công: %s", idx_stmt.splitlines()[0])
+                            continue
+                        except Exception as idx_err:
+                            logger.warning("Index fallback skipped: %s", idx_err)
+                            continue
                     logger.error("Lỗi khi thực thi statement:\n%s\nLỗi: %s", stmt, e)
                     raise
 

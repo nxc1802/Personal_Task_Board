@@ -110,7 +110,25 @@ jobs:
 
       - name: Apply Neo4j constraints
         run: |
-          uv run python -c "from ptb_database.neo4j_client import Neo4jClient; import asyncio; c = Neo4jClient(password='taskboard123'); asyncio.run(c.execute_cypher_file()); asyncio.run(c.close())"
+          uv run python -c "
+          import asyncio
+          from ptb_database.neo4j_client import Neo4jClient
+          c = Neo4jClient(uri='bolt://127.0.0.1:7687', password='taskboard123')
+          async def init_neo4j():
+              for i in range(20):
+                  try:
+                      if await c.verify_connectivity():
+                          print('Connected to Neo4j successfully!')
+                          applied = await c.execute_cypher_file()
+                          print(f'Successfully applied {len(applied)} statements/constraints.')
+                          return
+                  except Exception as e:
+                      print(f'Attempt {i+1}/20 waiting for Neo4j: {e}')
+                      await asyncio.sleep(2)
+              raise RuntimeError('Failed to initialize Neo4j after 20 attempts')
+          asyncio.run(init_neo4j())
+          asyncio.run(c.close())
+          "
 
       - name: Run Live E2E Vertical Slice Test
         run: uv run pytest tests/test_external_integration.py --run-external -v
