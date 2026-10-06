@@ -205,7 +205,39 @@ class OpenWebUIInstaller:
             str(deployed_manifest),
         ]
 
-        # 4. Post-installation validation on disk
+        # 4. Database & Plugin Registration into OpenWebUI SQLite DB (webui.db)
+        tools_code = tools_src.read_text(encoding="utf-8")
+        actions_code = actions_src.read_text(encoding="utf-8")
+        db_reg = self.register_database_components(
+            dest_dir=dest_dir,
+            tools_code=tools_code,
+            tools_meta=tools_manifest,
+            actions_code=actions_code,
+            actions_meta=action_manifest,
+        )
+
+        # 5. Optional API Registration if online
+        api_reg_ok = False
+        api_token = os.getenv("OPENWEBUI_API_KEY")
+        if await self.check_connection(self.base_url) and api_token:
+            try:
+                headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    await client.post(
+                        f"{self.base_url}/api/v1/tools/create",
+                        headers=headers,
+                        json={"id": "ptb_tools", "name": "Personal Task Board Tools", "content": tools_code},
+                    )
+                    await client.post(
+                        f"{self.base_url}/api/v1/functions/create",
+                        headers=headers,
+                        json={"id": "ptb_board_action", "name": "PTB Board Action & Assistant", "content": actions_code, "type": "action"},
+                    )
+                    api_reg_ok = True
+            except Exception as e_api:
+                logger.debug("API registration attempt note: %s", e_api)
+
+        # 6. Post-installation validation on disk
         validation = self.validate_installation(
             dest_dir=dest_dir,
             raise_on_error=True,
@@ -215,6 +247,11 @@ class OpenWebUIInstaller:
             "status": "success" if validation["validation_ok"] else "failed",
             "success": validation["validation_ok"],
             "validation_ok": validation["validation_ok"],
+            "database_registered": db_reg.get("registered", False),
+            "tools_registered": db_reg.get("tools", []),
+            "functions_registered": db_reg.get("functions", []),
+            "api_registered": api_reg_ok,
+            "db_path": db_reg.get("db_path"),
             "validated_files": validation["validated_files"],
             "pinned_version": PINNED_OPENWEBUI_VERSION,
             "target_dir": str(dest_dir),
@@ -228,10 +265,120 @@ class OpenWebUIInstaller:
                 "ptb_board.html",
                 "ptb_manifest.json",
             ],
-            "message": f"Successfully installed PTB components for OpenWebUI {PINNED_OPENWEBUI_VERSION}",
+            "message": f"Successfully installed PTB components and registered plugins for OpenWebUI {PINNED_OPENWEBUI_VERSION}",
         }
         self._last_result = result
         return result
+
+    @classmethod
+    def register_database_components(
+        cls,
+        dest_dir: Path,
+        tools_code: str,
+        tools_meta: Dict[str, Any],
+        actions_code: str,
+        actions_meta: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Đăng ký PTB Tools và Functions trực tiếp vào OpenWebUI SQLite database (webui.db)."""
+        import sqlite3
+        import time
+
+        db_path = dest_dir / "webui.db"
+        try:
+            conn = sqlite3.connect(str(db_path))
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS tool (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT,
+                        name TEXT,
+                        content TEXT,
+                        specs TEXT,
+                        meta TEXT,
+                        created_at INTEGER,
+                        updated_at INTEGER
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS function (
+                        id TEXT PRIMARY KEY,
+                        user_id TEXT,
+                        name TEXT,
+                        type TEXT,
+                        content TEXT,
+                        meta TEXT,
+                        is_active INTEGER,
+                        is_global INTEGER,
+                        created_at INTEGER,
+                        updated_at INTEGER
+                    )
+                """)
+                now_ts = int(time.time())
+                cursor.execute("""
+                    INSERT INTO tool (id, user_id, name, content, specs, meta, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name,
+                        content=excluded.content,
+                        specs=excluded.specs,
+                        meta=excluded.meta,
+                        updated_at=excluded.updated_at
+                """, (
+                    "ptb_tools",
+                    "system",
+                    tools_meta.get("title", "Personal Task Board Tools"),
+                    tools_code,
+                    json.dumps([{"name": "query_tasks", "description": "Query PTB tasks"}]),
+                    json.dumps(tools_meta, ensure_ascii=False),
+                    now_ts,
+                    now_ts,
+                ))
+                cursor.execute("""
+                    INSERT INTO function (id, user_id, name, type, content, meta, is_active, is_global, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name=excluded.name,
+                        type=excluded.type,
+                        content=excluded.content,
+                        meta=excluded.meta,
+                        is_active=excluded.is_active,
+                        is_global=excluded.is_global,
+                        updated_at=excluded.updated_at
+                """, (
+                    "ptb_board_action",
+                    "system",
+                    actions_meta.get("title", "PTB Board Action & Assistant"),
+                    "action",
+                    actions_code,
+                    json.dumps(actions_meta, ensure_ascii=False),
+                    1,
+                    1,
+                    now_ts,
+                    now_ts,
+                ))
+                conn.commit()
+                cursor.execute("SELECT id FROM tool WHERE id = 'ptb_tools'")
+                has_tool = cursor.fetchone() is not None
+                cursor.execute("SELECT id FROM function WHERE id = 'ptb_board_action'")
+                has_func = cursor.fetchone() is not None
+                return {
+                    "registered": bool(has_tool and has_func),
+                    "db_path": str(db_path),
+                    "tools": ["ptb_tools"] if has_tool else [],
+                    "functions": ["ptb_board_action"] if has_func else [],
+                }
+            finally:
+                conn.close()
+        except Exception as e_db:
+            logger.warning("OpenWebUI DB registration note: %s", e_db)
+            return {
+                "registered": False,
+                "db_path": str(db_path),
+                "error": str(e_db),
+                "tools": [],
+                "functions": [],
+            }
 
     @class_or_instance_method
     def validate_installation(
@@ -314,6 +461,14 @@ class OpenWebUIInstaller:
             "  • Board       : board/ptb_board.html",
             "  • Manifest    : ptb_manifest.json",
         ]
+
+        if res.get("database_registered"):
+            lines.append("Đăng ký OpenWebUI Plugins & Workspace:")
+            lines.append(f"  ✓ Database (webui.db) : {res.get('db_path')}")
+            for t in res.get("tools_registered", []):
+                lines.append(f"  ✓ Tool Registered     : {t}")
+            for fn in res.get("functions_registered", []):
+                lines.append(f"  ✓ Function Registered : {fn}")
 
         validated_files = res.get("validated_files", [])
         if validated_files:

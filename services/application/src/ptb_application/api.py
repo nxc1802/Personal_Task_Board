@@ -543,7 +543,7 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
     @app.get("/portal", response_class=HTMLResponse)
     async def get_portal():
         """Phục vụ giao diện Web Control Center để quản trị và nạp dữ liệu cá nhân trực quan."""
-        if os.getenv("PTB_DEV_PORTAL", "true").lower() not in ("true", "1", "yes"):
+        if os.getenv("PTB_DEV_PORTAL", "false").lower() not in ("true", "1", "yes"):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Developer control center portal is disabled. Set PTB_DEV_PORTAL=true to enable.",
@@ -654,6 +654,7 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         """Kích hoạt quét Layer 1 (Git & Coding Agents) qua shared ApplicationService."""
         from ptb_acquisition.adapters import AgentWatchersAdapter, GitWatcherAdapter
         from ptb_acquisition.pipeline import AcquisitionPipeline
+        from ptb_contracts import ProcessingStatus
         from ptb_processing.pipeline import ProcessingPipeline
         from ptb_processing.worker import ProcessingWorker
 
@@ -695,8 +696,17 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
         processed_statuses = await worker.process_batch(limit=batch_limit)
 
-        failed_count = sum(1 for s in processed_statuses if str(s) in ("FAILED", "RETRY"))
-        status_label = "success" if failed_count == 0 else "partial"
+        failed_count = sum(
+            1 for s in processed_statuses
+            if s in (ProcessingStatus.FAILED, ProcessingStatus.RETRY)
+            or str(getattr(s, "value", s)).lower() in ("failed", "retry")
+        )
+        if len(processed_statuses) > 0 and failed_count == len(processed_statuses):
+            status_label = "failed"
+        elif failed_count > 0:
+            status_label = "partial"
+        else:
+            status_label = "success"
 
         return {
             "status": status_label,

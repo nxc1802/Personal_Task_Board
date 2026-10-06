@@ -53,6 +53,8 @@ GUARD_PATTERNS = {
     "silent_except_pass": re.compile(r"except\s+Exception:\s*(?:\n\s*)?pass\b"),
     "fabricated_health": re.compile(r"\bfabricat(?:ed|e)?[\s_-]*health\b", re.IGNORECASE),
     "default_dummy": re.compile(r"\bdefault[\s_-]*dummy", re.IGNORECASE),
+    "allow_heuristic_fallback": re.compile(r"\ballow_heuristic_fallback\b", re.IGNORECASE),
+    "PTB_ALLOW_HEURISTIC_FALLBACK": re.compile(r"\bPTB_ALLOW_HEURISTIC_FALLBACK\b"),
 }
 
 
@@ -289,8 +291,8 @@ def test_test_and_fixtures_are_exempt_and_allow_test_doubles():
     test_worker_path = REPO_ROOT / "services/processing/tests/test_worker.py"
     if test_worker_path.exists():
         content = test_worker_path.read_text(encoding="utf-8")
-        assert "mock_mode=True" in content, (
-            "test_worker.py contains mock_mode=True test double as expected"
+        assert "FakeDeterministicLLMExtractor" in content or "FakeRawEventRepo" in content, (
+            "test_worker.py contains test doubles as expected"
         )
 
 
@@ -362,6 +364,10 @@ def test_guard_regex_detection_effectiveness():
     assert pat_dummy.search("default_dummy_value") is not None
     assert pat_dummy.search("DEFAULT_DUMMY = {}") is not None
     assert pat_dummy.search("default_value = {}") is None
+
+    # 10. allow_heuristic_fallback & PTB_ALLOW_HEURISTIC_FALLBACK
+    assert GUARD_PATTERNS["allow_heuristic_fallback"].search("allow_heuristic_fallback = True") is not None
+    assert GUARD_PATTERNS["PTB_ALLOW_HEURISTIC_FALLBACK"].search("os.getenv('PTB_ALLOW_HEURISTIC_FALLBACK')") is not None
 
 def test_whitelist_hygiene_and_contract_integrity():
     """Verify integrity of the temporary whitelist for Wave 1 and Wave 4.

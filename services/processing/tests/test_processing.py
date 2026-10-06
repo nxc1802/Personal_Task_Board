@@ -36,6 +36,7 @@ from ptb_processing import (
     TeamsQuoteReplyParser,
 )
 from ptb_processing.extractor.llm_extractor import LLMExtractedSchema, classify_review_status
+from tests.support.test_doubles import FakeDeterministicLLMExtractor
 
 
 # ==============================================================================
@@ -315,7 +316,7 @@ def test_llm_extractor_review_status_classification():
 
 
 def test_llm_extractor_fallback_rule_based():
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     parsed = ParsedMessageContent(
         is_quote_reply=True,
         quoted_author_raw="Huy",
@@ -338,7 +339,7 @@ def test_llm_extractor_fallback_rule_based():
 
 
 def test_llm_extractor_with_mock_handler():
-    extractor = LLMStructuredExtractor()
+    extractor = FakeDeterministicLLMExtractor()
 
     # Giả lập phản hồi của model với các mức confidence khác nhau
     def mock_high(prompt: str):
@@ -409,7 +410,6 @@ def test_llm_extractor_openai_http_mock():
         base_url="https://api.openai.com/v1",
         api_key="sk-fake-key",
         model="gpt-4o-mini",
-        mock_mode=False,
     )
 
     fake_openai_response = {
@@ -602,8 +602,8 @@ def test_layer2_end_to_end_pipeline():
     should_extract = heuristic_filter.should_extract(parsed_msg.actual_content_text)
     assert should_extract is True
 
-    # 3. LLM Structured Extractor (Fallback rule-based)
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    # 3. LLM Structured Extractor (Test double)
+    extractor = FakeDeterministicLLMExtractor()
     candidate = extractor.extract_from_parsed(
         parsed_msg,
         raw_event_id=raw_event.id,
@@ -747,7 +747,7 @@ def _make_auto_wire_raw_event(
 async def test_pipeline_intelligence_lifecycle_auto_wired_on_new_task():
     """Tự động gọi intelligence_lifecycle.on_task_changed với đúng task ID khi tạo mới task."""
     task_repo = _InMemoryProcessingTaskRepo()
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     mock_lifecycle = AsyncMock()
 
     pipeline = ProcessingPipeline(
@@ -794,7 +794,7 @@ async def test_pipeline_intelligence_lifecycle_auto_wired_on_merge():
         ],
     )
     task_repo = _InMemoryProcessingTaskRepo(tasks=[existing_task])
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     mock_lifecycle = AsyncMock()
 
     pipeline = ProcessingPipeline(
@@ -825,7 +825,7 @@ async def test_pipeline_intelligence_lifecycle_auto_wired_on_merge():
 async def test_pipeline_intelligence_lifecycle_none_safe():
     """Pipeline hoạt động hoàn toàn an toàn khi intelligence_lifecycle là None (không throw exception)."""
     task_repo = _InMemoryProcessingTaskRepo()
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
 
     # intelligence_lifecycle=None tường minh
     pipeline = ProcessingPipeline(
@@ -846,7 +846,7 @@ async def test_pipeline_intelligence_lifecycle_none_safe():
 async def test_processing_worker_propagates_intelligence_lifecycle_to_pipeline():
     """ProcessingWorker nhận intelligence_lifecycle và tự động wire vào pipeline."""
     task_repo = _InMemoryProcessingTaskRepo()
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     raw_event = _make_auto_wire_raw_event(event_id="raw-worker-wire")
     raw_repo = _InMemoryProcessingRawEventRepo(events=[raw_event])
 
@@ -878,7 +878,7 @@ async def test_processing_worker_propagates_intelligence_lifecycle_to_pipeline()
 async def test_processing_worker_safe_when_intelligence_lifecycle_none():
     """ProcessingWorker hoạt động an toàn khi intelligence_lifecycle là None."""
     task_repo = _InMemoryProcessingTaskRepo()
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     raw_event = _make_auto_wire_raw_event(event_id="raw-worker-none-safe")
     raw_repo = _InMemoryProcessingRawEventRepo(events=[raw_event])
 
@@ -920,7 +920,7 @@ async def test_pipeline_full_integration_with_real_intelligence_lifecycle():
 
     pipeline = ProcessingPipeline(
         task_repo=task_repo,
-        llm_extractor=LLMStructuredExtractor(mock_mode=True),
+        llm_extractor=FakeDeterministicLLMExtractor(),
         intelligence_lifecycle=real_lifecycle,
     )
 

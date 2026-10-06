@@ -93,7 +93,13 @@ class ApplicationService:
         client = neo4j_client or repo_client or Neo4jClient()
         self._default_neo4j_client = None if self._explicit_neo4j_client else client
         self.neo4j_client = client
-        self.task_repo = task_repo or TaskDomainRepository(client)
+        emb_svc = None
+        try:
+            from packages.ai_service import Qwen3EmbeddingService
+            emb_svc = Qwen3EmbeddingService()
+        except Exception as e_emb:
+            logger.debug("Qwen3 embedding service not loaded in ApplicationService: %s", e_emb)
+        self.task_repo = task_repo or TaskDomainRepository(client, embedding_service=emb_svc)
         self.raw_event_repo = raw_event_repo or RawEventRepository(client)
         self.checkpoint_repo = checkpoint_repo or CheckpointRepository(client)
         self.priority_engine = priority_engine or DeterministicPriorityEngine()
@@ -185,6 +191,19 @@ class ApplicationService:
                         check_health_val = False
                     if getattr(adapter, "last_error", None) is not None:
                         check_health_val = False
+                    adapter_embedder = getattr(adapter, "embedder", None)
+                    if (
+                        adapter_embedder is not None
+                        and "Qwen3" in type(adapter_embedder).__name__
+                    ):
+                        try:
+                            import socket
+                            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            s.settimeout(0.2)
+                            s.connect(("127.0.0.1", 8082))
+                            s.close()
+                        except Exception:
+                            check_health_val = False
 
                 if is_healthy_val is False or check_health_val is False:
                     log_bug(
@@ -231,12 +250,11 @@ class ApplicationService:
             if extractor is not None:
                 ext_healthy = getattr(extractor, "is_healthy", None)
                 has_key = bool(getattr(extractor, "api_key", None)) if hasattr(extractor, "api_key") else True
-                is_mock = bool(getattr(extractor, "mock_mode", False))
-                allow_fb = bool(getattr(extractor, "allow_heuristic_fallback", False))
+                is_fake = bool(getattr(extractor, "is_fake", False))
                 
                 if ext_healthy is False:
                     llm_state = "degraded"
-                elif hasattr(extractor, "api_key") and not (has_key or is_mock or allow_fb) and (has_real_repo or client_overridden):
+                elif hasattr(extractor, "api_key") and not (has_key or is_fake) and (has_real_repo or client_overridden):
                     llm_state = "degraded"
                 else:
                     llm_state = "healthy"

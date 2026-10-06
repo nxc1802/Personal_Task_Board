@@ -458,7 +458,13 @@ class PTBProcessSupervisor:
                     self.neo4j_client = client
                     self.raw_event_repo = RawEventRepository(client)
                     self.checkpoint_repo = CheckpointRepository(client)
-                    self.task_repo = TaskDomainRepository(client)
+                    emb_svc = None
+                    try:
+                        from packages.ai_service import Qwen3EmbeddingService
+                        emb_svc = Qwen3EmbeddingService()
+                    except Exception as e_emb:
+                        logger.debug("Qwen3 embedding service not loaded in supervisor: %s", e_emb)
+                    self.task_repo = TaskDomainRepository(client, embedding_service=emb_svc)
                     print("  [✓] Đã kết nối Neo4j Persistence Engine (Authoritative Domain Store)")
                 else:
                     await client.close()
@@ -490,7 +496,13 @@ class PTBProcessSupervisor:
 
         if self.task_repo is None and self.neo4j_client:
             from ptb_database.repositories import TaskDomainRepository
-            self.task_repo = TaskDomainRepository(self.neo4j_client)
+            emb_svc = None
+            try:
+                from packages.ai_service import Qwen3EmbeddingService
+                emb_svc = Qwen3EmbeddingService()
+            except Exception as e_emb:
+                logger.debug("Qwen3 embedding service not loaded in supervisor: %s", e_emb)
+            self.task_repo = TaskDomainRepository(self.neo4j_client, embedding_service=emb_svc)
 
         # 2. Pipeline thu nạp (Acquisition) & Configured Adapters
         from ptb_acquisition.adapters import (
@@ -1916,7 +1928,13 @@ async def cmd_serve(args: argparse.Namespace) -> int:
         if await client.verify_connectivity():
             raw_repo = RawEventRepository(client)
             ckpt_repo = CheckpointRepository(client)
-            task_repo = TaskDomainRepository(client)
+            emb_svc = None
+            try:
+                from packages.ai_service import Qwen3EmbeddingService
+                emb_svc = Qwen3EmbeddingService()
+            except Exception as e_emb:
+                logger.debug("Qwen3 embedding service not loaded in cmd_serve: %s", e_emb)
+            task_repo = TaskDomainRepository(client, embedding_service=emb_svc)
             proc_pipeline = ProcessingPipeline(task_repo=task_repo)
             lifecycle = TaskIntelligenceLifecycle(task_repo=task_repo)
             graph_memory = GraphitiMemoryClient(neo4j_client=client)

@@ -91,16 +91,14 @@ class LLMExtractionError(RuntimeError):
 
 
 class LLMStructuredExtractor:
-    """Bộ trích xuất cấu trúc sử dụng LLM hoặc Fallback Rule-based / Mock."""
+    """Bộ trích xuất cấu trúc sử dụng LLM."""
 
     def __init__(
         self,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
-        mock_mode: bool = False,
         timeout: float = 30.0,
-        allow_heuristic_fallback: Optional[bool] = None,
     ) -> None:
         self.base_url = (
             base_url
@@ -117,20 +115,7 @@ class LLMStructuredExtractor:
             or os.getenv("PTB_EXTRACTION_MODEL")
             or os.getenv("LLM_MODEL", "gpt-4o-mini")
         )
-        self.mock_mode = mock_mode
         self.timeout = float(os.getenv("LLM_TIMEOUT", str(timeout)))
-        if allow_heuristic_fallback is not None:
-            self.allow_heuristic_fallback = allow_heuristic_fallback
-        else:
-            self.allow_heuristic_fallback = (
-                os.getenv("PTB_ALLOW_HEURISTIC_FALLBACK", "false").lower()
-                in ("true", "1", "yes")
-            )
-        self._mock_handler: Optional[Callable[[str], Optional[LLMExtractedSchema]]] = None
-
-    def set_mock_handler(self, handler: Optional[Callable[[str], Optional[LLMExtractedSchema]]]) -> None:
-        """Cấu hình hàm mock tùy biến cho unit test."""
-        self._mock_handler = handler
 
     def _call_openai_completion(self, prompt: str) -> Dict[str, Any]:
         """Gọi OpenAI-compatible API qua HTTP POST bằng urllib với retry."""
@@ -239,60 +224,6 @@ class LLMStructuredExtractor:
 
         raise ValueError(f"Could not extract valid JSON from LLM response: {cleaned[:200]}")
 
-
-    def _fallback_rule_based_extract(
-        self,
-        text: str,
-        quoted_author: Optional[str] = None,
-        quoted_content: Optional[str] = None,
-        actual_author: Optional[str] = None,
-    ) -> LLMExtractedSchema:
-        """Fallback trích xuất dựa trên quy tắc heuristic khi không có LLM API."""
-        lower_text = text.lower()
-
-        # Kiểm tra cam kết
-        is_commitment = any(kw in lower_text for kw in ["để em", "em sẽ", "mình sẽ", "on it", "will do", "will fix", "đang check", "đang xử lý"])
-        is_request = any(kw in lower_text for kw in ["anh check", "nhờ em", "cần làm", "pls fix", "please check", "can you check"])
-
-        # Xác định owner & requester
-        if is_commitment:
-            owner = actual_author or "Assignee"
-            requester = quoted_author
-            confidence = 0.88 if quoted_content else 0.75
-        elif is_request:
-            owner = quoted_author
-            requester = actual_author
-            confidence = 0.70
-        else:
-            owner = actual_author
-            requester = quoted_author
-            confidence = 0.35  # Dưới 0.40 -> ignore
-
-        # Tiêu đề
-        if quoted_content:
-            # Rút gọn quoted content làm tiêu đề
-            clean_q = re.sub(r"^(?:can you|please|nhờ|nhờ anh|nhờ em)\s*", "", quoted_content, flags=re.IGNORECASE).strip()
-            title = clean_q[:100]
-        else:
-            title = text.strip()[:100]
-
-        if not title:
-            title = "Task from message"
-
-        # Deadline
-        explicit_deadline = bool(re.search(r"(?:before|by|trước|hạn chót)\s+\d+", lower_text))
-
-        return LLMExtractedSchema(
-            title=title,
-            description=f"Auto-extracted context: {text}" if text != title else None,
-            owner_name=owner,
-            requester_name=requester,
-            due_date=None,
-            explicit_deadline=explicit_deadline,
-            extraction_confidence=confidence,
-            evidence_snippet=text[:250],
-        )
-
     def extract_from_parsed(
         self,
         parsed: ParsedMessageContent,
@@ -314,67 +245,36 @@ class LLMStructuredExtractor:
         context_parts.append(f"Tin nhắn phản hồi (từ {actual_author or 'Người trả lời'}): \"{actual_text}\"")
         combined_prompt = "\n".join(context_parts)
 
-        extracted_schema: Optional[LLMExtractedSchema] = None
+        # 1. Zero-fallback requirement: API key required
+        if not self.api_key:
+            log_bug(
+                code=BugCode.PTB_LLM_001,
+                subsystem="llm",
+                severity="ERROR",
+                message="OPENAI_API_KEY is not configured",
+            )
+            raise LLMExtractionError(
+                "OPENAI_API_KEY is not configured"
+            )
 
-        # 1. Nếu có mock handler được cấu hình
-        if self._mock_handler:
-            extracted_schema = self._mock_handler(combined_prompt)
-
-        # 2. Nếu mock_mode hoặc cần trích xuất
-        if extracted_schema is None:
-            if self.mock_mode:
-                extracted_schema = self._fallback_rule_based_extract(
-                    text=actual_text or quoted_text,
-                    quoted_author=quoted_author,
-                    quoted_content=quoted_text,
-                    actual_author=actual_author,
-                )
-            elif not self.api_key:
-                if self.allow_heuristic_fallback:
-                    logger.warning("No API key configured, falling back to rule-based heuristic")
-                    extracted_schema = self._fallback_rule_based_extract(
-                        text=actual_text or quoted_text,
-                        quoted_author=quoted_author,
-                        quoted_content=quoted_text,
-                        actual_author=actual_author,
-                    )
-                else:
-                    log_bug(
-                        code=BugCode.PTB_LLM_001,
-                        subsystem="llm",
-                        severity="ERROR",
-                        message="OPENAI_API_KEY is not configured and PTB_ALLOW_HEURISTIC_FALLBACK is False",
-                    )
-                    raise LLMExtractionError(
-                        "OPENAI_API_KEY is not configured and PTB_ALLOW_HEURISTIC_FALLBACK is False"
-                    )
-            else:
-                try:
-                    res_json = self._call_openai_completion(combined_prompt)
-                    msg_content = res_json["choices"][0]["message"]["content"]
-                    data = self._parse_json_from_llm_response(msg_content)
-                    extracted_schema = LLMExtractedSchema.model_validate(data)
-                except Exception as e:
-                    if self.allow_heuristic_fallback:
-                        logger.warning("LLM API call failed, falling back to rule-based: %s", e)
-                        extracted_schema = self._fallback_rule_based_extract(
-                            text=actual_text or quoted_text,
-                            quoted_author=quoted_author,
-                            quoted_content=quoted_text,
-                            actual_author=actual_author,
-                        )
-                    else:
-                        logger.error(
-                            "LLM API call failed and heuristic fallback is disabled: %s", e
-                        )
-                        log_bug(
-                            code=BugCode.PTB_LLM_001,
-                            subsystem="llm",
-                            severity="ERROR",
-                            message=f"LLM API call failed: {e}",
-                            exc=e,
-                        )
-                        raise LLMExtractionError(f"LLM extraction failed: {e}") from e
+        # 2. Gọi LLM API trích xuất
+        try:
+            res_json = self._call_openai_completion(combined_prompt)
+            msg_content = res_json["choices"][0]["message"]["content"]
+            data = self._parse_json_from_llm_response(msg_content)
+            extracted_schema = LLMExtractedSchema.model_validate(data)
+        except Exception as e:
+            logger.error(
+                "LLM API call failed and heuristic fallback is disabled: %s", e
+            )
+            log_bug(
+                code=BugCode.PTB_LLM_001,
+                subsystem="llm",
+                severity="ERROR",
+                message=f"LLM API call failed: {e}",
+                exc=e,
+            )
+            raise LLMExtractionError(f"LLM extraction failed: {e}") from e
 
         # 3. Phân loại review_status
         confidence = extracted_schema.extraction_confidence

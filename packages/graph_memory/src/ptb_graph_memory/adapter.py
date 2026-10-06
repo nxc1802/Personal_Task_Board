@@ -117,8 +117,8 @@ class GraphitiKevCrossEncoder(CrossEncoderClient):
                 ranked.append((item.get("document", ""), float(item.get("score", 0.0))))
             return sorted(ranked, key=lambda x: x[1], reverse=True)
         except Exception as exc:
-            logger.warning("Kev cross-encoder ranking failed: %s", exc)
-            return [(p, 1.0 / (i + 1)) for i, p in enumerate(passages)]
+            logger.error("Kev cross-encoder ranking failed: %s", exc)
+            raise RuntimeError(f"Kev cross-encoder ranking failed: {exc}") from exc
 
 
 class GraphitiAdapter:
@@ -153,14 +153,39 @@ class GraphitiAdapter:
             self._is_initialized = True
             return
 
+        self.embedder = embedder
+        self.cross_encoder = cross_encoder
+
         if HAS_GRAPHITI_CORE and Graphiti is not None and uri:
             try:
-                # Use Qwen3 embedder if not explicitly provided
+                # Wire Qwen3 embedder if configured / enabled and not explicitly provided
                 if embedder is None:
-                    try:
-                        embedder = GraphitiQwen3Embedder()
-                    except Exception as e_err:
-                        logger.debug("Failed initializing GraphitiQwen3Embedder: %s", e_err)
+                    is_qwen_configured = bool(
+                        os.getenv("EMBEDDING_BASE_URL")
+                        or os.getenv("QWEN_EMBEDDING_URL")
+                        or os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                    )
+                    if is_qwen_configured:
+                        try:
+                            embedder = GraphitiQwen3Embedder()
+                        except Exception as e_err:
+                            logger.debug("Failed initializing GraphitiQwen3Embedder: %s", e_err)
+
+                # Wire Kev cross-encoder if configured / enabled and not explicitly provided
+                if cross_encoder is None:
+                    is_kev_configured = bool(
+                        os.getenv("DECISION_BASE_URL")
+                        or os.getenv("KEV_DECISION_URL")
+                        or os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+                    )
+                    if is_kev_configured:
+                        try:
+                            cross_encoder = GraphitiKevCrossEncoder()
+                        except Exception as k_err:
+                            logger.debug("Failed initializing GraphitiKevCrossEncoder: %s", k_err)
+
+                self.embedder = embedder
+                self.cross_encoder = cross_encoder
 
                 # Attempt to initialize Graphiti with provided connection details
                 self._graphiti = Graphiti(

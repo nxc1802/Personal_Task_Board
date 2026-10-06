@@ -42,6 +42,7 @@ from ptb_processing import (
     TeamsQuoteReplyParser,
 )
 from ptb_processing.extractor.llm_extractor import LLMExtractedSchema
+from tests.support.test_doubles import FakeDeterministicLLMExtractor
 
 
 # ==============================================================================
@@ -175,8 +176,8 @@ async def test_worker_poll_and_process_success():
     raw_repo = FakeRawEventRepo([raw_ev])
     task_repo = FakeTaskDomainRepo()
 
-    # Sử dụng mock extractor thành công
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    # Sử dụng test double extractor thành công
+    extractor = FakeDeterministicLLMExtractor()
     pipeline = ProcessingPipeline(
         task_repo=task_repo,
         llm_extractor=extractor,
@@ -267,11 +268,9 @@ async def test_worker_non_silent_retry_when_llm_fails_without_fallback():
     raw_repo = FakeRawEventRepo([raw_ev])
     task_repo = FakeTaskDomainRepo()
 
-    # Cấu hình LLMStructuredExtractor với api_key giả lập và allow_heuristic_fallback=False
+    # Cấu hình LLMStructuredExtractor với api_key giả lập
     extractor = LLMStructuredExtractor(
         api_key="sk-test-key",
-        mock_mode=False,
-        allow_heuristic_fallback=False,
     )
 
     # Giả lập urllib.request.urlopen ném HTTP 500 Server Error
@@ -318,12 +317,12 @@ async def test_worker_non_silent_retry_when_llm_fails_without_fallback():
 
 
 # ==============================================================================
-# 4. TEST HEURISTIC FALLBACK WHEN EXPLICITLY ALLOWED
+# 4. TEST STRICT ZERO-FALLBACK ON LLM OUTAGE
 # ==============================================================================
 
 @pytest.mark.asyncio
-async def test_worker_heuristic_fallback_when_explicitly_configured():
-    """Khi cấu hình PTB_ALLOW_HEURISTIC_FALLBACK=True, LLM lỗi sẽ fallback và hoàn tất PROCESSED."""
+async def test_worker_strict_zero_fallback_never_creates_heuristic_task_on_error():
+    """Khi LLM lỗi, hệ thống tuân thủ zero-fallback: KHÔNG sinh task heuristic, chuyển RETRY."""
     raw_ev = create_sample_raw_event(
         event_id="raw-fallback-01",
         content="<p>Em sẽ xử lý bug này trước 5h chiều.</p>",
@@ -331,11 +330,8 @@ async def test_worker_heuristic_fallback_when_explicitly_configured():
     raw_repo = FakeRawEventRepo([raw_ev])
     task_repo = FakeTaskDomainRepo()
 
-    # allow_heuristic_fallback=True
     extractor = LLMStructuredExtractor(
         api_key="sk-test-key",
-        mock_mode=False,
-        allow_heuristic_fallback=True,
     )
 
     # Giả lập LLM call ném Exception
@@ -345,10 +341,10 @@ async def test_worker_heuristic_fallback_when_explicitly_configured():
 
         statuses = await worker.process_batch()
 
-        # Vì cho phép fallback -> trích xuất bằng rule-based thành công -> PROCESSED
-        assert statuses == [ProcessingStatus.PROCESSED]
-        assert raw_repo.events["raw-fallback-01"].processing_status == ProcessingStatus.PROCESSED
-        assert len(task_repo.upserted_tasks) == 1
+        # Strict zero-fallback: không fallback -> chuyển RETRY
+        assert statuses == [ProcessingStatus.RETRY]
+        assert raw_repo.events["raw-fallback-01"].processing_status == ProcessingStatus.RETRY
+        assert len(task_repo.upserted_tasks) == 0
 
 
 # ==============================================================================
@@ -369,8 +365,6 @@ async def test_worker_deterministic_retry_count_3_marks_failed():
     # Luôn raise error để ép retry
     failing_extractor = LLMStructuredExtractor(
         api_key="sk-key",
-        mock_mode=False,
-        allow_heuristic_fallback=False,
     )
 
     with patch.object(failing_extractor, "_call_openai_completion", side_effect=Exception("Simulated LLM outage")):
@@ -425,7 +419,7 @@ async def test_worker_exponential_backoff_timing():
         content="<p>Em sẽ check log ngay.</p>",
     )
     raw_repo = FakeRawEventRepo([raw_ev])
-    extractor = LLMStructuredExtractor(mock_mode=False, api_key="sk-test", allow_heuristic_fallback=False)
+    extractor = LLMStructuredExtractor(api_key="sk-test")
 
     base_backoff = 20.0
     worker = ProcessingWorker(
@@ -514,7 +508,7 @@ async def test_pipeline_correlation_auto_merge():
         content="<p>Để em fix issue OPS-88 chiều nay nhé.</p>",
     )
 
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     pipeline = ProcessingPipeline(task_repo=task_repo, llm_extractor=extractor)
 
     res = await pipeline.process(raw_ev)
@@ -542,7 +536,7 @@ async def test_pipeline_identity_resolution_invariant():
     )
 
     task_repo = FakeTaskDomainRepo()
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     pipeline = ProcessingPipeline(
         task_repo=task_repo,
         identity_resolver=resolver,
@@ -575,22 +569,15 @@ async def test_pipeline_identity_resolution_invariant():
 # ==============================================================================
 
 def test_llm_extractor_reads_canonical_env_vars(monkeypatch):
-    """Test đọc cấu hình canonical từ environment: OPENAI_API_KEY, OPENAI_BASE_URL, PTB_EXTRACTION_MODEL, PTB_ALLOW_HEURISTIC_FALLBACK."""
+    """Test đọc cấu hình canonical từ environment: OPENAI_API_KEY, OPENAI_BASE_URL, PTB_EXTRACTION_MODEL."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-custom-canonical-key")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://custom-gateway.openai.azure.com/v1")
     monkeypatch.setenv("PTB_EXTRACTION_MODEL", "gpt-4o-custom")
-    monkeypatch.setenv("PTB_ALLOW_HEURISTIC_FALLBACK", "true")
 
     extractor = LLMStructuredExtractor()
     assert extractor.api_key == "sk-custom-canonical-key"
     assert extractor.base_url == "https://custom-gateway.openai.azure.com/v1"
     assert extractor.model == "gpt-4o-custom"
-    assert extractor.allow_heuristic_fallback is True
-
-    # Test fallback defaults khi cờ fallback tắt
-    monkeypatch.setenv("PTB_ALLOW_HEURISTIC_FALLBACK", "false")
-    extractor_strict = LLMStructuredExtractor()
-    assert extractor_strict.allow_heuristic_fallback is False
 
 
 # ==============================================================================
@@ -602,7 +589,7 @@ async def test_worker_run_loop_and_stop():
     """Test vòng lặp worker run_loop có thể chạy với max_iterations và dừng sạch sẽ."""
     raw_ev = create_sample_raw_event("raw-loop-01", "<p>Để em xử lý task này nhé.</p>")
     raw_repo = FakeRawEventRepo([raw_ev])
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    extractor = FakeDeterministicLLMExtractor()
     pipeline = ProcessingPipeline(llm_extractor=extractor)
     worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=pipeline)
 
@@ -634,8 +621,6 @@ async def test_raw_event_retry_lifecycle_no_double_increment():
 
     failing_extractor = LLMStructuredExtractor(
         api_key="sk-key",
-        mock_mode=False,
-        allow_heuristic_fallback=False,
     )
 
     with patch.object(failing_extractor, "_call_openai_completion", side_effect=Exception("Simulated transient error")):
@@ -716,8 +701,6 @@ async def test_worker_process_batch_retry_lifecycle_3_attempts():
 
     failing_extractor = LLMStructuredExtractor(
         api_key="sk-key",
-        mock_mode=False,
-        allow_heuristic_fallback=False,
     )
 
     with patch.object(failing_extractor, "_call_openai_completion", side_effect=Exception("Persistent error")):

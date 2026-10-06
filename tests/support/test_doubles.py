@@ -618,18 +618,22 @@ class FakeDeterministicLLMExtractor(LLMStructuredExtractor):
     def __init__(
         self,
         custom_handler: Optional[Callable[[str], Optional[LLMExtractedSchema]]] = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__(
             base_url="http://localhost:0/v1",
             api_key="fake-deterministic-test-key",
             model="fake-deterministic-model",
-            mock_mode=True,
-            allow_heuristic_fallback=False,
         )
         self.is_healthy: bool = True
+        self.is_fake: bool = True
         self.calls: List[Dict[str, Any]] = []
-        if custom_handler is not None:
-            self.set_mock_handler(custom_handler)
+        self._mock_handler: Optional[Callable[[str], Optional[LLMExtractedSchema]]] = custom_handler
+
+    def set_mock_handler(
+        self, handler: Optional[Callable[[str], Optional[LLMExtractedSchema]]]
+    ) -> None:
+        self._mock_handler = handler
 
     def _deterministic_extract(
         self,

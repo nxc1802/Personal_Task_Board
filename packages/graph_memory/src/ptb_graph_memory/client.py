@@ -31,6 +31,8 @@ class GraphitiMemoryClient:
         database: Optional[str] = None,
         graphiti_client: Optional[Any] = None,
         enable_graphiti: bool = True,
+        embedder: Optional[Any] = None,
+        cross_encoder: Optional[Any] = None,
     ) -> None:
         """Initialize GraphitiMemoryClient with a Neo4jClient, raw AsyncDriver, or Graphiti adapter.
         
@@ -40,6 +42,8 @@ class GraphitiMemoryClient:
             database: Optional Neo4j database name (defaults to client database or 'neo4j').
             graphiti_client: Optional custom Graphiti instance or GraphitiAdapter.
             enable_graphiti: Whether to enable the derived Graphiti semantic layer.
+            embedder: Optional custom embedder (e.g. GraphitiQwen3Embedder).
+            cross_encoder: Optional custom cross encoder (e.g. GraphitiKevCrossEncoder).
         """
         if neo4j_client is not None:
             self._neo4j_client = neo4j_client
@@ -67,7 +71,12 @@ class GraphitiMemoryClient:
         if isinstance(graphiti_client, GraphitiAdapter):
             self._adapter = graphiti_client
         elif graphiti_client is not None:
-            self._adapter = GraphitiAdapter(graphiti_instance=graphiti_client, enabled=enable_graphiti)
+            self._adapter = GraphitiAdapter(
+                graphiti_instance=graphiti_client,
+                enabled=enable_graphiti,
+                embedder=embedder,
+                cross_encoder=cross_encoder,
+            )
         else:
             self._adapter = GraphitiAdapter(
                 uri=uri,
@@ -75,6 +84,8 @@ class GraphitiMemoryClient:
                 password=password,
                 database=self._database,
                 enabled=enable_graphiti,
+                embedder=embedder,
+                cross_encoder=cross_encoder,
             )
 
     @property

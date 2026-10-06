@@ -263,8 +263,6 @@ async def test_pipeline_fail_loud_on_llm_error_sets_degraded_and_logs_bug(
     """Khi ProcessingPipeline gặp lỗi từ LLM extractor -> log PTB-LLM-001, health_status='DEGRADED', không nuốt lỗi."""
     extractor = LLMStructuredExtractor(
         api_key="",
-        mock_mode=False,
-        allow_heuristic_fallback=False,
     )
     pipeline = ProcessingPipeline(llm_extractor=extractor)
     assert pipeline.health_status == "HEALTHY"
@@ -284,7 +282,8 @@ async def test_pipeline_fail_loud_on_general_step_error_logs_ptb_l2_001(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Khi ProcessingPipeline gặp lỗi ở bước xử lý khác -> log PTB-L2-001, health_status='DEGRADED', không nuốt lỗi."""
-    extractor = LLMStructuredExtractor(mock_mode=True)
+    from tests.support.test_doubles import FakeDeterministicLLMExtractor
+    extractor = FakeDeterministicLLMExtractor()
     failing_repo = MagicMock()
     failing_repo.get_active_tasks.side_effect = RuntimeError("Database connection dropped mid-pipeline")
 

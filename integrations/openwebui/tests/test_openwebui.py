@@ -238,6 +238,30 @@ async def test_openwebui_installer_install_components_and_summary(tmp_path: Path
     assert deployed_board.exists() and deployed_board.stat().st_size > 5000
     assert deployed_manifest.exists()
 
+    # Verify SQLite database registration (webui.db)
+    assert result.get("database_registered") is True
+    assert "ptb_tools" in result.get("tools_registered", [])
+    assert "ptb_board_action" in result.get("functions_registered", [])
+    db_file = tmp_path / "webui.db"
+    assert db_file.exists()
+
+    import sqlite3
+    conn = sqlite3.connect(str(db_file))
+    cur = conn.cursor()
+    cur.execute("SELECT id, name FROM tool WHERE id = 'ptb_tools'")
+    tool_row = cur.fetchone()
+    assert tool_row is not None
+    assert tool_row[0] == "ptb_tools"
+
+    cur.execute("SELECT id, name, type, is_active, is_global FROM function WHERE id = 'ptb_board_action'")
+    func_row = cur.fetchone()
+    assert func_row is not None
+    assert func_row[0] == "ptb_board_action"
+    assert func_row[2] == "action"
+    assert func_row[3] == 1
+    assert func_row[4] == 1
+    conn.close()
+
     # Verify install summary
     summary = installer.get_install_summary()
     assert "BÁO CÁO CÀI ĐẶT OPENWEBUI AUTO-INSTALLER" in summary

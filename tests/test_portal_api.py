@@ -146,18 +146,20 @@ def test_ingest_layer1_uses_shared_service(mock_app_client):
             assert data["failed"] == 0
 
 
-def test_portal_html_available_by_default(mock_app_client):
+def test_portal_html_disabled_by_default(mock_app_client):
+    client, _ = mock_app_client
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("PTB_DEV_PORTAL", None)
+        resp = client.get("/portal")
+        assert resp.status_code == 404
+        assert "disabled" in resp.json()["detail"].lower()
+
+
+def test_portal_html_enabled_when_explicit(mock_app_client):
     client, _ = mock_app_client
     with patch.dict(os.environ, {"PTB_DEV_PORTAL": "true"}, clear=False):
         resp = client.get("/portal")
         assert resp.status_code == 200
         assert "<!DOCTYPE html>" in resp.text
 
-
-def test_portal_html_disabled_in_production(mock_app_client):
-    client, _ = mock_app_client
-    with patch.dict(os.environ, {"PTB_DEV_PORTAL": "false"}, clear=False):
-        resp = client.get("/portal")
-        assert resp.status_code == 404
-        assert "disabled" in resp.json()["detail"].lower()
 
