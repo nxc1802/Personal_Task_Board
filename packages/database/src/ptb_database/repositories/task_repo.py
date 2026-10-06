@@ -608,8 +608,29 @@ class TaskDomainRepository:
                     commitments.append(CommitmentRecord.model_validate(data))
         return commitments
 
-    async def record_status_transition_audit(self, audit: StatusTransitionAuditRecord) -> str:
+    async def record_status_transition_audit(
+        self,
+        audit: Optional[StatusTransitionAuditRecord] = None,
+        *,
+        task_id: Optional[str] = None,
+        old_status: Optional[Any] = None,
+        new_status: Optional[Any] = None,
+        reason: Optional[str] = None,
+        changed_by: Optional[str] = None,
+        change_actor: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         """Ghi lại lịch sử thay đổi trạng thái task."""
+        if audit is None:
+            audit = StatusTransitionAuditRecord(
+                id=kwargs.get("id") or str(uuid4()),
+                task_id=task_id or "",
+                old_status=old_status or TaskStatus.TODO,
+                new_status=new_status or TaskStatus.IN_PROGRESS,
+                change_actor=changed_by or change_actor or "system",
+                reason=reason or "",
+                timestamp=kwargs.get("timestamp") or datetime.now(timezone.utc),
+            )
         driver = self._get_driver()
         audit_id = audit.id or str(uuid4())
         old_status = audit.old_status.value if hasattr(audit.old_status, "value") else str(audit.old_status)
