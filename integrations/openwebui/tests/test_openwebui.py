@@ -208,9 +208,51 @@ async def test_openwebui_installer_check_connection():
         assert is_online is False
 
 
+def create_mock_openwebui_v0510_db(db_path: Path) -> None:
+    """Helper to initialize webui.db with authentic OpenWebUI v0.5.10 schema (including valves & access_control)."""
+    import sqlite3
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE tool (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            name TEXT,
+            content TEXT,
+            specs TEXT,
+            meta TEXT,
+            valves TEXT,
+            access_control TEXT,
+            created_at INTEGER,
+            updated_at INTEGER
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE function (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            name TEXT,
+            type TEXT,
+            content TEXT,
+            meta TEXT,
+            valves TEXT,
+            is_active INTEGER,
+            is_global INTEGER,
+            created_at INTEGER,
+            updated_at INTEGER
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
 @pytest.mark.asyncio
 async def test_openwebui_installer_install_components_and_summary(tmp_path: Path):
     """Verify OpenWebUIInstaller copies components, exports schemas & manifest, and generates summary."""
+    # Pre-create webui.db with authentic OpenWebUI v0.5.10 schema to simulate existing OpenWebUI installation
+    create_mock_openwebui_v0510_db(tmp_path / "webui.db")
+
     installer = OpenWebUIInstaller(base_url="http://127.0.0.1:3000", default_data_dir=tmp_path)
 
     # Initial summary before install
@@ -293,6 +335,7 @@ async def test_openwebui_installer_install_components_and_summary(tmp_path: Path
 async def test_installer_validates_components_on_disk(tmp_path: Path):
     """Verify post-installation validation checks all components on disk, verifies file sizes > 0,
     and fails fast on missing or empty files."""
+    create_mock_openwebui_v0510_db(tmp_path / "webui.db")
     installer = OpenWebUIInstaller(default_data_dir=tmp_path)
     result = await installer.install_components(openwebui_data_dir=tmp_path)
 
@@ -347,6 +390,7 @@ async def test_openwebui_installer_filesystem_contract_without_docker(
 ):
     """Filesystem contract test: verify installer creates complete directory tree standalone without Docker."""
     target_dir = tmp_path / "openwebui_bind_mount"
+    create_mock_openwebui_v0510_db(target_dir / "webui.db")
     monkeypatch.setenv("OPENWEBUI_DATA_DIR", str(target_dir))
 
     installer = OpenWebUIInstaller()
@@ -775,4 +819,77 @@ async def test_openwebui_installer_no_false_green(tmp_path: Path):
     with patch.object(OpenWebUIInstaller, "install_components", new_callable=AsyncMock, return_value=res):
         exit_code = await cmd_openwebui(args)
         assert exit_code == 1, "CLI must exit 1 when plugin registration fails"
+
+
+@pytest.mark.asyncio
+async def test_openwebui_installer_fresh_clone_does_not_create_schema(tmp_path: Path):
+    """P1 Protection: fresh clone -> never started OpenWebUI -> installer must NEVER create webui.db or tables."""
+    # 1. When webui.db does not exist at all
+    db_res = OpenWebUIInstaller.register_database_components(
+        dest_dir=tmp_path,
+        tools_code="# code",
+        tools_meta={"title": "Test Tools"},
+        actions_code="# code",
+        actions_meta={"title": "Test Action"},
+    )
+    assert db_res["registered"] is False
+    assert not (tmp_path / "webui.db").exists(), "Installer must NOT create webui.db if it does not exist"
+    assert "does not exist" in db_res["error"]
+
+    # 2. When webui.db exists but tables 'tool' or 'function' do not exist yet (pre-migration)
+    empty_db = tmp_path / "webui.db"
+    import sqlite3
+    conn = sqlite3.connect(str(empty_db))
+    conn.execute("CREATE TABLE other_table (id TEXT)")
+    conn.commit()
+    conn.close()
+
+    db_res2 = OpenWebUIInstaller.register_database_components(
+        dest_dir=tmp_path,
+        tools_code="# code",
+        tools_meta={"title": "Test Tools"},
+        actions_code="# code",
+        actions_meta={"title": "Test Action"},
+    )
+    assert db_res2["registered"] is False
+    assert "OpenWebUI tables ('tool', 'function') do not exist" in db_res2["error"]
+
+    # Verify no tables were created by PTB
+    conn = sqlite3.connect(str(empty_db))
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tool', 'function')")
+    found_tables = cur.fetchall()
+    conn.close()
+    assert len(found_tables) == 0, "Installer must NOT run CREATE TABLE if tables do not exist"
+
+
+def test_openwebui_installer_handles_openwebui_schema_with_valves_and_access_control(tmp_path: Path):
+    """Verify installer correctly populates tables and preserves valves & access_control columns."""
+    create_mock_openwebui_v0510_db(tmp_path / "webui.db")
+
+    db_res = OpenWebUIInstaller.register_database_components(
+        dest_dir=tmp_path,
+        tools_code="# code",
+        tools_meta={"title": "Test Tools", "description": "Desc"},
+        actions_code="# code",
+        actions_meta={"title": "Test Action", "description": "Action Desc"},
+    )
+    assert db_res["registered"] is True
+    assert db_res["specs_count"] > 0
+
+    import sqlite3
+    conn = sqlite3.connect(str(tmp_path / "webui.db"))
+    cur = conn.cursor()
+    # Query tool table with all Peewee columns expected by OpenWebUI v0.5.10
+    cur.execute("SELECT id, user_id, name, content, specs, meta, valves, access_control, created_at, updated_at FROM tool WHERE id = 'ptb_tools'")
+    row = cur.fetchone()
+    assert row is not None
+    assert row[0] == "ptb_tools"
+
+    # Query function table with all Peewee columns expected by OpenWebUI v0.5.10
+    cur.execute("SELECT id, user_id, name, type, content, meta, valves, is_active, is_global, created_at, updated_at FROM function WHERE id = 'ptb_board_action'")
+    func_row = cur.fetchone()
+    assert func_row is not None
+    assert func_row[0] == "ptb_board_action"
+    conn.close()
 

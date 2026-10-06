@@ -506,53 +506,82 @@ class OpenWebUIInstaller:
         actions_code: str,
         actions_meta: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Đăng ký PTB Tools và Functions trực tiếp vào OpenWebUI SQLite database (webui.db)."""
+        """Đăng ký PTB Tools và Functions trực tiếp vào OpenWebUI SQLite database (webui.db).
+        
+        Quy tắc:
+        - PTB tuyệt đối không tự sở hữu/migrate schema OpenWebUI (KHÔNG chạy CREATE TABLE).
+        - Nếu webui.db chưa tồn tại hoặc tables ('tool', 'function') chưa được OpenWebUI tạo ra:
+          báo lỗi và bỏ qua DB registration (yêu cầu dùng OpenWebUI REST API hoặc khởi động OpenWebUI trước).
+        - Kiểm tra schema bảng qua PRAGMA table_info(...) và tự động ánh xạ các cột (bao gồm valves, access_control).
+        """
         import sqlite3
         import time
 
         db_path = dest_dir / "webui.db"
+        if not db_path.exists() or not db_path.is_file():
+            return {
+                "registered": False,
+                "db_path": str(db_path),
+                "error": (
+                    f"OpenWebUI database file does not exist at '{db_path}'. "
+                    "OpenWebUI must be started at least once to create database schema, or use REST API registration."
+                ),
+                "tools": [],
+                "functions": [],
+                "specs_count": 0,
+            }
+
         try:
             conn = sqlite3.connect(str(db_path))
             try:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS tool (
-                        id TEXT PRIMARY KEY,
-                        user_id TEXT,
-                        name TEXT,
-                        content TEXT,
-                        specs TEXT,
-                        meta TEXT,
-                        created_at INTEGER,
-                        updated_at INTEGER
-                    )
-                """)
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS function (
-                        id TEXT PRIMARY KEY,
-                        user_id TEXT,
-                        name TEXT,
-                        type TEXT,
-                        content TEXT,
-                        meta TEXT,
-                        is_active INTEGER,
-                        is_global INTEGER,
-                        created_at INTEGER,
-                        updated_at INTEGER
-                    )
-                """)
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tool', 'function')"
+                )
+                existing_tables = {row[0] for row in cursor.fetchall()}
+                if "tool" not in existing_tables or "function" not in existing_tables:
+                    return {
+                        "registered": False,
+                        "db_path": str(db_path),
+                        "error": (
+                            f"OpenWebUI tables ('tool', 'function') do not exist in '{db_path}'. "
+                            "OpenWebUI migrations have not run yet. Please start OpenWebUI first or use REST API registration."
+                        ),
+                        "tools": [],
+                        "functions": [],
+                        "specs_count": 0,
+                    }
+
+                cursor.execute("PRAGMA table_info(tool)")
+                tool_cols = {row[1] for row in cursor.fetchall()}
+                cursor.execute("PRAGMA table_info(function)")
+                func_cols = {row[1] for row in cursor.fetchall()}
+
+                required_tool_cols = {"id", "user_id", "name", "content", "specs", "meta", "created_at", "updated_at"}
+                required_func_cols = {"id", "user_id", "name", "type", "content", "meta", "is_active", "is_global", "created_at", "updated_at"}
+
+                missing_tool = required_tool_cols - tool_cols
+                missing_func = required_func_cols - func_cols
+
+                if missing_tool or missing_func:
+                    return {
+                        "registered": False,
+                        "db_path": str(db_path),
+                        "error": (
+                            f"OpenWebUI database schema incomplete in '{db_path}': "
+                            f"missing tool cols: {missing_tool}, missing function cols: {missing_func}"
+                        ),
+                        "tools": [],
+                        "functions": [],
+                        "specs_count": 0,
+                    }
+
                 now_ts = int(time.time())
                 specs_list = cls.generate_tools_specs(tools_code)
-                cursor.execute("""
-                    INSERT INTO tool (id, user_id, name, content, specs, meta, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        name=excluded.name,
-                        content=excluded.content,
-                        specs=excluded.specs,
-                        meta=excluded.meta,
-                        updated_at=excluded.updated_at
-                """, (
+
+                # Dynamically construct INSERT statement for tool based on present columns
+                tool_insert_cols = ["id", "user_id", "name", "content", "specs", "meta"]
+                tool_insert_vals = [
                     "ptb_tools",
                     "system",
                     tools_meta.get("title", "Personal Task Board Tools"),
@@ -562,21 +591,34 @@ class OpenWebUIInstaller:
                         "description": tools_meta.get("description", "Personal Task Board Tools"),
                         "manifest": tools_meta,
                     }, ensure_ascii=False),
-                    now_ts,
-                    now_ts,
-                ))
-                cursor.execute("""
-                    INSERT INTO function (id, user_id, name, type, content, meta, is_active, is_global, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ]
+                if "valves" in tool_cols:
+                    tool_insert_cols.append("valves")
+                    tool_insert_vals.append(None)
+                if "access_control" in tool_cols:
+                    tool_insert_cols.append("access_control")
+                    tool_insert_vals.append(None)
+
+                tool_insert_cols.extend(["created_at", "updated_at"])
+                tool_insert_vals.extend([now_ts, now_ts])
+
+                tool_col_names = ", ".join(tool_insert_cols)
+                tool_placeholders = ", ".join(["?"] * len(tool_insert_cols))
+                tool_update_clauses = [
+                    f"{c}=excluded.{c}" for c in tool_insert_cols if c not in ("id", "created_at")
+                ]
+                tool_update_sql = ", ".join(tool_update_clauses)
+
+                cursor.execute(f"""
+                    INSERT INTO tool ({tool_col_names})
+                    VALUES ({tool_placeholders})
                     ON CONFLICT(id) DO UPDATE SET
-                        name=excluded.name,
-                        type=excluded.type,
-                        content=excluded.content,
-                        meta=excluded.meta,
-                        is_active=excluded.is_active,
-                        is_global=excluded.is_global,
-                        updated_at=excluded.updated_at
-                """, (
+                        {tool_update_sql}
+                """, tool_insert_vals)
+
+                # Dynamically construct INSERT statement for function based on present columns
+                func_insert_cols = ["id", "user_id", "name", "type", "content", "meta"]
+                func_insert_vals = [
                     "ptb_board_action",
                     "system",
                     actions_meta.get("title", "PTB Board Action & Assistant"),
@@ -586,11 +628,28 @@ class OpenWebUIInstaller:
                         "description": actions_meta.get("description", "PTB Board Action & Assistant"),
                         "manifest": actions_meta,
                     }, ensure_ascii=False),
-                    1,
-                    1,
-                    now_ts,
-                    now_ts,
-                ))
+                ]
+                if "valves" in func_cols:
+                    func_insert_cols.append("valves")
+                    func_insert_vals.append(None)
+
+                func_insert_cols.extend(["is_active", "is_global", "created_at", "updated_at"])
+                func_insert_vals.extend([1, 1, now_ts, now_ts])
+
+                func_col_names = ", ".join(func_insert_cols)
+                func_placeholders = ", ".join(["?"] * len(func_insert_cols))
+                func_update_clauses = [
+                    f"{c}=excluded.{c}" for c in func_insert_cols if c not in ("id", "created_at")
+                ]
+                func_update_sql = ", ".join(func_update_clauses)
+
+                cursor.execute(f"""
+                    INSERT INTO function ({func_col_names})
+                    VALUES ({func_placeholders})
+                    ON CONFLICT(id) DO UPDATE SET
+                        {func_update_sql}
+                """, func_insert_vals)
+
                 conn.commit()
                 cursor.execute("SELECT id, specs FROM tool WHERE id = 'ptb_tools'")
                 tool_row = cursor.fetchone()
