@@ -187,6 +187,7 @@ async def test_live_e2e_full_vertical_slice() -> None:
         tenant_id = f"tenant-real-e2e-{test_run_id}"
 
         # 1. Ingest RawEvent into real Neo4j
+        e2e_summary = "I will fix the production release deployment before Friday 17:00 deadline"
         event = RawEventRecord(
             id=str(uuid4()),
             external_id=f"e2e-task-{test_run_id}",
@@ -197,8 +198,8 @@ async def test_live_e2e_full_vertical_slice() -> None:
             author_external_id="lead-user-1",
             author_display_name="Lead Engineer",
             conversation_or_project_id="PROJ-E2E",
-            normalized_text="Deploy production release candidate before Friday 17:00",
-            raw_payload={"summary": "Deploy production release candidate before Friday 17:00"},
+            normalized_text=e2e_summary,
+            raw_payload={"summary": e2e_summary},
         )
         saved_id = await raw_repo.persist_raw_event(event)
         assert saved_id == event.id
