@@ -32,10 +32,11 @@ try:
                 for q in range_indices + fulltext_indices:
                     try:
                         await self._execute_index_query(q)
-                    except Exception:
+                    except Exception as query_exc:
+                        logger.debug("Safe index setup query interrupted: %s", query_exc)
                         break
-            except Exception:
-                pass
+            except Exception as build_exc:
+                logger.debug("Safe indices and constraints setup finished: %s", build_exc)
 
         Neo4jDriver.build_indices_and_constraints = _safe_build_indices_and_constraints
     except Exception as patch_exc:
