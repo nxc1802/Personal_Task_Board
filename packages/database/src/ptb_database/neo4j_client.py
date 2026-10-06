@@ -26,7 +26,7 @@ class Neo4jClient:
     ):
         self.uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
         self.username = username or os.getenv("NEO4J_USERNAME", "neo4j")
-        self.password = password or os.getenv("NEO4J_PASSWORD", "personal_task_board_secret_2026")
+        self.password = password or os.getenv("NEO4J_PASSWORD", "taskboard123")
         self.database = database or os.getenv("NEO4J_DATABASE", "neo4j")
         self._driver: Optional[AsyncDriver] = None
 

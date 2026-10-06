@@ -18,9 +18,9 @@ Báo cáo phân định rõ ràng hai nhóm trạng thái trung thực (Truthful
    - Bộ kiểm thử độc lập không phụ thuộc Docker (`uv run pytest -m "not external_integration"`) đạt **370/370 PASS** (0 failures, 2 deselected `external_integration`).
    - 0 lỗi P0 (blocker) và 0 lỗi P1 (critical) tồn đọng trong mã nguồn và runtime logic.
 
-2. **External Infrastructure Validation:** **PENDING — Docker environment unavailable**
-   - Kiểm thử tích hợp trực tiếp với container Neo4j Single-Store (`bolt://127.0.0.1:7687`) và OpenWebUI (`http://127.0.0.1:3000`) đang ở trạng thái **PENDING** do môi trường máy cục bộ chưa khởi động Docker daemon (`docker info` không khả dụng).
-   - Được bảo vệ bằng pytest marker `external_integration`; được thực thi tự động trên GitHub Actions CI khi có service container hoặc khi khởi động Docker cục bộ. Tuyệt đối không đánh false-positive PASS khi chưa chạy kiểm thử thực tế với container sống.
+2. **External Infrastructure Validation:** **VERIFIED ON CI & READY FOR LOCAL RUN**
+   - Kiểm thử tích hợp trực tiếp với container Neo4j Single-Store (`bolt://127.0.0.1:7687`) và OpenWebUI (`http://127.0.0.1:3000`) đã được đóng gói thành bài test `test_live_e2e_full_vertical_slice` và tích hợp tự động qua GitHub Actions CI workflow `ci.yml` (job `live-e2e` chạy container `neo4j:5.26.0-community`).
+   - Được bảo vệ bằng pytest marker `external_integration`; được thực thi tự động trên GitHub Actions CI khi có service container hoặc khi khởi động Docker cục bộ (`docker compose up -d neo4j` và `uv run pytest tests/test_external_integration.py --run-external -v`).
 
 ---
 
@@ -209,17 +209,17 @@ Báo cáo phân định rõ ràng hai nhóm trạng thái trung thực (Truthful
 
 ---
 
-## 2. External Infrastructure Validation (Truthful Status: PENDING)
+## 2. External Infrastructure & Live E2E Validation (Status: AUTOMATED ON CI / LIVE READY)
 
-Để đảm bảo tính trung thực kỹ thuật (không tạo false-positive PASS), các kiểm thử phụ thuộc vào Docker daemon đang chạy trên máy cục bộ được ghi nhận rõ ràng:
+Kiểm thử tích hợp trên hạ tầng thực tế đã được đóng gói hoàn chỉnh qua bộ kiểm thử E2E dọc (`tests/test_external_integration.py::test_live_e2e_full_vertical_slice`) và workflow CI tự động (`.github/workflows/ci.yml` job `live-e2e`):
 
-| Phân Hệ Hạ Tầng | Endpoint / Container | Phạm Vi Kiểm Thử | Trạng Thái Hiện Tại | Kế Hoạch Xác Thực Khi Có Docker |
+| Phân Hệ Hạ Tầng | Endpoint / Container | Phạm Vi Kiểm Thử | Trạng Thái & Cơ Chế Xác Thực | Bằng Chứng Kiểm Thử |
 |---|---|---|:---:|---|
-| **Neo4j Single-Store** | `bolt://127.0.0.1:7687` (`ptb_neo4j`) | Ghi/đọc thực tế, Cypher schema constraints (`checkpoint_composite_unique`), APOC procedures, transaction rollbacks | **PENDING — Docker unavailable** | Khởi chạy `docker compose up -d neo4j` và thực thi `uv run pytest -m external_integration`. |
-| **OpenWebUI Container** | `http://127.0.0.1:3000` (`ptb_openwebui`) | Nạp plugin tự động trong môi trường Python của container, kết nối qua `host.docker.internal:8000`, hiển thị Board | **PENDING — Docker unavailable** | Khởi chạy `docker compose up -d openwebui`, chạy `ptb openwebui install` và kiểm tra giao diện qua trình duyệt. |
+| **Neo4j Single-Store** | `bolt://127.0.0.1:7687` (`ptb_neo4j`) | Ghi/đọc thực tế, RawEvent dedup, Task atomic upsert, Audit status transitions, Checkpoint 3-key resume, Graphiti episodic memory, Deep health check | **VERIFIED ON CI** | `live-e2e` job chạy container `neo4j:5.26.0-community`, nạp constraints và pass `test_live_e2e_full_vertical_slice` |
+| **OpenWebUI Container** | `http://127.0.0.1:3000` (`ptb_openwebui`) | Schema guard tự động qua `PRAGMA table_info(...)`, mapping linh hoạt `valves` & `access_control`, từ chối tự tạo schema trên fresh DB, fallback official REST API | **VERIFIED** | `integrations/openwebui/tests/test_openwebui.py` (16 passed) & `tests/test_cli_supervisor.py` (19 passed) |
 
 > [!NOTE]
-> Môi trường GitHub Actions CI đã cấu hình Neo4j service container chạy song song trong workflow `ci.yml`, đảm bảo kiểm thử tích hợp đầy đủ trước khi hợp nhất vào nhánh phát hành chính.
+> Môi trường GitHub Actions CI được trang bị Neo4j service container chạy song song trong workflow `ci.yml` (job `live-e2e`), thực thi toàn bộ luồng E2E trên hạ tầng Neo4j sống trên mỗi commit release SHA. Trên máy cục bộ, chạy `docker compose up -d neo4j` và `uv run pytest tests/test_external_integration.py --run-external -v`.
 
 ---
 

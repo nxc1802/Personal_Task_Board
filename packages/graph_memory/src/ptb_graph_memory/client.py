@@ -229,6 +229,23 @@ class GraphitiMemoryClient:
 
         return dec_id
 
+    async def add_decision(
+        self,
+        summary: str,
+        decided_by: str = "SYSTEM",
+        rationale: str = "",
+        context: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Convenience helper to record a decision episode."""
+        payload = {
+            "summary": summary,
+            "decided_by": decided_by,
+            "rationale": rationale or context or "",
+        }
+        payload.update(kwargs)
+        return await self.add_decision_episode(payload)
+
     async def add_lesson_episode(
         self,
         lesson: Union[LessonNodeRecord, Dict[str, Any]],

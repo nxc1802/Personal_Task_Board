@@ -139,7 +139,19 @@ async def test_cmd_doctor_with_failures():
 # ==============================================================================
 @pytest.mark.asyncio
 async def test_cmd_openwebui_install(tmp_path: Path):
-    """Verify ptb openwebui install runs installer and reports success."""
+    """Verify ptb openwebui install runs installer and reports success when OpenWebUI DB is initialized."""
+    import sqlite3
+    db_file = tmp_path / "webui.db"
+    conn = sqlite3.connect(str(db_file))
+    conn.execute(
+        "CREATE TABLE tool (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, content TEXT, specs TEXT, meta TEXT, created_at INTEGER, updated_at INTEGER)"
+    )
+    conn.execute(
+        "CREATE TABLE function (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, type TEXT, content TEXT, meta TEXT, is_active INTEGER, is_global INTEGER, created_at INTEGER, updated_at INTEGER)"
+    )
+    conn.commit()
+    conn.close()
+
     args = argparse.Namespace(
         owui_action="install",
         url="http://127.0.0.1:3000",
@@ -151,6 +163,18 @@ async def test_cmd_openwebui_install(tmp_path: Path):
     assert (tmp_path / "tools" / "ptb_tools.py").exists()
     assert (tmp_path / "functions" / "ptb_board_action.py").exists()
     assert (tmp_path / "artifacts" / "ptb_board.html").exists()
+
+
+@pytest.mark.asyncio
+async def test_cmd_openwebui_install_fresh_clone_exits_1(tmp_path: Path):
+    """Verify ptb openwebui install exits 1 with warning when webui.db does not exist and API is offline."""
+    args = argparse.Namespace(
+        owui_action="install",
+        url="http://127.0.0.1:3000",
+        data_dir=str(tmp_path),
+    )
+    exit_code = await cmd_openwebui(args)
+    assert exit_code == 1
 
 
 # ==============================================================================

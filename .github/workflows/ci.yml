@@ -66,3 +66,51 @@ jobs:
 
       - name: Verify CLI Help & Doctor Syntax
         run: uv run python scripts/ptb_cli.py --help
+
+  live-e2e:
+    name: Live E2E Integration (Neo4j Service)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      neo4j:
+        image: neo4j:5.26.0-community
+        env:
+          NEO4J_AUTH: neo4j/taskboard123
+          NEO4J_PLUGINS: '["apoc"]'
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p taskboard123 'RETURN 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      UV_LINK_MODE: copy
+      PYTHONUNBUFFERED: "1"
+      NEO4J_URI: bolt://127.0.0.1:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: taskboard123
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-packages
+
+      - name: Apply Neo4j constraints
+        run: |
+          uv run python -c "from ptb_database.neo4j_client import Neo4jClient; import asyncio; c = Neo4jClient(password='taskboard123'); asyncio.run(c.execute_cypher_file()); asyncio.run(c.close())"
+
+      - name: Run Live E2E Vertical Slice Test
+        run: uv run pytest tests/test_external_integration.py --run-external -v
