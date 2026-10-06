@@ -303,6 +303,7 @@ def test_local_ai_disabled_reports_disabled_and_healthy(monkeypatch):
 
     service = ApplicationService(
         neo4j_client=MockNeo4j(),
+        graph_memory=MockGraphiti(),
         processing_worker_status="healthy",
         llm_status="healthy",
         playwright_status="healthy",
@@ -320,6 +321,7 @@ def test_local_ai_enabled_unreachable_reports_degraded(monkeypatch):
 
     service = ApplicationService(
         neo4j_client=MockNeo4j(),
+        graph_memory=MockGraphiti(),
         processing_worker_status="healthy",
         llm_status="healthy",
         playwright_status="healthy",
@@ -337,6 +339,7 @@ def test_local_ai_enabled_healthy_reports_healthy(monkeypatch):
 
     service = ApplicationService(
         neo4j_client=MockNeo4j(),
+        graph_memory=MockGraphiti(),
         processing_worker_status="healthy",
         llm_status="healthy",
         playwright_status="healthy",
