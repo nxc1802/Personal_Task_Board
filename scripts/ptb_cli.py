@@ -740,6 +740,7 @@ class PTBProcessSupervisor:
             port=self.app_port,
             log_level="warning",
             loop="asyncio",
+            timeout_graceful_shutdown=1,
         )
         self.app_server = uvicorn.Server(app_config)
 
@@ -753,6 +754,7 @@ class PTBProcessSupervisor:
             port=self.mcp_port,
             log_level="warning",
             loop="asyncio",
+            timeout_graceful_shutdown=1,
         )
         self.mcp_server = uvicorn.Server(mcp_config)
 
@@ -872,7 +874,7 @@ class PTBProcessSupervisor:
                 )
                 while self._running:
                     try:
-                        await asyncio.sleep(5.0)
+                        await asyncio.sleep(0.5)
                     except asyncio.CancelledError:
                         break
                 return
@@ -892,7 +894,7 @@ class PTBProcessSupervisor:
                 )
                 while self._running:
                     try:
-                        await asyncio.sleep(5.0)
+                        await asyncio.sleep(0.5)
                     except asyncio.CancelledError:
                         break
 

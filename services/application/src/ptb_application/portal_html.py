@@ -424,6 +424,7 @@ PORTAL_HTML = r"""<!DOCTYPE html>
         </div>
       </div>
       <div class="nav-links">
+        <a href="/board" target="_blank" class="btn-link" style="background: var(--accent-gradient); color: #fff; border: none; font-weight: 700; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);">📋 Mở Task Board (:8000/board)</a>
         <a href="http://127.0.0.1:3000" target="_blank" class="btn-link">💬 Mở OpenWebUI (:3000)</a>
         <a href="http://127.0.0.1:7474" target="_blank" class="btn-link">🌐 Neo4j Graph (:7474)</a>
         <a href="/docs" target="_blank" class="btn-link">📖 REST API Docs</a>
@@ -875,11 +876,18 @@ PORTAL_HTML = r"""<!DOCTYPE html>
         const data = await resp.json();
 
         if (resp.ok && data.status === "success") {
-          box.innerText = `[✓] QUÉT MICROSOFT TEAMS THÀNH CÔNG!\n` +
-            `• Gói tin Teams thu nạp (Captured): ${data.captured_teams}\n` +
-            `• Công việc bóc tách & cập nhật (Tasks): ${data.processed_tasks}\n` +
-            `• Chi tiết: ${data.message || 'Hoàn tất'}\n` +
-            `• Đã đồng bộ trực tiếp vào Neo4j Single-Store.`;
+          if (data.captured_teams === 0) {
+            box.innerText = `[✓] QUÉT MICROSOFT TEAMS HOÀN TẤT!\n` +
+              `• Gói tin Teams thu nạp (Captured): 0\n` +
+              `• Trạng thái: Phiên đăng nhập Teams hoạt động tốt, hiện tại chưa phát hiện tin nhắn giao việc mới.\n` +
+              `• Gợi ý: Bạn có thể nhắn tin nhắn công việc trên Teams hoặc dán trực tiếp vào ô 'Bóc Tách Tin Nhắn Nhanh' bên trái.`;
+          } else {
+            box.innerText = `[✓] QUÉT MICROSOFT TEAMS THÀNH CÔNG!\n` +
+              `• Gói tin Teams thu nạp (Captured): ${data.captured_teams}\n` +
+              `• Công việc bóc tách & cập nhật (Tasks): ${data.processed_tasks}\n` +
+              `• Chi tiết: ${data.message || 'Hoàn tất'}\n` +
+              `• Đã đồng bộ trực tiếp vào Neo4j Single-Store.`;
+          }
           loadTasks();
         } else {
           box.innerText = `[✗] Lỗi quét Teams: ${data.detail || data.error || JSON.stringify(data)}`;

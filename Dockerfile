@@ -36,8 +36,8 @@ ENV PYTHONUNBUFFERED=1 \
     PTB_PORT=8000 \
     PTB_MCP_PORT=8001
 
-# Install curl for HTTP health probes and CA certificates
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+# Install curl, ca-certificates, and git
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create dedicated non-root application user
@@ -55,9 +55,16 @@ COPY --chown=ptbuser:ptbuser . /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 RUN uv sync --frozen --no-dev --all-packages
 
+# Set Playwright browser path and install browser binaries & system dependencies
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+RUN playwright install-deps chromium \
+    && playwright install chromium-headless-shell \
+    && mkdir -p /app/.cache/ms-playwright \
+    && (cp -rn /root/.cache/ms-playwright/* /app/.cache/ms-playwright/ 2>/dev/null || true)
+
 # Initialize runtime state directories with non-root ownership
-RUN mkdir -p /app/data/openwebui /app/data/playwright /app/logs \
-    && chown -R ptbuser:ptbuser /app/data /app/logs \
+RUN mkdir -p /app/data/openwebui /app/data/playwright /app/logs /app/.cache \
+    && chown -R ptbuser:ptbuser /app/data /app/logs /app/.cache \
     && chmod +x /app/docker-entrypoint.sh
 
 USER ptbuser

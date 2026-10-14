@@ -4,6 +4,7 @@ Port canonical: 127.0.0.1:8000
 Provides exactly 14 REST endpoints for OpenWebUI Board, integrations, and administration.
 """
 
+import asyncio
 from datetime import datetime, timezone
 import logging
 import os
@@ -177,13 +178,17 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
     if application_service is not None:
         app.state.application_service = application_service
 
-    # Cấu hình CORS middleware cho phép OpenWebUI gọi từ http://localhost:3000 và http://127.0.0.1:3000
+    # Cấu hình CORS middleware cho phép OpenWebUI và file:// local gọi tới API
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "null",
         ],
+        allow_origin_regex=r".*",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -603,6 +608,21 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             )
         return HTMLResponse(content=PORTAL_HTML)
 
+    @app.get("/board", response_class=HTMLResponse)
+    async def get_board():
+        """Phục vụ giao diện Personal Task Board trực tiếp qua HTTP."""
+        for candidate in [
+            Path("/app/data/openwebui/board/ptb_board.html"),
+            Path(__file__).resolve().parents[4] / "integrations" / "openwebui" / "board" / "ptb_board.html",
+            Path("data/openwebui/board/ptb_board.html"),
+        ]:
+            if candidate.exists() and candidate.is_file():
+                return HTMLResponse(content=candidate.read_text(encoding="utf-8"))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Board HTML file not found."
+        )
+
     # --------------------------------------------------------------------------
     # 16. POST /api/ingest/message (Realtime Personal Message Ingestion)
     # --------------------------------------------------------------------------
@@ -839,32 +859,49 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
                 )
                 page = await context.new_page()
-                page.on("response", on_teams_resp)
+                page.on("response", lambda r: asyncio.create_task(on_teams_resp(r)))
 
                 try:
-                    await page.goto("https://teams.microsoft.com/v2/", wait_until="domcontentloaded", timeout=25000)
-                    await asyncio.sleep(8)
+                    await page.goto("https://teams.microsoft.com/v2/", wait_until="domcontentloaded", timeout=30000)
+                    if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
+                        await browser.close()
+                        raise HTTPException(
+                            status_code=401,
+                            detail="Phiên đăng nhập Microsoft Teams đã hết hạn (AUTH_EXPIRED). Vui lòng chạy lệnh 'ptb login microsoft' để cập nhật lại.",
+                        )
+                    await asyncio.sleep(12)
                     try:
                         await page.evaluate("""() => {
-                            const el = document.querySelector('[data-tid="message-pane-list-viewport"]') || window;
-                            if (el.scrollBy) el.scrollBy(0, -300);
+                            const el = document.querySelector('[data-tid="message-pane-list-viewport"]') || 
+                                       document.querySelector('div[role="feed"]') || 
+                                       document.querySelector('div[role="region"]') || 
+                                       window;
+                            if (el.scrollBy) el.scrollBy(0, -500);
                         }""")
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(3)
                     except Exception as scroll_err:
                         logger.debug("Teams scroll evaluation ignored: %s", scroll_err)
+                except HTTPException:
+                    raise
                 except Exception as nav_err:
                     logger.warning("Teams navigation warning: %s", nav_err)
 
                 await browser.close()
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.warning("Playwright capture error: %s", e)
+            logger.error("Playwright capture error: %s", e)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Lỗi khi quét Microsoft Teams qua Playwright: {str(e)}",
+            )
 
         proc_pipe = getattr(service, "processing_pipeline", None) or getattr(service, "_processing_pipeline", None)
         if proc_pipe is None:
             proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
 
         worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
-        processed_statuses = await worker.process_batch(limit=5)
+        processed_statuses = await worker.process_batch(limit=25)
 
         return {
             "status": "success",

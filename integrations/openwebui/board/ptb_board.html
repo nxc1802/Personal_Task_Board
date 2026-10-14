@@ -507,28 +507,165 @@
     .status-IN_PROGRESS { background: rgba(59, 130, 246, 0.15); color: #2563eb; }
     .status-BLOCKED { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
     .status-DONE { background: rgba(16, 185, 129, 0.15); color: #059669; }
-
-    /* Evidence Snippet Callout */
-    .evidence-box {
-      background: var(--bg-muted);
-      border-left: 3px solid var(--accent-primary);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-      padding: 8px 12px;
-      font-size: 12.5px;
-      color: var(--text-secondary);
-      font-style: italic;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+    /* Source Badges (Branded Visual Identifiers) */
+    .source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.2;
+      border: 1px solid transparent;
+      transition: var(--transition);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .source-badge svg { flex-shrink: 0; }
+    .source-badge.source-teams {
+      background: rgba(91, 95, 199, 0.12);
+      color: #5558af;
+      border-color: rgba(91, 95, 199, 0.35);
+    }
+    .source-badge.source-git {
+      background: rgba(36, 41, 46, 0.1);
+      color: var(--text-primary);
+      border-color: rgba(148, 163, 184, 0.35);
+    }
+    .source-badge.source-agent {
+      background: rgba(16, 185, 129, 0.12);
+      color: #059669;
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    .source-badge.source-outlook {
+      background: rgba(0, 120, 212, 0.12);
+      color: #0078d4;
+      border-color: rgba(0, 120, 212, 0.35);
+    }
+    .source-badge.source-jira {
+      background: rgba(0, 82, 204, 0.12);
+      color: #0052cc;
+      border-color: rgba(0, 82, 204, 0.35);
+    }
+    .source-badge.source-direct {
+      background: rgba(100, 116, 139, 0.12);
+      color: #64748b;
+      border-color: rgba(100, 116, 139, 0.3);
     }
 
+    html.dark .source-badge.source-teams { color: #9aa0f7; background: rgba(91, 95, 199, 0.25); border-color: rgba(91, 95, 199, 0.45); }
+    html.dark .source-badge.source-git { color: #e2e8f0; background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.15); }
+    html.dark .source-badge.source-agent { color: #34d399; background: rgba(16, 185, 129, 0.25); border-color: rgba(16, 185, 129, 0.45); }
+    html.dark .source-badge.source-outlook { color: #60a5fa; background: rgba(0, 120, 212, 0.25); border-color: rgba(0, 120, 212, 0.45); }
+    html.dark .source-badge.source-jira { color: #38bdf8; background: rgba(0, 82, 204, 0.25); border-color: rgba(0, 82, 204, 0.45); }
+
+    /* Due Date Badges */
+    .due-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .due-overdue {
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      border: 1px solid var(--danger-border);
+    }
+    .due-urgent {
+      background: var(--warning-bg);
+      color: var(--warning-text);
+      border: 1px solid var(--warning-border);
+    }
+    .due-safe {
+      background: var(--bg-muted);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    /* Enhanced Evidence Box (Conversation Callout) */
+    .evidence-box {
+      background: var(--bg-muted);
+      border: 1px solid var(--border);
+      border-left: 3.5px solid var(--accent-primary);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-bottom: 10px;
+    }
+    .evidence-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 5px;
+      gap: 8px;
+    }
+    .evidence-quote {
+      font-style: italic;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      position: relative;
+      padding-left: 12px;
+      border-left: 2px solid rgba(99, 102, 241, 0.3);
+    }
     .evidence-meta {
       font-style: normal;
-      font-size: 11px;
+      font-size: 11.5px;
       color: var(--text-muted);
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
       gap: 8px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--border);
+    }
+    .evidence-link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: var(--accent-subtle);
+      color: var(--accent-primary);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 11.5px;
+      transition: var(--transition);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+    .evidence-link-btn:hover {
+      background: var(--accent-primary);
+      color: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+    }
+
+    /* Metric Chips */
+    .metric-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+    .metric-chip strong {
+      color: var(--text-primary);
     }
 
     /* Priority Breakdown Details */
@@ -541,27 +678,232 @@
       flex-direction: column;
       gap: 6px;
       border: 1px dashed var(--border);
+      margin-bottom: 10px;
     }
 
-    .breakdown-row {
-      display: flex;
-      justify-content: space-between;
-      color: var(--text-secondary);
+    .card-in-progress {
+      border: 2px solid var(--accent-primary) !important;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.18) !important;
+      position: relative;
     }
-
-    .breakdown-val {
-      font-weight: 600;
-      font-family: var(--font-mono);
-      color: var(--text-primary);
+    .card-in-progress::before {
+      content: "⚡ ĐANG THỰC HIỆN";
+      position: absolute;
+      top: -10px;
+      right: 14px;
+      background: var(--accent-primary);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 10px;
+      letter-spacing: 0.05em;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
     }
 
     .explanation-text {
       color: var(--text-secondary);
       font-size: 12px;
-      line-height: 1.4;
+      line-height: 1.45;
       margin-top: 4px;
       padding-top: 6px;
       border-top: 1px solid var(--border);
+    }
+
+    .confidence-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.1);
+      color: #059669;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    .merge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(99, 102, 241, 0.1);
+      color: #6366f1;
+      border: 1px solid rgba(99, 102, 241, 0.25);
+    }
+
+    .metric-highlight-danger {
+      background: rgba(239, 68, 68, 0.1) !important;
+      border-color: rgba(239, 68, 68, 0.3) !important;
+      color: #dc2626 !important;
+    }
+
+    .metric-highlight-warning {
+      background: rgba(245, 158, 11, 0.1) !important;
+      border-color: rgba(245, 158, 11, 0.3) !important;
+      color: #d97706 !important;
+    }
+
+    .metric-highlight-info {
+      background: rgba(59, 130, 246, 0.1) !important;
+      border-color: rgba(59, 130, 246, 0.3) !important;
+      color: #2563eb !important;
+    }
+
+    .pill-danger {
+      background: rgba(239, 68, 68, 0.12);
+      color: #dc2626;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .pill-warning {
+      background: rgba(245, 158, 11, 0.12);
+      color: #d97706;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .pill-info {
+      background: rgba(59, 130, 246, 0.12);
+      color: #2563eb;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .pill-muted {
+      background: var(--bg-muted);
+      color: var(--text-muted);
+      font-weight: 500;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* Quick Tag Filter Bar */
+    .quick-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      padding: 10px 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .filter-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+    .filter-tag-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--bg-muted);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .filter-tag-pill:hover {
+      background: rgba(37, 99, 235, 0.08);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      transform: translateY(-1px);
+    }
+    .filter-tag-pill.active {
+      background: var(--accent-primary) !important;
+      color: #ffffff !important;
+      border-color: var(--accent-primary) !important;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+    }
+    .filter-tag-pill .tag-counter {
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.08);
+      font-weight: 700;
+    }
+    .filter-tag-pill.active .tag-counter {
+      background: rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+    }
+    html.dark .filter-tag-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    html.dark .filter-tag-pill .tag-counter {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Qualitative Tag Chips on Cards */
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .tag-chip:hover {
+      filter: brightness(0.95);
+      transform: translateY(-1px);
+    }
+    .tag-chip.tag-danger {
+      background: rgba(239, 68, 68, 0.12);
+      color: #dc2626;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .tag-chip.tag-warning {
+      background: rgba(245, 158, 11, 0.12);
+      color: #d97706;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .tag-chip.tag-info {
+      background: rgba(59, 130, 246, 0.12);
+      color: #2563eb;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .tag-chip.tag-success {
+      background: rgba(16, 185, 129, 0.12);
+      color: #059669;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .tag-chip.tag-muted {
+      background: var(--bg-muted);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .card-footer-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      margin-top: auto;
+      flex-wrap: wrap;
+      gap: 8px;
     }
 
     /* Grid Layouts */
@@ -734,7 +1076,7 @@
       inset: 0;
       background: rgba(0, 0, 0, 0.5);
       backdrop-filter: blur(4px);
-      z-index: 50;
+      z-index: 9999;
       align-items: center;
       justify-content: center;
       padding: 20px;
@@ -985,8 +1327,41 @@
         </div>
       </div>
 
-      <div style="margin-bottom: 12px; font-weight: 600; font-size: 14px; color: var(--text-secondary);">
-        Top 5 Công việc Ưu tiên Cao nhất
+      <!-- Quick Tag Filter Bar -->
+      <div class="quick-filter-bar" id="todayQuickFilterBar">
+        <span class="filter-label">🏷️ Lọc theo thẻ:</span>
+        <button class="filter-tag-pill active" id="tagPill-all" onclick="setTodayTagFilter('all')">
+          Tất cả (<span id="count-tag-all">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-in_progress" onclick="setTodayTagFilter('in_progress')">
+          ⚡ Đang làm (<span id="count-tag-in_progress">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-overdue" onclick="setTodayTagFilter('overdue')">
+          ⏰ Quá hạn (<span id="count-tag-overdue">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-production" onclick="setTodayTagFilter('production')">
+          🚨 Production (<span id="count-tag-production">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-customer" onclick="setTodayTagFilter('customer')">
+          🏢 Khách hàng (<span id="count-tag-customer">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-commitment" onclick="setTodayTagFilter('commitment')">
+          🤝 Cam kết (<span id="count-tag-commitment">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-agent" onclick="setTodayTagFilter('agent')">
+          🤖 Coding Agent (<span id="count-tag-agent">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-git" onclick="setTodayTagFilter('git')">
+          🐙 Git Commit (<span id="count-tag-git">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-teams" onclick="setTodayTagFilter('teams')">
+          💬 MS Teams (<span id="count-tag-teams">0</span>)
+        </button>
+      </div>
+
+      <div style="margin-bottom: 12px; font-weight: 600; font-size: 14px; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <span>Danh Sách Công Việc Hôm Nay</span>
+        <span id="todayFilterNotice" style="font-size: 12px; font-weight: 600; color: var(--accent-primary);"></span>
       </div>
 
       <div id="todayTasksList" class="grid-2">
@@ -1372,8 +1747,20 @@
 
   <!-- Application Logic (Live REST API Only) -->
   <script>
+    function getApiBase() {
+      if (typeof window !== "undefined") {
+        if (window.location.port === "8000" || window.location.pathname.includes("/board")) {
+          return "";
+        }
+        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+          return `${window.location.protocol}//${window.location.hostname}:8000`;
+        }
+      }
+      return "http://127.0.0.1:8000";
+    }
+
     const CONFIG = {
-      apiBase: "http://127.0.0.1:8000",
+      apiBase: getApiBase(),
       currentView: "today",
       taskViewMode: "components"
     };
@@ -1410,10 +1797,390 @@
     }
 
     function getPriorityClass(score) {
-      if (score >= 80) return "priority-critical";
-      if (score >= 60) return "priority-high";
-      if (score >= 40) return "priority-medium";
+      if (score >= 75) return "priority-critical";
+      if (score >= 50) return "priority-high";
+      if (score >= 30) return "priority-medium";
       return "priority-low";
+    }
+
+    function getPriorityMeta(score) {
+      if (score >= 75) return { text: "🔥 Khẩn cấp", class: "priority-critical" };
+      if (score >= 50) return { text: "⚡ Ưu tiên cao", class: "priority-high" };
+      if (score >= 30) return { text: "📌 Ưu tiên vừa", class: "priority-medium" };
+      return { text: "📝 Tiêu chuẩn", class: "priority-low" };
+    }
+
+    function getSourceInfo(t) {
+      if (!t) return { type: "direct", name: "Nhập Thủ Công", badgeClass: "source-direct", contextDetail: "Tạo thủ công", icon: "✍️", actionLabel: "Xem Chi Tiết ↗", link: null };
+
+      // Collect all possible indicators
+      const link = (t.deep_link || t.external_url || (t.evidences && t.evidences[0] ? t.evidences[0].external_url : "") || "").toLowerCase();
+      const sType = (t.source_type || t.source || (t.evidences && t.evidences[0] ? t.evidences[0].source_type : "") || "").toLowerCase();
+      const snippet = (t.primary_evidence_snippet || (t.evidences && t.evidences[0] ? t.evidences[0].snippet : "") || t.description || "").toLowerCase();
+      const channel = t.channel_or_group || "";
+      const rawLink = t.deep_link || t.external_url || (t.evidences && t.evidences[0] ? t.evidences[0].external_url : null);
+
+      // 1. Microsoft Teams
+      if (link.includes("teams.microsoft.com") || sType.includes("teams") || sType.includes("ms_teams") || channel.toLowerCase().includes("teams") || channel.toLowerCase().includes("core dev ptb")) {
+        let contextDetail = channel ? `Kênh: ${channel}` : "Cuộc trò chuyện Teams";
+        return {
+          type: "teams",
+          name: "Microsoft Teams",
+          badgeClass: "source-teams",
+          contextDetail: contextDetail,
+          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 7.5h-4.2V5.2c0-.7-.6-1.2-1.2-1.2H4c-.7 0-1.2.6-1.2 1.2v10.5c0 .7.6 1.2 1.2 1.2h2.2v3c0 .6.4 1.1 1 1.1h12.3c.7 0 1.2-.6 1.2-1.2V8.7c0-.7-.5-1.2-1.2-1.2zm-12.7 7H4.3V5.5h8.6v2H7.2c-.7 0-1.2.6-1.2 1.2v5.8zm11.2 5.2H7.7V9h10.3v10.7z"/></svg>`,
+          actionLabel: "Mở tin nhắn Teams ↗",
+          link: rawLink
+        };
+      }
+
+      // 2. Git / GitHub
+      if (link.includes("github.com") || link.includes("gitlab") || sType.includes("git") || snippet.startsWith("commit") || (t.title && (t.title.toLowerCase().startsWith("commit") || t.title.toLowerCase().startsWith("fix(") || t.title.toLowerCase().startsWith("feat(")))) {
+        let commitMatch = snippet.match(/commit\s+([a-f0-9]{7,40})/i) || link.match(/commit\/([a-f0-9]{7,40})/i);
+        let commitHash = commitMatch ? commitMatch[1].substring(0, 7) : null;
+        let contextDetail = commitHash ? `Commit #${commitHash}` : (channel || "Git Repository / Local");
+        return {
+          type: "git",
+          name: "Git / GitHub",
+          badgeClass: "source-git",
+          contextDetail: contextDetail,
+          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>`,
+          actionLabel: "Xem Commit GitHub ↗",
+          link: rawLink
+        };
+      }
+
+      // 3. Coding Agent (IDE) - Antigravity / Cursor / Claude Code
+      if (link.includes("antigravity") || link.includes("brain") || link.includes(".gemini") || sType.includes("agent") || sType.includes("coding_agent") || (t.requester_name && t.requester_name.toLowerCase().includes("antigravity"))) {
+        return {
+          type: "agent",
+          name: "Coding Agent (IDE)",
+          badgeClass: "source-agent",
+          contextDetail: "Antigravity Agent Session",
+          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>`,
+          actionLabel: "Mở Session Log ↗",
+          link: rawLink
+        };
+      }
+
+      // 4. Microsoft Outlook
+      if (link.includes("outlook") || sType.includes("outlook") || sType.includes("mail")) {
+        return {
+          type: "outlook",
+          name: "Microsoft Outlook",
+          badgeClass: "source-outlook",
+          contextDetail: channel || "Email Outlook",
+          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>`,
+          actionLabel: "Mở Email Outlook ↗",
+          link: rawLink
+        };
+      }
+
+      // 5. Jira Software
+      if (link.includes("jira") || sType.includes("jira") || link.includes("atlassian")) {
+        return {
+          type: "jira",
+          name: "Jira Software",
+          badgeClass: "source-jira",
+          contextDetail: channel || "Jira Ticket",
+          icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.74c0 2.4 1.97 4.35 4.35 4.35V2h-10.48zm-4.35 4.35c0 2.4 1.97 4.35 4.35 4.35h1.78v1.74c0 2.4 1.97 4.35 4.35 4.35V6.35H7.18zM2.82 10.7c0 2.4 1.97 4.35 4.35 4.35h1.78v1.74c0 2.4 1.97 4.35 4.35 4.35V10.7H2.82z"/></svg>`,
+          actionLabel: "Mở Ticket Jira ↗",
+          link: rawLink
+        };
+      }
+
+      // Default / Manual
+      return {
+        type: "direct",
+        name: "Nhập Thủ Công",
+        badgeClass: "source-direct",
+        contextDetail: channel || "Tạo trực tiếp",
+        icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`,
+        actionLabel: "Xem Chi Tiết ↗",
+        link: rawLink
+      };
+    }
+
+    function formatDueDateBadge(isoStr, isAtRisk, riskReason) {
+      if (isAtRisk && riskReason) {
+        return `<span class="due-badge due-overdue" title="${escapeHtml(riskReason)}">⚠️ ${escapeHtml(riskReason)}</span>`;
+      }
+      if (!isoStr) {
+        return `<span class="due-badge due-safe" title="Không có hạn chót cụ thể">⏱ Không có hạn</span>`;
+      }
+      const due = new Date(isoStr);
+      const now = new Date();
+      const diffDays = (due - now) / (1000 * 60 * 60 * 24);
+      const dateText = due.toLocaleDateString("vi-VN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+      if (diffDays < 0) {
+        const overdueDays = Math.abs(diffDays).toFixed(1);
+        return `<span class="due-badge due-overdue" title="Hạn gốc: ${dateText}">⚠️ Quá hạn ${overdueDays} ngày (${dateText})</span>`;
+      } else if (diffDays <= 1) {
+        return `<span class="due-badge due-urgent" title="Hạn chót: ${dateText}">⏳ Hôm nay (${dateText})</span>`;
+      } else if (diffDays <= 3) {
+        return `<span class="due-badge due-urgent" title="Hạn chót: ${dateText}">⏳ Còn ${Math.ceil(diffDays)} ngày (${dateText})</span>`;
+      } else {
+        return `<span class="due-badge due-safe" title="Hạn chót: ${dateText}">📅 ${dateText}</span>`;
+      }
+    }
+
+    function formatCleanExplanation(rawText) {
+      if (!rawText) return "";
+      let text = String(rawText);
+      text = text.replace(/Score\s+[0-9.]+\/[0-9]+:\s*/gi, "");
+      text = text.replace(/Score\s+[0-9.]+:\s*/gi, "");
+      text = text.replace(/\(\+[0-9.]+\)/g, "");
+      text = text.replace(/\(-[0-9.]+\)/g, "");
+      text = text.replace(/\(0\.[0-9]+\)/g, "");
+      text = text.replace(/,\s*,/g, ",");
+      text = text.replace(/\s+/g, " ").trim();
+      text = text.replace(/^\s*,\s*/, "").replace(/[,\s.]+$/, "");
+
+      const segments = text.split(/,\s*/).map(s => s.trim()).filter(s => s.length > 0);
+      if (segments.length === 0) return "";
+
+      const formatted = segments.map(seg => {
+        if (/quá hạn|hạn chót/i.test(seg)) {
+          return `<span class="pill-danger">${escapeHtml(seg)}</span>`;
+        }
+        if (/production|sự cố|lỗi/i.test(seg)) {
+          return `<span class="pill-danger">${escapeHtml(seg)}</span>`;
+        }
+        if (/khách hàng|đối tác/i.test(seg)) {
+          return `<span class="pill-warning">${escapeHtml(seg)}</span>`;
+        }
+        if (/cam kết/i.test(seg)) {
+          return `<span class="pill-info">${escapeHtml(seg)}</span>`;
+        }
+        if (/tồn đọng/i.test(seg)) {
+          return `<span class="pill-warning">${escapeHtml(seg)}</span>`;
+        }
+        if (/độ tin cậy/i.test(seg)) {
+          return `<span class="pill-muted">${escapeHtml(seg)}</span>`;
+        }
+        return `<span>${escapeHtml(seg)}</span>`;
+      });
+
+      return formatted.join(' <span style="color: var(--text-muted); margin: 0 4px;">•</span> ');
+    }
+
+    function handleDeepLink(link, event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (!link) {
+        showToast("Không có liên kết nguồn cho công việc này", "info");
+        return;
+      }
+      const trimmed = String(link).trim();
+      if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        window.open(trimmed, "_blank");
+      } else {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(trimmed).then(() => {
+            showToast(`📋 Đã sao chép đường dẫn file vào clipboard: ${trimmed}`, "success");
+          }).catch(() => {
+            prompt("Đường dẫn file nguồn:", trimmed);
+          });
+        } else {
+          prompt("Đường dẫn file nguồn:", trimmed);
+        }
+      }
+    }
+
+    // Helper: Sort tasks prioritizing IN_PROGRESS first, then priority score descending (Task 1 requirement)
+    function sortTasksWithInProgressFirst(tasks) {
+      if (!Array.isArray(tasks)) return [];
+      return [...tasks].sort((a, b) => {
+        const aInProgress = a.status === "IN_PROGRESS" ? 1 : 0;
+        const bInProgress = b.status === "IN_PROGRESS" ? 1 : 0;
+        if (aInProgress !== bInProgress) return bInProgress - aInProgress;
+        const aScore = a.priority ? (a.priority.total_score || 0) : (a.priority_score || 0);
+        const bScore = b.priority ? (b.priority.total_score || 0) : (b.priority_score || 0);
+        return bScore - aScore;
+      });
+    }
+
+    // Master Reusable Task Card Template (Unified for Today View & Components CRUD View)
+    function renderTaskCardHtml(t, options = {}) {
+      const taskId = t.id || t.task_id || "";
+      const shortId = taskId ? taskId.substring(0, 8) : "N/A";
+      const pScore = t.priority ? (t.priority.total_score || 0) : (t.priority_score || 50);
+      const pMeta = getPriorityMeta(pScore);
+      const isInProgress = t.status === "IN_PROGRESS";
+      const sourceInfo = getSourceInfo(t);
+      const dueBadge = formatDueDateBadge(t.due_date, t.is_at_risk, t.risk_reason);
+
+      // Requester & Owner
+      const requester = t.requester_name || (t.evidences && t.evidences[0] ? t.evidences[0].author_canonical_name : null) || "Chưa rõ";
+      const owner = t.owner_name || "Tôi";
+
+      // Evidence snippet & timestamp
+      const snippet = t.primary_evidence_snippet || (t.evidences && t.evidences[0] ? t.evidences[0].snippet : t.description) || "";
+      const evidenceTime = (t.evidences && t.evidences[0] && t.evidences[0].timestamp) ? formatDate(t.evidences[0].timestamp) : null;
+      const deepLink = sourceInfo.link;
+
+      // Confidence & Correlation
+      const confidence = t.extraction_confidence != null ? Math.round(t.extraction_confidence * 100) : (t.confidence != null ? Math.round(t.confidence * 100) : null);
+      const correlationPct = t.correlation_confidence != null ? Math.round(t.correlation_confidence * 100) : null;
+      const candidateCount = (t.candidate_task_ids && t.candidate_task_ids.length > 0) ? t.candidate_task_ids.length + 1 : 0;
+
+      // Priority details breakdown & Active Tags (Pure human-readable, NO math numbers)
+      const p = t.priority || {};
+      const cleanExplanation = formatCleanExplanation(p.llm_explanation);
+      const isOverdue = (p.deadline_score || 0) > 0 || t.is_at_risk || (t.due_date && new Date(t.due_date) < new Date());
+
+      const activeTags = [];
+      if (isOverdue) {
+        activeTags.push(`<span class="tag-chip tag-danger" onclick="setTodayTagFilter('overdue')" title="Nhấn để lọc các việc quá hạn">⏰ Quá hạn chót</span>`);
+      }
+      if ((p.production_impact_score || 0) > 0 || (t.title && /prod|release|hotfix|sự cố/i.test(t.title))) {
+        activeTags.push(`<span class="tag-chip tag-danger" onclick="setTodayTagFilter('production')" title="Nhấn để lọc các việc Production">🚨 Sự cố Production</span>`);
+      }
+      if ((p.customer_impact_score || 0) > 0 || (t.title && /khách hàng|đối tác|customer|client/i.test(t.title))) {
+        activeTags.push(`<span class="tag-chip tag-warning" onclick="setTodayTagFilter('customer')" title="Nhấn để lọc các việc Khách hàng">🏢 Khách hàng / Đối tác</span>`);
+      }
+      if ((p.commitment_weight || 0) > 0 || (t.title && /cam kết|hứa/i.test(t.title))) {
+        activeTags.push(`<span class="tag-chip tag-info" onclick="setTodayTagFilter('commitment')" title="Nhấn để lọc các việc có cam kết">🤝 Cam kết trực tiếp</span>`);
+      }
+      if ((p.stale_age_score || 0) > 0) {
+        activeTags.push(`<span class="tag-chip tag-warning" title="Công việc đã tồn đọng nhiều ngày chưa xử lý">⏳ Tồn đọng lâu ngày</span>`);
+      }
+
+      return `
+        <!-- Card Header: Qualitative Priority, Source, Scope, Status, Due Date -->
+        <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <span class="priority-badge ${pMeta.class}" title="Độ ưu tiên được tính toán tự động: ${pMeta.text}">
+              ${pMeta.text}
+            </span>
+            <span class="source-badge ${sourceInfo.badgeClass}" style="cursor: pointer;" onclick="setTodayTagFilter('${sourceInfo.type}')" title="Nhấn để lọc nguồn ${sourceInfo.name}">
+              ${sourceInfo.icon}
+              <span>${sourceInfo.name}</span>
+            </span>
+            <span class="tag tag-project" title="Mã dự án">${escapeHtml(t.project_key || "GLOBAL")}</span>
+            <span class="tag tag-status status-${t.status}" title="Trạng thái thực thi">
+              ${isInProgress ? "⚡ IN_PROGRESS" : escapeHtml(t.status)}
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            ${dueBadge}
+          </div>
+        </div>
+
+        <!-- Task Title & Context Identity Line -->
+        <div style="margin: 2px 0 6px 0;">
+          <div class="card-title" style="font-size: 15px; font-weight: 700; line-height: 1.45; color: var(--text-primary); margin-bottom: 4px;">
+            ${escapeHtml(t.title)}
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); flex-wrap: wrap;">
+            <span style="font-family: var(--font-mono); background: var(--bg-muted); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);">
+              ID: #${escapeHtml(shortId)}
+            </span>
+            ${sourceInfo.contextDetail ? `
+              <span style="display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); font-weight: 500;">
+                📍 <strong>${escapeHtml(sourceInfo.contextDetail)}</strong>
+              </span>
+            ` : ""}
+            ${t.created_at ? `<span>Tạo: ${formatDate(t.created_at)}</span>` : ""}
+          </div>
+        </div>
+
+        <!-- Evidence & Conversation Context Block -->
+        ${snippet ? `
+          <div class="evidence-box">
+            <div class="evidence-header">
+              <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--text-primary);">
+                <span>💬 Bằng chứng trích xuất (Evidence Context):</span>
+              </span>
+              <span style="display: inline-flex; align-items: center; gap: 6px;">
+                <span>Người gửi: <strong style="color: var(--text-primary);">${escapeHtml(requester)}</strong></span>
+                ${evidenceTime ? `<span style="opacity: 0.7;">(${evidenceTime})</span>` : ""}
+              </span>
+            </div>
+            <div class="evidence-quote">
+              “${escapeHtml(snippet)}”
+            </div>
+            <div class="evidence-meta">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span>🎯 Phụ trách: <strong style="color: var(--text-primary);">${escapeHtml(owner)}</strong></span>
+                ${confidence != null ? `
+                  <span class="confidence-pill" title="Độ tin cậy trích xuất AI">
+                    🎯 Confidence: <strong>${confidence}%</strong>
+                  </span>
+                ` : ""}
+                ${candidateCount > 0 ? `
+                  <span class="merge-pill" title="Hệ thống đã tự động gộp các tin nhắn trùng lặp">
+                    🔀 Gộp ${candidateCount} tin nhắn (${correlationPct || 70}%)
+                  </span>
+                ` : ""}
+              </div>
+              ${deepLink ? `
+                <button type="button" class="evidence-link-btn" onclick="handleDeepLink('${escapeHtml(deepLink).replace(/'/g, "\\'")}', event)" title="Mở trực tiếp nguồn gốc hoặc sao chép đường dẫn">
+                  ${sourceInfo.icon}
+                  <span>${sourceInfo.actionLabel}</span>
+                </button>
+              ` : ""}
+            </div>
+          </div>
+        ` : ""}
+
+        <!-- Characteristics & Priority Impact (Pure human information, NO raw math numbers) -->
+        ${(activeTags.length > 0 || cleanExplanation) ? `
+          <div class="priority-details">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">
+              <span>🎯 ĐẶC TÍNH & MỨC ĐỘ ẢNH HƯỞNG</span>
+              <span style="font-weight: 600; color: var(--accent-primary);">${pMeta.text}</span>
+            </div>
+            ${activeTags.length > 0 ? `
+              <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                ${activeTags.join("")}
+              </div>
+            ` : ""}
+            ${cleanExplanation ? `
+              <div class="explanation-text">
+                💡 <strong>Phân tích lý do:</strong> ${cleanExplanation}
+              </div>
+            ` : ""}
+          </div>
+        ` : ""}
+
+        <!-- Action Footer (Interactive CRUD & Status Changes) -->
+        <div class="card-footer-actions">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Chuyển trạng thái:</span>
+            <select class="filter-select" style="font-size: 11.5px; padding: 3px 8px; font-weight: 600;" onchange="updateTaskStatus('${taskId}', this.value)">
+              <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>⚡ IN_PROGRESS (Đang làm)</option>
+              <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>📝 TODO (Cần làm)</option>
+              <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>🚫 BLOCKED (Bị nghẽn)</option>
+              <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>✅ DONE (Hoàn thành)</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            ${t.status === "TODO" ? `
+              <button class="btn btn-sm" onclick="updateTaskStatus('${taskId}', 'IN_PROGRESS')" style="color: var(--accent-primary); border-color: var(--accent-primary); font-weight: 600;" title="Bắt đầu thực hiện ngay">
+                ⚡ Bắt đầu làm
+              </button>
+            ` : ""}
+            ${t.status === "IN_PROGRESS" ? `
+              <button class="btn btn-sm" onclick="updateTaskStatus('${taskId}', 'TODO')" title="Tạm hoãn, đưa về TODO">
+                ⏸️ Tạm hoãn
+              </button>
+            ` : ""}
+            <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Chỉnh sửa thông tin chi tiết">
+              ✏️ Sửa
+            </button>
+            <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${taskId}', 'DONE')" title="Đánh dấu hoàn thành task">
+              ✓ Hoàn thành
+            </button>
+            <button class="btn btn-sm" style="color: var(--danger-text); border-color: var(--danger-border);" onclick="deleteTask('${taskId}')" title="Xóa bỏ task">
+              🗑️
+            </button>
+          </div>
+        </div>
+      `;
     }
 
     // --- Tab Switching ---
@@ -1596,6 +2363,110 @@
     // --- Renderers for 8 Views (Live REST API Only) ---
 
     // 1. TODAY VIEW
+    let cachedTodayTasks = [];
+    let currentTodayTagFilter = "all";
+
+    function setTodayTagFilter(tag) {
+      currentTodayTagFilter = tag;
+      document.querySelectorAll("#todayQuickFilterBar .filter-tag-pill").forEach(el => {
+        el.classList.remove("active");
+      });
+      const activeBtn = document.getElementById(`tagPill-${tag}`);
+      if (activeBtn) activeBtn.classList.add("active");
+      renderTodayList();
+    }
+
+    function isTaskMatchingTag(t, tag) {
+      if (tag === "all") return true;
+      if (tag === "in_progress") return t.status === "IN_PROGRESS";
+      
+      const p = t.priority || {};
+      const sourceInfo = getSourceInfo(t);
+      const isOverdue = (p.deadline_score || 0) > 0 || t.is_at_risk || (t.due_date && new Date(t.due_date) < new Date());
+
+      if (tag === "overdue") return isOverdue;
+      if (tag === "production") return (p.production_impact_score || 0) > 0 || /prod|release|hotfix|sự cố/i.test(t.title || "");
+      if (tag === "customer") return (p.customer_impact_score || 0) > 0 || /khách hàng|đối tác|customer|client/i.test(t.title || "");
+      if (tag === "commitment") return (p.commitment_weight || 0) > 0 || /cam kết|hứa/i.test(t.title || "");
+      if (tag === "agent") return sourceInfo.type === "agent";
+      if (tag === "git") return sourceInfo.type === "git";
+      if (tag === "teams") return sourceInfo.type === "teams";
+      return true;
+    }
+
+    function updateTodayTagCounters(tasks) {
+      const counts = {
+        all: tasks.length,
+        in_progress: 0,
+        overdue: 0,
+        production: 0,
+        customer: 0,
+        commitment: 0,
+        agent: 0,
+        git: 0,
+        teams: 0
+      };
+
+      tasks.forEach(t => {
+        if (t.status === "IN_PROGRESS") counts.in_progress++;
+        const p = t.priority || {};
+        const sourceInfo = getSourceInfo(t);
+        const isOverdue = (p.deadline_score || 0) > 0 || t.is_at_risk || (t.due_date && new Date(t.due_date) < new Date());
+        if (isOverdue) counts.overdue++;
+        if ((p.production_impact_score || 0) > 0 || /prod|release|hotfix|sự cố/i.test(t.title || "")) counts.production++;
+        if ((p.customer_impact_score || 0) > 0 || /khách hàng|đối tác|customer|client/i.test(t.title || "")) counts.customer++;
+        if ((p.commitment_weight || 0) > 0 || /cam kết|hứa/i.test(t.title || "")) counts.commitment++;
+        if (sourceInfo.type === "agent") counts.agent++;
+        if (sourceInfo.type === "git") counts.git++;
+        if (sourceInfo.type === "teams") counts.teams++;
+      });
+
+      for (const [key, val] of Object.entries(counts)) {
+        const el = document.getElementById(`count-tag-${key}`);
+        if (el) el.innerText = val;
+      }
+    }
+
+    function renderTodayList() {
+      const listContainer = document.getElementById("todayTasksList");
+      if (!listContainer) return;
+      listContainer.innerHTML = "";
+
+      const rawTasks = cachedTodayTasks || [];
+      updateTodayTagCounters(rawTasks);
+
+      const filtered = rawTasks.filter(t => isTaskMatchingTag(t, currentTodayTagFilter));
+      const noticeEl = document.getElementById("todayFilterNotice");
+      if (noticeEl) {
+        if (currentTodayTagFilter === "all") {
+          noticeEl.innerText = `Hiển thị toàn bộ (${filtered.length} việc)`;
+        } else {
+          noticeEl.innerText = `Đang lọc: ${currentTodayTagFilter} (${filtered.length} việc)`;
+        }
+      }
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `
+          <div class="empty-state" style="grid-column: 1 / -1;">
+            <div class="empty-state-icon">🏷️</div>
+            <div style="font-weight: 600; font-size: 15px;">Không có công việc nào thuộc thẻ "${escapeHtml(currentTodayTagFilter)}"</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Hãy chọn thẻ khác hoặc nhấn nút bên dưới để xem toàn bộ.</div>
+            <button class="btn btn-sm btn-primary" onclick="setTodayTagFilter('all')">Xem Tất Cả Công Việc</button>
+          </div>
+        `;
+        return;
+      }
+
+      const sorted = sortTasksWithInProgressFirst(filtered);
+      sorted.forEach(t => {
+        const card = document.createElement("div");
+        const isInProgress = t.status === "IN_PROGRESS";
+        card.className = isInProgress ? "card card-in-progress" : "card";
+        card.innerHTML = renderTaskCardHtml(t, { view: "today" });
+        listContainer.appendChild(card);
+      });
+    }
+
     async function renderTodayView() {
       let data = null;
       try {
@@ -1621,70 +2492,10 @@
         riskEl.style.display = "none";
       }
 
-      const listContainer = document.getElementById("todayTasksList");
-      listContainer.innerHTML = "";
+      cachedTodayTasks = data.top_tasks || [];
+      document.getElementById("count-today").innerText = cachedTodayTasks.length;
 
-      const tasks = data.top_tasks || [];
-      document.getElementById("count-today").innerText = tasks.length;
-
-      if (tasks.length === 0) {
-        listContainer.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div>Không có task nào cần làm ngay hôm nay!</div></div>`;
-        return;
-      }
-
-      tasks.forEach(t => {
-        const card = document.createElement("div");
-        card.className = "card";
-        const pScore = t.priority ? (t.priority.total_score || 0) : 50;
-        const pClass = getPriorityClass(pScore);
-
-        card.innerHTML = `
-          <div class="card-header">
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <span class="priority-badge ${pClass}">${pScore.toFixed(1)}</span>
-              <span class="tag tag-project">${escapeHtml(t.project_key || "GLOBAL")}</span>
-              <span class="tag tag-status status-${t.status}">${t.status}</span>
-            </div>
-            <div style="font-size: 11px; color: var(--text-muted);">
-              ${formatDate(t.due_date)}
-            </div>
-          </div>
-
-          <div class="card-title">${escapeHtml(t.title)}</div>
-
-          ${t.primary_evidence_snippet ? `
-            <div class="evidence-box">
-              <span>"${escapeHtml(t.primary_evidence_snippet)}"</span>
-              <div class="evidence-meta">
-                <span>👤 Người yêu cầu: <strong>${escapeHtml(t.requester_name || "Chưa rõ")}</strong></span>
-                ${t.deep_link ? `<a href="${t.deep_link}" target="_blank" style="color: var(--accent-primary); text-decoration: none;">Xem nguồn ↗</a>` : ""}
-              </div>
-            </div>
-          ` : ""}
-
-          ${t.priority ? `
-            <div class="priority-details">
-              <div class="breakdown-row">
-                <span>Hạn chót: <strong>${t.priority.deadline_score ?? 0}</strong></span>
-                <span>Khách hàng: <strong>${t.priority.customer_impact_score ?? 0}</strong></span>
-                <span>Production: <strong>${t.priority.production_impact_score ?? 0}</strong></span>
-                <span>Cam kết: <strong>${t.priority.commitment_weight ?? 0}</strong></span>
-              </div>
-              <div class="explanation-text">
-                💡 <strong>Lý do:</strong> ${escapeHtml(t.priority.llm_explanation || "Được chấm điểm dựa trên trọng số tất định L4.")}
-              </div>
-            </div>
-          ` : ""}
-
-          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
-            ${t.status === "TODO" ? `
-              <button class="btn btn-sm" onclick="updateTaskStatus('${t.task_id}', 'IN_PROGRESS')">⚡ Bắt đầu làm</button>
-            ` : ""}
-            <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${t.task_id}', 'DONE')">✓ Hoàn thành</button>
-          </div>
-        `;
-        listContainer.appendChild(card);
-      });
+      renderTodayList();
     }
 
     // 2. INBOX / REVIEW VIEW
@@ -1719,10 +2530,16 @@
         card.className = "card review-card";
         const confPct = Math.round((cand.extraction_confidence || 0.5) * 100);
         const taskId = cand.id || item.id;
+        const sourceInfo = getSourceInfo(cand);
+        const ev = (cand.evidences && cand.evidences[0]) ? cand.evidences[0] : null;
 
         card.innerHTML = `
-          <div class="card-header">
-            <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span class="source-badge ${sourceInfo.badgeClass}">
+                ${sourceInfo.icon}
+                <span>${sourceInfo.name}</span>
+              </span>
               <span class="tag tag-project">${escapeHtml(cand.project_key || "UNASSIGNED")}</span>
               <div class="confidence-meter" title="Độ tin cậy trích xuất của AI">
                 <span>Độ tin cậy: ${confPct}%</span>
@@ -1732,22 +2549,34 @@
             <span style="font-size: 11px; color: var(--text-muted);">${formatDate(cand.due_date)}</span>
           </div>
 
-          <div class="card-title">${escapeHtml(cand.title || "Task không có tiêu đề")}</div>
+          <div class="card-title" style="font-size: 15px; font-weight: 700; line-height: 1.45; margin: 4px 0 6px 0;">
+            ${escapeHtml(cand.title || "Task không có tiêu đề")}
+          </div>
 
           <div style="font-size: 12px; color: var(--warning-text); background: var(--warning-bg); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--warning-border);">
             ⚠️ <strong>Cần xác nhận:</strong> ${escapeHtml(item.reason || "Cần người dùng phê duyệt")}
           </div>
 
-          ${cand.evidences && cand.evidences.length > 0 ? `
+          ${ev ? `
             <div class="evidence-box">
-              <span>"${escapeHtml(cand.evidences[0].snippet || "")}"</span>
+              <div class="evidence-header">
+                <span>💬 Tin nhắn gốc trích xuất:</span>
+                <span>Tác giả: <strong>${escapeHtml(ev.author_canonical_name || cand.requester_name || "Ẩn danh")}</strong></span>
+              </div>
+              <div class="evidence-quote">“${escapeHtml(ev.snippet || "")}”</div>
               <div class="evidence-meta">
-                <span>Nguồn: ${escapeHtml(cand.evidences[0].source_type || "unknown")} | Tác giả: ${escapeHtml(cand.evidences[0].author_canonical_name || "Ẩn danh")}</span>
+                <span>Nguồn: <strong>${escapeHtml(sourceInfo.name)}</strong></span>
+                ${sourceInfo.link ? `
+                  <a href="${sourceInfo.link}" target="_blank" class="evidence-link-btn" title="Mở trực tiếp nguồn">
+                    ${sourceInfo.icon}
+                    <span>${sourceInfo.actionLabel}</span>
+                  </a>
+                ` : ""}
               </div>
             </div>
           ` : ""}
 
-          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; border-top: 1px solid var(--border); padding-top: 8px;">
             <button class="btn btn-sm" onclick="dismissReviewItem('${taskId}')">✕ Bỏ qua</button>
             <button class="btn btn-sm" onclick="openEditModal('${taskId}')">✎ Sửa</button>
             <button class="btn btn-sm btn-primary" onclick="approveReviewItem('${taskId}')">✓ Phê duyệt</button>
@@ -1845,62 +2674,14 @@
         return;
       }
 
-      tasks.forEach(t => {
-        const taskId = t.id || t.task_id;
-        const pScore = t.priority_score || (t.priority ? t.priority.total_score : 50);
-        const pClass = getPriorityClass(pScore);
-        const isInProgress = t.status === "IN_PROGRESS";
-        const snippet = t.description || (t.evidences && t.evidences[0] ? t.evidences[0].snippet : t.primary_evidence_snippet) || "";
+      // Sort: IN_PROGRESS first, then by priority_score descending (per Task 1)
+      const sorted = sortTasksWithInProgressFirst(tasks);
 
+      sorted.forEach(t => {
         const card = document.createElement("div");
-        card.className = "card";
-        if (isInProgress) {
-          card.style.border = "1.5px solid var(--accent-primary)";
-          card.style.boxShadow = "0 2px 10px rgba(37, 99, 235, 0.16)";
-        }
-
-        card.innerHTML = `
-          <div class="card-header">
-            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <span class="priority-badge ${pClass}" title="Độ ưu tiên: ${pScore.toFixed(1)}/100">${pScore.toFixed(0)}</span>
-              <span class="tag tag-project">${escapeHtml(t.project_key || "GLOBAL")}</span>
-              <span class="tag tag-status status-${t.status}">
-                ${isInProgress ? "⚡ IN_PROGRESS" : escapeHtml(t.status)}
-              </span>
-              ${t.channel_or_group ? `<span class="tag tag-source" style="font-size: 10px;">${escapeHtml(t.channel_or_group)}</span>` : ""}
-            </div>
-            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(t.due_date)}</span>
-          </div>
-
-          <div class="card-title" style="margin-bottom: 6px; font-size: 14.5px;">${escapeHtml(t.title)}</div>
-
-          ${snippet ? `
-            <div style="font-size: 12.5px; color: var(--text-secondary); background: var(--bg-muted); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 8px; line-height: 1.4;">
-              ${escapeHtml(snippet)}
-            </div>
-          ` : ""}
-
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--text-muted); margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
-            <span>👤 Phụ trách: <strong style="color: var(--text-primary);">${escapeHtml(t.owner_name || "Tôi")}</strong></span>
-            <span>📣 Người yêu cầu: <strong style="color: var(--text-primary);">${escapeHtml(t.requester_name || "Self")}</strong></span>
-          </div>
-
-          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; margin-top: auto; gap: 6px;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 11px; color: var(--text-muted);">Trạng thái:</span>
-              <select class="filter-select" style="font-size: 11px; padding: 2px 6px;" onchange="updateTaskStatus('${taskId}', this.value)">
-                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>⚡ IN_PROGRESS</option>
-                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>📝 TODO</option>
-                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>🚫 BLOCKED</option>
-                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>✅ DONE</option>
-              </select>
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Chỉnh sửa thông tin task">✏️ Sửa</button>
-              <button class="btn btn-sm" style="color: var(--danger-text); border-color: var(--danger-border);" onclick="deleteTask('${taskId}')" title="Xóa hoặc hủy bỏ task">🗑️ Xóa</button>
-            </div>
-          </div>
-        `;
+        const isInProgress = t.status === "IN_PROGRESS";
+        card.className = isInProgress ? "card card-in-progress" : "card";
+        card.innerHTML = renderTaskCardHtml(t, { view: "components" });
         container.appendChild(card);
       });
     }
@@ -1913,7 +2694,13 @@
         if (!col) return;
         col.innerHTML = "";
         
-        const colTasks = tasks.filter(t => t.status === s);
+        let colTasks = tasks.filter(t => t.status === s);
+        colTasks.sort((a, b) => {
+          const aScore = a.priority ? (a.priority.total_score || 0) : (a.priority_score || 0);
+          const bScore = b.priority ? (b.priority.total_score || 0) : (b.priority_score || 0);
+          return bScore - aScore;
+        });
+
         if (countSpan) countSpan.innerText = colTasks.length;
 
         if (colTasks.length === 0) {
@@ -1923,26 +2710,43 @@
 
         colTasks.forEach(t => {
           const card = document.createElement("div");
-          card.className = "card";
+          card.className = s === "IN_PROGRESS" ? "card card-in-progress" : "card";
           card.style.padding = "12px";
-          const pScore = t.priority_score || 50;
+          card.style.gap = "8px";
+          const pScore = t.priority ? (t.priority.total_score || 0) : (t.priority_score || 50);
+          const sourceInfo = getSourceInfo(t);
+          const dueBadge = formatDueDateBadge(t.due_date, t.is_at_risk, t.risk_reason);
+          const taskId = t.id || t.task_id || "";
+          const requester = t.requester_name || (t.evidences && t.evidences[0] ? t.evidences[0].author_canonical_name : null) || "Chưa rõ";
+
           card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span class="priority-badge ${getPriorityClass(pScore)}">${pScore.toFixed(0)}</span>
-              <span class="tag tag-project">${escapeHtml(t.project_key || "GEN")}</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="priority-badge ${getPriorityClass(pScore)}">${pScore.toFixed(0)}</span>
+                <span class="source-badge ${sourceInfo.badgeClass}" style="font-size: 10px; padding: 2px 6px;">
+                  ${sourceInfo.icon}
+                  <span>${sourceInfo.name.split(' ')[0]}</span>
+                </span>
+                <span class="tag tag-project" style="font-size: 10px;">${escapeHtml(t.project_key || "GEN")}</span>
+              </div>
+              <span style="font-size: 10px; font-family: var(--font-mono); color: var(--text-muted);">#${taskId.substring(0, 6)}</span>
             </div>
-            <div style="font-weight: 600; font-size: 13px;">${escapeHtml(t.title)}</div>
-            <div style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between;">
-              <span>👤 ${escapeHtml(t.owner_name || "Tôi")}</span>
-              <span>${formatDate(t.due_date)}</span>
+            <div style="font-weight: 600; font-size: 13.5px; line-height: 1.4; color: var(--text-primary);">${escapeHtml(t.title)}</div>
+            <div style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
+              <span>👤 ${escapeHtml(t.owner_name || "Tôi")} | 📣 ${escapeHtml(requester)}</span>
+              ${dueBadge}
             </div>
-            <div style="display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px;">
-              <select class="filter-select" style="font-size: 11px; padding: 2px 6px;" onchange="updateTaskStatus('${t.id}', this.value)">
-                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>TODO</option>
-                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>IN_PROGRESS</option>
-                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>BLOCKED</option>
-                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>DONE</option>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; border-top: 1px dashed var(--border); padding-top: 6px;">
+              <select class="filter-select" style="font-size: 11px; padding: 2px 6px;" onchange="updateTaskStatus('${taskId}', this.value)">
+                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>⚡ IN_PROGRESS</option>
+                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>📝 TODO</option>
+                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>🚫 BLOCKED</option>
+                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>✅ DONE</option>
               </select>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Sửa">✏️</button>
+                <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${taskId}', 'DONE')" title="Xong">✓</button>
+              </div>
             </div>
           `;
           col.appendChild(card);
@@ -1955,25 +2759,49 @@
       if (!tbody) return;
       tbody.innerHTML = "";
       if (tasks.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">Không có task nào khớp với bộ lọc.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">Không có task nào khớp với bộ lọc.</td></tr>`;
         return;
       }
-      tasks.forEach(t => {
+      const sorted = sortTasksWithInProgressFirst(tasks);
+
+      sorted.forEach(t => {
         const tr = document.createElement("tr");
-        const pScore = t.priority_score || 50;
-        const snippet = (t.evidences && t.evidences[0] ? t.evidences[0].snippet : t.evidence_snippet) || "";
+        const taskId = t.id || t.task_id || "";
+        const pScore = t.priority ? (t.priority.total_score || 0) : (t.priority_score || 50);
+        const sourceInfo = getSourceInfo(t);
+        const dueBadge = formatDueDateBadge(t.due_date, t.is_at_risk, t.risk_reason);
+        const snippet = t.primary_evidence_snippet || (t.evidences && t.evidences[0] ? t.evidences[0].snippet : t.description) || "";
+        const requester = t.requester_name || (t.evidences && t.evidences[0] ? t.evidences[0].author_canonical_name : null) || "Chưa rõ";
+
         tr.innerHTML = `
           <td><span class="priority-badge ${getPriorityClass(pScore)}">${pScore.toFixed(0)}</span></td>
-          <td style="font-weight: 500;">${escapeHtml(t.title)}</td>
+          <td>
+            <span class="source-badge ${sourceInfo.badgeClass}" style="font-size: 11px;">
+              ${sourceInfo.icon}
+              <span>${sourceInfo.name}</span>
+            </span>
+          </td>
+          <td style="font-weight: 600; min-width: 220px;">
+            <div>${escapeHtml(t.title)}</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono);">#${escapeHtml(taskId.substring(0, 8))}</div>
+          </td>
           <td><span class="tag tag-status status-${t.status}">${t.status}</span></td>
           <td><span class="tag tag-project">${escapeHtml(t.project_key || "GLOBAL")}</span></td>
           <td>${escapeHtml(t.owner_name || "Tôi")}</td>
-          <td>${formatDate(t.due_date)}</td>
-          <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-muted);">
-            "${escapeHtml(snippet)}"
+          <td>
+            <div>${escapeHtml(requester)}</div>
+            ${t.channel_or_group ? `<div style="font-size: 10px; color: var(--text-muted);">${escapeHtml(t.channel_or_group)}</div>` : ""}
+          </td>
+          <td>${dueBadge}</td>
+          <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-muted);">
+            ${snippet ? `"${escapeHtml(snippet)}"` : "—"}
+            ${sourceInfo.link ? `<br><a href="${sourceInfo.link}" target="_blank" style="color: var(--accent-primary); font-size: 11px; text-decoration: underline;">${sourceInfo.actionLabel}</a>` : ""}
           </td>
           <td>
-            <button class="btn btn-sm" onclick="updateTaskStatus('${t.id}', 'DONE')">Xong</button>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Sửa">✏️</button>
+              <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${taskId}', 'DONE')" title="Xong">✓</button>
+            </div>
           </td>
         `;
         tbody.appendChild(tr);
@@ -2212,20 +3040,54 @@
 
     // --- Interactive Action Handlers (Real REST API Mutations Only) ---
     async function updateTaskStatus(taskId, newStatus) {
+      if (!taskId) return;
+
+      // 1. Optimistic in-memory update
+      let taskUpdated = null;
+      if (Array.isArray(cachedTodayTasks)) {
+        const t = cachedTodayTasks.find(x => (x.id === taskId || x.task_id === taskId));
+        if (t) {
+          t.status = newStatus;
+          taskUpdated = t;
+        }
+      }
+      if (Array.isArray(cachedAllTasks)) {
+        const t = cachedAllTasks.find(x => (x.id === taskId || x.task_id === taskId));
+        if (t) {
+          t.status = newStatus;
+          if (!taskUpdated) taskUpdated = t;
+        }
+      }
+
+      const statusLabels = {
+        "IN_PROGRESS": "Đang làm (IN_PROGRESS)",
+        "TODO": "Cần làm (TODO)",
+        "BLOCKED": "Bị nghẽn (BLOCKED)",
+        "DONE": "Hoàn thành (DONE)"
+      };
+      showToast(`Đã chuyển trạng thái sang "${statusLabels[newStatus] || newStatus}"`, "success");
+
+      // 2. Immediate re-render so user sees it right away
+      if (CONFIG.currentView === "today") {
+        renderTodayList();
+      } else if (CONFIG.currentView === "tasks") {
+        applyTaskFilters();
+      }
+
+      // 3. Sync to backend API
       try {
-        const res = await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}/status`, {
+        const res = await fetch(`${CONFIG.apiBase}/api/tasks/${encodeURIComponent(taskId)}/status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: newStatus, new_status: newStatus, actor: "USER" })
+          body: JSON.stringify({ status: newStatus, actor: "USER" })
         });
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
-        showToast(`Đã cập nhật trạng thái sang ${newStatus}`, "success");
-        renderCurrentView();
       } catch (err) {
-        showToast(`Lỗi cập nhật trạng thái: ${err.message}`, "warning");
+        showToast(`Lỗi đồng bộ trạng thái: ${err.message}`, "warning");
+        renderCurrentView();
       }
     }
 
@@ -2426,8 +3288,25 @@
       if (!confirm("Bạn có chắc chắn muốn xóa/hủy bỏ công việc này không?")) {
         return;
       }
+      // 1. Optimistic removal
+      if (Array.isArray(cachedTodayTasks)) {
+        cachedTodayTasks = cachedTodayTasks.filter(t => (t.id !== taskId && t.task_id !== taskId));
+      }
+      if (Array.isArray(cachedAllTasks)) {
+        cachedAllTasks = cachedAllTasks.filter(t => (t.id !== taskId && t.task_id !== taskId));
+      }
+      showToast("Đã loại bỏ công việc thành công!", "info");
+
+      // 2. Immediate UI update
+      if (CONFIG.currentView === "today") {
+        renderTodayList();
+      } else if (CONFIG.currentView === "tasks") {
+        applyTaskFilters();
+      }
+
+      // 3. Sync delete to backend
       try {
-        const res = await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}/delete`, {
+        const res = await fetch(`${CONFIG.apiBase}/api/tasks/${encodeURIComponent(taskId)}/delete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" }
         });
@@ -2435,10 +3314,9 @@
           const errJson = await res.json().catch(() => ({}));
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
-        showToast("Đã loại bỏ công việc thành công!", "info");
-        renderCurrentView();
       } catch (err) {
-        showToast(`Lỗi xóa công việc: ${err.message}`, "warning");
+        showToast(`Lỗi xóa công việc trên máy chủ: ${err.message}`, "warning");
+        renderCurrentView();
       }
     }
 
@@ -2469,7 +3347,8 @@
     function openEditTaskModal(taskId) {
       currentEditingRevId = taskId;
       isEditingReviewQueueItem = false;
-      const task = (cachedAllTasks || []).find(x => (x.id === taskId || x.task_id === taskId));
+      const task = (cachedTodayTasks || []).find(x => (x.id === taskId || x.task_id === taskId)) ||
+                   (cachedAllTasks || []).find(x => (x.id === taskId || x.task_id === taskId));
 
       document.getElementById("editTaskId").value = taskId;
       document.getElementById("editModalTitle").innerText = "✏️ Chỉnh Sửa Công Việc";

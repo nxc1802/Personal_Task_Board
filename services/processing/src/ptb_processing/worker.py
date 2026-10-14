@@ -13,7 +13,7 @@ Quản lý vòng lặp xử lý:
 import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import uuid4
 
 from ptb_contracts.l1_acquisition import (
