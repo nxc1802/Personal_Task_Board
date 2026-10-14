@@ -249,6 +249,47 @@ class Tools:
             return self._offline_error(endpoint)
         return f"✅ **Đã cập nhật task `{task_id}` sang trạng thái `{status_upper}` thành công!**"
 
+    def create_task(
+        self,
+        title: str,
+        description: str = "",
+        project_key: str = "GLOBAL",
+        due_date: str = "",
+        priority_score: float = 50.0,
+    ) -> str:
+        """
+        Tạo mới một công việc trong Personal Task Board.
+        :param title: Tiêu đề công việc cần tạo.
+        :param description: Mô tả chi tiết hoặc ghi chú.
+        :param project_key: Mã dự án (e.g., 'CORE', 'OPS', 'PTB', 'GLOBAL').
+        :param due_date: Hạn chót định dạng ISO hoặc chuỗi (ví dụ: '2026-10-15').
+        :param priority_score: Điểm ưu tiên từ 0 đến 100 (mặc định 50).
+        """
+        endpoint = "/api/tasks"
+        payload = {
+            "title": title,
+            "description": description,
+            "project_key": project_key,
+            "due_date": due_date if due_date else None,
+            "priority_score": priority_score,
+            "actor": "OPENWEBUI",
+        }
+        res = self._http_call(endpoint, method="POST", payload=payload)
+        if res is None:
+            return self._offline_error(endpoint)
+        return f"✅ **Đã tạo thành công task `{res.get('id')}`: {title}!** (Trạng thái: `{res.get('status')}`, Điểm: `{res.get('priority_score')}/100`)"
+
+    def delete_task(self, task_id: str) -> str:
+        """
+        Loại bỏ hoặc đánh dấu hủy bỏ (DISMISSED) một công việc khỏi bảng.
+        :param task_id: Mã ID của task cần xóa hoặc bỏ qua.
+        """
+        endpoint = f"/api/tasks/{task_id}/delete"
+        res = self._http_call(endpoint, method="POST", payload={"actor": "OPENWEBUI"})
+        if res is None:
+            return self._offline_error(endpoint)
+        return f"🗑️ **Đã loại bỏ công việc `{task_id}` thành công.**"
+
     def get_waiting_items(self) -> str:
         """
         Lấy danh sách các việc đang bị nghẽn (BLOCKED) do chờ người khác.
@@ -298,7 +339,8 @@ class Tools:
         :param query: Từ khóa tìm kiếm
         :param knowledge_type: Loại tri thức ('decision', 'lesson', 'all')
         """
-        endpoint = f"/api/knowledge?query={query}&type={knowledge_type}"
+        from urllib.parse import quote
+        endpoint = f"/api/knowledge?query={quote(query)}&type={quote(knowledge_type)}"
         data = self._http_call(endpoint)
         if data is None:
             return self._offline_error(endpoint)

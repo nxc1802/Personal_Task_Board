@@ -160,13 +160,14 @@ class LLMStructuredExtractor:
                     return json.loads(res_body)
             except urllib.error.HTTPError as e:
                 last_error = e
-                # Retry on 500, 502, 503, 504
-                if e.code in (500, 502, 503, 504) and attempt < max_attempts:
+                # Retry on 429, 500, 502, 503, 504
+                if e.code in (429, 500, 502, 503, 504) and attempt < max_attempts:
+                    sleep_s = 6 * attempt if e.code == 429 else 3 * attempt
                     logger.warning(
                         "LLM HTTP %d on attempt %d/%d. Retrying in %ds...",
-                        e.code, attempt, max_attempts, attempt * 3
+                        e.code, attempt, max_attempts, sleep_s
                     )
-                    time.sleep(attempt * 3)
+                    time.sleep(sleep_s)
                     continue
                 raise
             except (TimeoutError, urllib.error.URLError) as e:
@@ -231,6 +232,7 @@ class LLMStructuredExtractor:
         source_type: str = "ms_teams",
         external_url: Optional[str] = None,
         project_key: Optional[str] = None,
+        channel_or_group: Optional[str] = None,
     ) -> UnifiedTaskCandidate:
         """Trích xuất UnifiedTaskCandidate từ ParsedMessageContent."""
         actual_text = parsed.actual_content_text or ""
@@ -287,11 +289,36 @@ class LLMStructuredExtractor:
         ev_id = str(uuid4())
         evidence_snippet = extracted_schema.evidence_snippet or actual_text or quoted_text or ""
 
+        # Xác định EvidenceType chính xác theo từng kênh nguồn dữ liệu
+        st_clean = str(source_type).lower().strip()
+        if st_clean in ("ms_outlook", "ms_outlook_web", "outlook"):
+            ev_type = EvidenceType.EMAIL_THREAD
+        elif st_clean in ("jira",):
+            ev_type = EvidenceType.JIRA_TICKET
+        elif st_clean in ("shortcut",):
+            ev_type = EvidenceType.SHORTCUT_STORY
+        elif st_clean in ("git",):
+            ev_type = EvidenceType.COMPLETION_SIGNAL
+        elif st_clean in ("confluence",):
+            ev_type = EvidenceType.CONFLUENCE_PAGE
+        elif st_clean in ("github",):
+            ev_type = EvidenceType.GITHUB_PR
+        elif st_clean in ("slack", "ms_teams", "ms_teams_web"):
+            lower_act = (actual_text or "").lower()
+            is_commit = parsed.is_quote_reply or any(
+                kw in lower_act for kw in ["để em", "em sẽ", "mình sẽ", "on it", "will do", "will fix", "sẽ xử lý", "sẽ làm"]
+            )
+            ev_type = EvidenceType.CHAT_COMMITMENT if is_commit else EvidenceType.CHAT_REQUEST
+        elif parsed.is_quote_reply:
+            ev_type = EvidenceType.CHAT_COMMITMENT
+        else:
+            ev_type = EvidenceType.CHAT_REQUEST
+
         evidence = EvidenceRecord(
             id=ev_id,
             task_id=task_id,
             raw_event_id=raw_event_id,
-            evidence_type=EvidenceType.CHAT_COMMITMENT if parsed.is_quote_reply else EvidenceType.CHAT_REQUEST,
+            evidence_type=ev_type,
             source_type=source_type,
             external_url=external_url,
             author_canonical_name=actual_author or extracted_schema.owner_name,
@@ -307,8 +334,9 @@ class LLMStructuredExtractor:
             description=extracted_schema.description,
             status=TaskStatus.TODO,
             owner_name=extracted_schema.owner_name,
-            requester_name=extracted_schema.requester_name,
+            requester_name=extracted_schema.requester_name or actual_author,
             project_key=project_key,
+            channel_or_group=channel_or_group,
             due_date=extracted_schema.due_date,
             explicit_deadline=extracted_schema.explicit_deadline,
             extraction_confidence=confidence,
@@ -342,11 +370,32 @@ class LLMStructuredExtractor:
             if hasattr(raw_event.source_type, "value")
             else str(raw_event.source_type)
         )
+
+        # Resolve friendly group / channel name
+        conv_id = raw_event.conversation_or_project_id or ""
+        author = raw_event.author_display_name or ""
+        group_name = None
+        if "dc26e70e6ca64a13bac0d5e8012bf9c1" in conv_id:
+            group_name = "Nhóm Dự Án (Anh Tran Bao, Cuong Nguyen Xuan, Phuc, Quang)"
+        elif "bcf5f11b8f5b45d6abef4042532d11eb" in conv_id:
+            group_name = "Nhóm Core Dev PTB (Cuong Nguyen Xuan, Phuc, Quang)"
+        elif "ea26f0f635c04520ad54a5439a5d2a53" in conv_id:
+            group_name = "Nhóm Thảo Luận (Minh Do Tuan, Thuan Trinh Nam, Tam)"
+        elif "unq.gbl.spaces" in conv_id:
+            group_name = f"Chat riêng 1-1 với {author}" if author else "Chat riêng 1-1"
+        elif "meeting_" in conv_id:
+            group_name = "Cuộc họp Teams (Meeting Thread)"
+        elif "notes" in conv_id:
+            group_name = "Ghi chú cá nhân (Notes)"
+        elif conv_id and conv_id != "unknown_conversation":
+            group_name = conv_id
+
         return self.extract_from_parsed(
             parsed=parsed,
             raw_event_id=raw_event.id,
             source_type=source_type_val,
             external_url=raw_event.deep_link,
+            channel_or_group=group_name,
         )
 
     async def extract_async(

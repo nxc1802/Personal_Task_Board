@@ -12,6 +12,7 @@ Tích hợp tuần tự các bước xử lý RawEvent theo kiến trúc L2 (doc
 
 from dataclasses import dataclass
 import logging
+import re
 from typing import Any, List, Optional
 from uuid import uuid4
 
@@ -34,6 +35,7 @@ from ptb_processing.extractor.llm_extractor import (
     LLMStructuredExtractor,
 )
 from ptb_processing.identity.resolver import IdentityResolutionResult, IdentityResolver
+from ptb_processing.parsers.multi_channel import UnifiedChannelParser
 from ptb_processing.parsers.quote_reply import TeamsQuoteReplyParser
 from ptb_processing.validator.attribution import AttributionReport, AttributionValidator
 
@@ -76,7 +78,8 @@ class ProcessingPipeline:
         intelligence_lifecycle: Optional[TaskIntelligenceLifecycle] = None,
     ) -> None:
         self.task_repo = task_repo
-        self.quote_parser = quote_parser or TeamsQuoteReplyParser()
+        self.multi_channel_parser = UnifiedChannelParser()
+        self.quote_parser = quote_parser or self.multi_channel_parser
         self.identity_resolver = identity_resolver or IdentityResolver()
         self.heuristic_filter = heuristic_filter or HeuristicCandidateFilter()
         self.llm_extractor = llm_extractor or LLMStructuredExtractor()
@@ -95,7 +98,7 @@ class ProcessingPipeline:
     ) -> IdentityResolutionResult:
         """Resolve identity tuân thủ quy tắc bất biến (chỉ exact match mới link ID)."""
         email = external_id if (external_id and "@" in external_id) else None
-        account_id = external_id if (external_id and "@" not in external_id) else None
+        account_id = external_id
 
         if hasattr(self.identity_resolver, "resolve_async"):
             return await self.identity_resolver.resolve_async(
@@ -123,25 +126,40 @@ class ProcessingPipeline:
         bug_logged = False
 
         try:
-            # 1. TeamsQuoteReplyParser: Bóc tách quote/reply, clean HTML
+            # 1. Multi-Channel Parser: Bóc tách quote/reply, clean HTML & chuẩn hóa theo từng kênh
             content_to_parse = (
                 raw_event.raw_payload
                 if raw_event.raw_payload
                 else (raw_event.normalized_text or "")
             )
             actual_author = raw_event.author_display_name or raw_event.author_external_id
-            parsed = self.quote_parser.parse(content_to_parse, actual_author=actual_author)
+
+            if hasattr(self.quote_parser, "get_parser_for_source"):
+                parsed = self.quote_parser.parse(
+                    content_to_parse,
+                    source_type=raw_event.source_type,
+                    actual_author=actual_author,
+                )
+            elif isinstance(self.quote_parser, TeamsQuoteReplyParser) and source_type_str not in ("ms_teams", "ms_teams_web"):
+                parsed = self.multi_channel_parser.parse(
+                    content_to_parse,
+                    source_type=raw_event.source_type,
+                    actual_author=actual_author,
+                )
+            else:
+                parsed = self.quote_parser.parse(content_to_parse, actual_author=actual_author)
+
             if not parsed.actual_content_text and raw_event.normalized_text:
                 parsed.actual_content_text = raw_event.normalized_text
 
-            # 2. HeuristicCandidateFilter: Kiểm tra should_extract(text)
+            # 2. HeuristicCandidateFilter: Kiểm tra should_extract(text, source_type)
             text_for_heuristic = (
                 parsed.actual_content_text
                 or parsed.quoted_content_text
                 or raw_event.normalized_text
                 or ""
             )
-            should_extract = self.heuristic_filter.should_extract(text_for_heuristic)
+            should_extract = self.heuristic_filter.should_extract(text_for_heuristic, source_type=raw_event.source_type)
             if not should_extract:
                 logger.info(
                     "RawEvent %s rejected by HeuristicCandidateFilter. Marking as PROCESSED without LLM call.",
@@ -206,6 +224,13 @@ class ProcessingPipeline:
                     or (raw_event.author_display_name and validated_candidate.owner_name == raw_event.author_display_name)
                 ):
                     owner_ext_id = raw_event.author_external_id
+                elif isinstance(raw_event.raw_payload, dict):
+                    fields = raw_event.raw_payload.get("fields", {})
+                    assignee = fields.get("assignee") if isinstance(fields, dict) else None
+                    if isinstance(assignee, dict) and assignee.get("accountId"):
+                        owner_ext_id = assignee.get("accountId")
+                    elif isinstance(raw_event.raw_payload.get("owner_ids"), list) and raw_event.raw_payload.get("owner_ids"):
+                        owner_ext_id = raw_event.raw_payload.get("owner_ids")[0]
 
                 owner_res = await self._resolve_identity(
                     name=validated_candidate.owner_name,
@@ -227,6 +252,16 @@ class ProcessingPipeline:
                     or (raw_event.author_display_name and validated_candidate.requester_name == raw_event.author_display_name)
                 ):
                     req_ext_id = raw_event.author_external_id
+                elif parsed.is_quote_reply:
+                    payload_str = str(raw_event.raw_payload)
+                    mention_match = re.search(r'class=["\']mention["\'][^>]*itemid=["\']([^"\']+)["\']', payload_str)
+                    if mention_match:
+                        req_ext_id = mention_match.group(1)
+                elif isinstance(raw_event.raw_payload, dict):
+                    fields = raw_event.raw_payload.get("fields", {})
+                    reporter = fields.get("reporter") if isinstance(fields, dict) else None
+                    if isinstance(reporter, dict) and reporter.get("accountId"):
+                        req_ext_id = reporter.get("accountId")
 
                 req_res = await self._resolve_identity(
                     name=validated_candidate.requester_name,

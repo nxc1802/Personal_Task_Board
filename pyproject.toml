@@ -9,6 +9,9 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
+[project.scripts]
+ptb = "scripts.ptb_cli:main"
+
 [tool.uv.workspace]
 members = [
     "packages/*",

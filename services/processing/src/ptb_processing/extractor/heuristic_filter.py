@@ -7,7 +7,7 @@ giúp loại bỏ ~70% tin nhắn rác/chatter trước khi tốn chi phí gọi
 
 import re
 import unicodedata
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 
 class HeuristicCandidateFilter:
@@ -87,6 +87,12 @@ class HeuristicCandidateFilter:
         "gấp",
         "khẩn cấp",
         "sự cố",
+        "hãy implement",
+        "implement",
+        "tiếp tục",
+        "hãy tiếp tục",
+        "viết test",
+        "thêm test",
     ]
 
     # 3. Từ khóa cam kết tiếng Anh
@@ -140,6 +146,10 @@ class HeuristicCandidateFilter:
         "by eod",
         "by cob",
         "before 5pm",
+        "implement",
+        "continue to",
+        "write test",
+        "add test",
     ]
 
     # 5. Regex patterns phát hiện deadline, tickets, bugs
@@ -169,6 +179,14 @@ class HeuristicCandidateFilter:
         ),
     ]
 
+    # 7. Các mẫu biểu thị phủ định hoặc hủy bỏ tác vụ (Negation & Cancellation)
+    NEGATION_PATTERNS = [
+        re.compile(
+            r"\b(?:hủy\s+(?:release|deploy|task|kế\s+hoạch|cuộc\s+họp)|không\s+cần(?:\s+phải)?\s+(?:làm|fix|deploy|test|check|chạy|xử\s+lý|sửa)|đừng\s+(?:làm|sửa|chạy|fix|deploy)|ngưng\s+triển\s+khai|tạm\s+hoãn\s+task|cancel(?:led)?\s+(?:release|deploy|task)|no\s+need\s+to\s+(?:deploy|fix|run|do)|don['’]?t\s+(?:deploy|fix|run|modify))\b",
+            re.IGNORECASE,
+        ),
+    ]
+
     def _normalize_text(self, text: str) -> str:
         """Chuẩn hóa chuỗi văn bản để quét từ khóa."""
         if not text:
@@ -178,8 +196,13 @@ class HeuristicCandidateFilter:
         norm = re.sub(r"\s+", " ", norm).strip()
         return norm
 
-    def should_extract(self, text: str) -> bool:
+    def should_extract(self, text: str, source_type: Optional[str] = None) -> bool:
         """Xác định xem một chuỗi nội dung có tiềm năng chứa task/cam kết hay không.
+
+        Hỗ trợ đa kênh (Multi-Channel):
+        - Các nguồn quản lý tác vụ cấu trúc (Jira, Shortcut, GitHub, Confluence) mặc định là work-items.
+        - Các nguồn Git commits có thông điệp hành động (feat, fix, resolve).
+        - Tin nhắn chat (Teams, Slack) và Email (Outlook) lọc theo từ khóa & heuristic.
 
         Returns:
             bool: True nếu tìm thấy dấu hiệu cam kết, yêu cầu hành động, hoặc deadline/ticket.
@@ -189,6 +212,41 @@ class HeuristicCandidateFilter:
             return False
 
         norm_text = self._normalize_text(text)
+
+        # 0. Kiểm tra phủ định/hủy bỏ tác vụ (Negation rejection)
+        for neg_pat in self.NEGATION_PATTERNS:
+            if neg_pat.search(norm_text):
+                return False
+
+        # Nhận diện các kênh tác vụ có cấu trúc (Structured Work-Item Sources)
+        if source_type:
+            st = str(source_type.value if hasattr(source_type, "value") else source_type).lower().strip()
+            if st in ("jira", "shortcut", "github", "confluence"):
+                if any(w in norm_text for w in ("closed as duplicate", "won't fix", "wont fix", "status: closed", "status: won't fix", "hủy task")):
+                    return False
+                return True
+            if st in ("git",):
+                # Commit mang tính thay đổi chức năng, cam kết hoặc fix lỗi
+                lower_t = text.lower()
+                if any(w in lower_t for w in ("feat", "fix", "resolve", "close", "refactor", "bug", "task", "ops-", "proj-", "ptb-", "review comment", "vendor-", "wip", "để em", "cập nhật", "update", "script", "migration")):
+                    if not any(w in lower_t for w in ("chore", "docs", "style", "bump version", "revert")):
+                        return True
+                if re.search(r"\b[A-Za-z]{2,10}-\d+\b", text):
+                    return True
+                return False
+
+        # Nhận diện tiền tố văn bản đã được parser chuẩn hóa
+        lower_raw = text.strip().lower()
+        if lower_raw.startswith("git commit"):
+            if any(w in lower_raw for w in ("feat", "fix", "resolve", "close", "refactor", "bug", "task", "ops-", "proj-", "ptb-", "review comment")):
+                if not any(w in lower_raw for w in ("chore", "docs", "style", "bump version", "revert")):
+                    return True
+            return False
+
+        if any(lower_raw.startswith(prefix) for prefix in ("[jira", "[shortcut", "[github", "[confluence", "[action item")):
+            if any(w in norm_text for w in ("closed as duplicate", "won't fix", "wont fix", "status: closed", "status: won't fix", "hủy task")):
+                return False
+            return True
 
         # 1. Kiểm tra nếu tin nhắn là thuần túy noise/chatter
         for noise_pat in self.NOISE_PATTERNS:

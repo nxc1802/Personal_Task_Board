@@ -43,6 +43,37 @@ services:
     networks:
       - ptb_network
 
+  # PTB: Unified Task Board Process Supervisor & FastMCP Server
+  ptb-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ptb_app
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000" # REST API & Ingestion Webhooks
+      - "127.0.0.1:8001:8001" # FastMCP Agent Protocol
+    environment:
+      - PTB_HOST=0.0.0.0
+      - PTB_PORT=8000
+      - PTB_MCP_PORT=8001
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USERNAME=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-change_me_in_production}
+      - NEO4J_DATABASE=${NEO4J_DATABASE:-neo4j}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai_compatible}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.5-flash}
+      - TENANT_ID=${TENANT_ID:-local-user}
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    depends_on:
+      - neo4j
+    networks:
+      - ptb_network
+
   # Qwen3: Embedding 0.6B (OpenAI-compatible /v1/embeddings)
   qwen3-embedding:
     profiles: ["local-ai"]

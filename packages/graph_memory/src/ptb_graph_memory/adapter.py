@@ -122,6 +122,20 @@ class GraphitiKevCrossEncoder(CrossEncoderClient):
             raise RuntimeError(f"Kev cross-encoder ranking failed: {exc}") from exc
 
 
+def _is_bolt_port_open(uri: str, timeout: float = 0.2) -> bool:
+    """Kiểm tra nhanh xem cổng Neo4j Bolt có mở không trước khi khởi tạo Graphiti (tránh treo 30s)."""
+    try:
+        from urllib.parse import urlparse
+        import socket
+        parsed = urlparse(uri)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 7687
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 class GraphitiAdapter:
     """Adapter wrapping graphiti_core.Graphiti with graceful degradation & fallback.
     
@@ -157,7 +171,13 @@ class GraphitiAdapter:
         self.embedder = embedder
         self.cross_encoder = cross_encoder
 
+
         if HAS_GRAPHITI_CORE and Graphiti is not None and uri:
+            if not _is_bolt_port_open(uri):
+                logger.debug("Neo4j Bolt port không khả dụng tại %s. Bật chế độ offline fallback cho GraphitiAdapter.", uri)
+                self._graphiti = None
+                self._is_initialized = False
+                return
             try:
                 is_local_ai_enabled = (
                     os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")

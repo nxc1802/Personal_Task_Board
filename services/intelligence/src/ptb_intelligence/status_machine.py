@@ -52,7 +52,7 @@ class StatusInferenceMachine:
     # Keywords for status heuristics
     START_KEYWORDS = [
         "bắt đầu", "đang làm", "đang code", "đang sửa", "đang triển khai",
-        "working on", "started", "in progress", "investigating", "picking up", "take this"
+        "working on", "started", "investigating", "picking up", "take this"
     ]
 
     BLOCKED_KEYWORDS = [

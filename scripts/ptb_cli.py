@@ -272,9 +272,9 @@ class PTBProcessSupervisor:
         shortcut_adapter: Optional[Any] = None,
         sync_worker: Optional[Any] = None,
     ):
-        self.host = host
-        self.app_port = app_port
-        self.mcp_port = mcp_port
+        self.host = host or os.getenv("PTB_HOST", "127.0.0.1")
+        self.app_port = app_port or int(os.getenv("PTB_PORT", "8000"))
+        self.mcp_port = mcp_port or int(os.getenv("PTB_MCP_PORT", "8001"))
         self.tenant_id = tenant_id
         self.enable_playwright = enable_playwright
         self.poll_interval = poll_interval
@@ -1696,6 +1696,10 @@ async def cmd_status(args: argparse.Namespace) -> int:
         GitWatcherAdapter,
         JiraAdapter,
         ShortcutAdapter,
+        ConfluenceAdapter,
+        GitHubAdapter,
+        SlackAdapter,
+        OutlookMailAdapter,
     )
     git_adapter = GitWatcherAdapter(repo_paths=[str(ROOT_DIR)])
     git_health = await git_adapter.health()
@@ -1703,11 +1707,23 @@ async def cmd_status(args: argparse.Namespace) -> int:
     jira_health = await jira_adapter.health()
     shortcut_adapter = ShortcutAdapter()
     shortcut_health = await shortcut_adapter.health()
+    conf_adapter = ConfluenceAdapter()
+    conf_health = await conf_adapter.health()
+    gh_adapter = GitHubAdapter()
+    gh_health = await gh_adapter.health()
+    slack_adapter = SlackAdapter()
+    slack_health = await slack_adapter.health()
+    outlook_adapter = OutlookMailAdapter()
+    outlook_health = await outlook_adapter.health()
 
-    print(f"\n[5] Other Ingestion Adapters:")
-    print(f"    • Git Watcher   : {git_health.get('status', 'unknown').upper()} (Active Repos: {len(git_health.get('valid_git_repos', []))})")
-    print(f"    • Jira Cloud    : {jira_health.get('status', 'unknown').upper()} (Configured: {jira_health.get('configured')})")
-    print(f"    • Shortcut API  : {shortcut_health.get('status', 'unknown').upper()} (Configured: {shortcut_health.get('configured')})")
+    print(f"\n[5] Other Ingestion Adapters (Multi-Channel):")
+    print(f"    • Git Watcher     : {git_health.get('status', 'unknown').upper()} (Active Repos: {len(git_health.get('valid_git_repos', []))})")
+    print(f"    • Jira Cloud      : {jira_health.get('status', 'unknown').upper()} (Configured: {jira_health.get('configured')})")
+    print(f"    • Shortcut API    : {shortcut_health.get('status', 'unknown').upper()} (Configured: {shortcut_health.get('configured')})")
+    print(f"    • Confluence Docs : {conf_health.get('status', 'unknown').upper()} (Configured: {conf_health.get('configured')})")
+    print(f"    • GitHub Issues/PR: {gh_health.get('status', 'unknown').upper()} (Configured: {gh_health.get('configured')})")
+    print(f"    • Slack Workspace : {slack_health.get('status', 'unknown').upper()} (Configured: {slack_health.get('configured')})")
+    print(f"    • Outlook Direct  : {outlook_health.get('status', 'unknown').upper()} (Configured: {outlook_health.get('configured')})")
 
     # 6. Graph Memory Sync Worker & Episodic Graph
     graph_worker_status = "STOPPED"
@@ -1887,6 +1903,66 @@ async def cmd_ingest(args: argparse.Namespace) -> int:
         elif target_source == "shortcut":
             print("  [!] Shortcut chưa được cấu hình credentials (SHORTCUT_API_TOKEN)")
 
+    if target_source in ("all", "outlook", "ms_outlook"):
+        outlook_cfg = src_dict.get("ms_outlook", {})
+        graph_token = outlook_cfg.get("graph_token") or os.getenv("MS_GRAPH_TOKEN")
+        if graph_token:
+            from ptb_acquisition.adapters import OutlookMailAdapter
+            outlook_adapter = OutlookMailAdapter(
+                tenant_id=tenant_id,
+                graph_token=graph_token,
+                folders=outlook_cfg.get("folders", ["Inbox"]),
+            )
+            adapters_to_run.append(("Microsoft Outlook Direct", outlook_adapter))
+        elif target_source in ("outlook", "ms_outlook"):
+            print("  [!] Outlook Direct chưa được cấu hình credentials (MS_GRAPH_TOKEN)")
+
+    if target_source in ("all", "confluence"):
+        conf_cfg = src_dict.get("confluence", {})
+        conf_token = conf_cfg.get("api_token") or os.getenv("CONFLUENCE_API_TOKEN")
+        conf_url = conf_cfg.get("base_url") or os.getenv("CONFLUENCE_BASE_URL")
+        if conf_token and conf_url:
+            from ptb_acquisition.adapters import ConfluenceAdapter
+            confluence_adapter = ConfluenceAdapter(
+                base_url=conf_url,
+                email=conf_cfg.get("email") or os.getenv("CONFLUENCE_EMAIL"),
+                api_token=conf_token,
+                space_keys=conf_cfg.get("space_keys", []),
+                tenant_id=tenant_id,
+            )
+            adapters_to_run.append(("Confluence Knowledge", confluence_adapter))
+        elif target_source == "confluence":
+            print("  [!] Confluence chưa được cấu hình credentials (CONFLUENCE_BASE_URL, CONFLUENCE_API_TOKEN)")
+
+    if target_source in ("all", "github"):
+        gh_cfg = src_dict.get("github", {})
+        gh_token = gh_cfg.get("api_token") or os.getenv("GITHUB_TOKEN")
+        gh_repos = gh_cfg.get("repositories", [])
+        if gh_token or gh_repos:
+            from ptb_acquisition.adapters import GitHubAdapter
+            github_adapter = GitHubAdapter(
+                repositories=gh_repos,
+                api_token=gh_token,
+                tenant_id=tenant_id,
+            )
+            adapters_to_run.append(("GitHub Repositories", github_adapter))
+        elif target_source == "github":
+            print("  [!] GitHub chưa được cấu hình credentials (GITHUB_TOKEN)")
+
+    if target_source in ("all", "slack"):
+        slack_cfg = src_dict.get("slack", {})
+        slack_token = slack_cfg.get("bot_token") or os.getenv("SLACK_BOT_TOKEN")
+        if slack_token:
+            from ptb_acquisition.adapters import SlackAdapter
+            slack_adapter = SlackAdapter(
+                bot_token=slack_token,
+                channels=slack_cfg.get("channels", []),
+                tenant_id=tenant_id,
+            )
+            adapters_to_run.append(("Slack Workspaces", slack_adapter))
+        elif target_source == "slack":
+            print("  [!] Slack chưa được cấu hình credentials (SLACK_BOT_TOKEN)")
+
     print(f"\n  -> Đang quét {len(adapters_to_run)} adapters đã kích hoạt...")
 
     total_synced = 0
@@ -2059,6 +2135,179 @@ async def cmd_graph(args: argparse.Namespace) -> int:
 
 
 # ==============================================================================
+# COMMAND: MCP (ptb mcp config / export / install / serve)
+# ==============================================================================
+async def cmd_mcp(args: argparse.Namespace) -> int:
+    """Quản trị, xuất cấu hình và cài đặt FastMCP Server cho Coding Agents."""
+    action = getattr(args, "mcp_action", None) or "config"
+
+    if action in ("config", "export"):
+        print("\n" + "=" * 75)
+        print("PERSONAL TASK BOARD: MCP CLIENT CONFIGURATION EXPORTER")
+        print("=" * 75)
+        transport = getattr(args, "transport", "stdio")
+        read_only = getattr(args, "read_only", False)
+        host = getattr(args, "host", "127.0.0.1")
+        port = getattr(args, "port", 8001)
+        client_target = getattr(args, "client", "all")
+
+        python_exec = sys.executable
+        ptb_root = str(ROOT_DIR)
+
+        if transport == "stdio":
+            mcp_entry = {
+                "command": python_exec,
+                "args": [
+                    "-m",
+                    "ptb_mcp.server",
+                    "--transport",
+                    "stdio",
+                ] + (["--read-only"] if read_only else []),
+                "env": {
+                    "PYTHONPATH": ptb_root,
+                },
+            }
+        else:
+            mcp_entry = {
+                "url": f"http://{host}:{port}/sse",
+            }
+
+        config_payload = {
+            "mcpServers": {
+                "personal-task-board": mcp_entry,
+            }
+        }
+
+        json_str = json.dumps(config_payload, indent=2, ensure_ascii=False)
+
+        print(f"  • Transport   : {transport.upper()}")
+        print(f"  • Mode        : {'Read-Only (10 tools)' if read_only else 'Full Agent & BE (19 tools)'}")
+        print(f"  • Target      : {client_target.upper()}")
+        print("=" * 75 + "\n")
+
+        print("JSON Cấu hình MCP (Sao chép vào file cấu hình của Coding Agent):")
+        print(json_str)
+        print("\n" + "-" * 75)
+        print("Đường dẫn file cấu hình phổ biến trên máy tính:")
+        print("  1. Google Antigravity : %USERPROFILE%\\.gemini\\antigravity-ide\\mcp_config.json")
+        print("  2. Claude Desktop     : %APPDATA%\\Claude\\claude_desktop_config.json")
+        print("  3. Cursor             : .cursor/mcp.json (trong workspace) hoặc %USERPROFILE%\\.cursor\\mcp.json")
+        print("  4. VS Code (Cline/Roo): .vscode/mcp.json")
+        print("  5. Windsurf           : %USERPROFILE%\\.codeium\\windsurf\\mcp_config.json")
+        print("-" * 75)
+        print("Mẹo: Dùng lệnh 'ptb mcp install' để tự động ghi cấu hình vào các file trên!")
+        return 0
+
+    elif action == "install":
+        print("\n" + "=" * 75)
+        print("PERSONAL TASK BOARD: AUTO-INSTALLING MCP CLIENT CONFIGURATION")
+        print("=" * 75)
+        transport = getattr(args, "transport", "stdio")
+        read_only = getattr(args, "read_only", False)
+        host = getattr(args, "host", "127.0.0.1")
+        port = getattr(args, "port", 8001)
+        client_target = getattr(args, "client", "all")
+
+        python_exec = sys.executable
+        ptb_root = str(ROOT_DIR)
+
+        if transport == "stdio":
+            mcp_entry = {
+                "command": python_exec,
+                "args": [
+                    "-m",
+                    "ptb_mcp.server",
+                    "--transport",
+                    "stdio",
+                ] + (["--read-only"] if read_only else []),
+                "env": {
+                    "PYTHONPATH": ptb_root,
+                },
+            }
+        else:
+            mcp_entry = {
+                "url": f"http://{host}:{port}/sse",
+            }
+
+        candidates = {}
+        # Antigravity
+        antigravity_paths = [
+            Path(os.path.expandvars(r"%USERPROFILE%\.gemini\antigravity-ide\mcp_config.json")),
+            Path(os.path.expandvars(r"%USERPROFILE%\.gemini\config\mcp_config.json")),
+        ]
+        candidates["antigravity"] = [p for p in antigravity_paths if p.parent.exists()]
+
+        # Claude Desktop
+        claude_path = Path(os.path.expandvars(r"%APPDATA%\Claude\claude_desktop_config.json"))
+        candidates["claude"] = [claude_path]
+
+        # Cursor
+        cursor_paths = [
+            ROOT_DIR / ".cursor" / "mcp.json",
+            Path(os.path.expandvars(r"%USERPROFILE%\.cursor\mcp.json")),
+        ]
+        candidates["cursor"] = cursor_paths
+
+        # VS Code
+        vscode_paths = [
+            ROOT_DIR / ".vscode" / "mcp.json",
+        ]
+        candidates["vscode"] = vscode_paths
+
+        # Windsurf
+        windsurf_path = Path(os.path.expandvars(r"%USERPROFILE%\.codeium\windsurf\mcp_config.json"))
+        candidates["windsurf"] = [windsurf_path]
+
+        installed_count = 0
+        targets_to_check = candidates.keys() if client_target == "all" else [client_target]
+
+        for client_name in targets_to_check:
+            path_list = candidates.get(client_name, [])
+            for p in path_list:
+                try:
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    data = {}
+                    if p.exists() and p.stat().st_size > 0:
+                        try:
+                            data = json.loads(p.read_text(encoding="utf-8"))
+                        except Exception:
+                            data = {}
+                    if not isinstance(data, dict):
+                        data = {}
+                    if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
+                        data["mcpServers"] = {}
+                    data["mcpServers"]["personal-task-board"] = mcp_entry
+
+                    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                    print(f"  [✓] Đã cài đặt vào {client_name.capitalize()}: {p}")
+                    installed_count += 1
+                except Exception as ex:
+                    print(f"  [✗] Lỗi cài đặt {client_name} ({p}): {ex}")
+
+        print("\n" + "=" * 75)
+        print(f"Hoàn tất: Đã cài đặt / cập nhật cấu hình vào {installed_count} vị trí.")
+        print("=" * 75)
+        return 0
+
+    elif action == "serve":
+        from ptb_mcp.server import run_mcp_server, run_stdio_server
+        transport = getattr(args, "transport", "sse")
+        read_only = getattr(args, "read_only", False)
+        host = getattr(args, "host", "127.0.0.1")
+        port = getattr(args, "port", 8001)
+
+        if transport == "sse":
+            run_mcp_server(host=host, port=port, read_only=read_only)
+        else:
+            await run_stdio_server(read_only=read_only)
+        return 0
+
+    else:
+        print(f"Hành động MCP không hợp lệ: {action}. Sử dụng: ptb mcp config | install | serve")
+        return 1
+
+
+# ==============================================================================
 # MAIN ENTRYPOINT
 # ==============================================================================
 def main():
@@ -2072,9 +2321,9 @@ def main():
 
     # Command: run (Process Supervisor)
     parser_run = subparsers.add_parser("run", help="Khởi chạy và giám sát toàn bộ hệ thống PTB (Process Supervisor)")
-    parser_run.add_argument("--host", default="127.0.0.1", help="Host lắng nghe (mặc định 127.0.0.1)")
-    parser_run.add_argument("--port", type=int, default=8000, help="Cổng Application REST API (mặc định 8000)")
-    parser_run.add_argument("--mcp-port", type=int, default=8001, help="Cổng FastMCP SSE (mặc định 8001)")
+    parser_run.add_argument("--host", default=os.getenv("PTB_HOST", "127.0.0.1"), help="Host lắng nghe (mặc định 127.0.0.1 hoặc PTB_HOST)")
+    parser_run.add_argument("--port", type=int, default=int(os.getenv("PTB_PORT", "8000")), help="Cổng Application REST API (mặc định 8000 hoặc PTB_PORT)")
+    parser_run.add_argument("--mcp-port", type=int, default=int(os.getenv("PTB_MCP_PORT", "8001")), help="Cổng FastMCP SSE (mặc định 8001 hoặc PTB_MCP_PORT)")
     parser_run.add_argument("--tenant-id", default="local-user", help="Tenant ID")
     parser_run.add_argument("--poll-interval", type=float, default=2.0, help="Chu kỳ thăm dò của worker (giây)")
     parser_run.add_argument("--no-playwright", action="store_true", help="Không khởi chạy Playwright browser daemon")
@@ -2098,12 +2347,36 @@ def main():
     owui_inst.add_argument("--url", default="http://127.0.0.1:3000", help="URL của OpenWebUI")
     owui_inst.add_argument("--data-dir", default=None, help="Thư mục data OpenWebUI")
 
+    # Command: mcp
+    parser_mcp = subparsers.add_parser("mcp", help="Quản lý, xuất cấu hình và cài đặt FastMCP Server cho Coding Agents")
+    mcp_sub = parser_mcp.add_subparsers(dest="mcp_action")
+
+    mcp_cfg = mcp_sub.add_parser("config", aliases=["export"], help="Xuất file cấu hình MCP cho Coding Agents")
+    mcp_cfg.add_argument("--client", choices=["all", "antigravity", "cursor", "claude", "vscode", "windsurf"], default="all")
+    mcp_cfg.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
+    mcp_cfg.add_argument("--host", default="127.0.0.1")
+    mcp_cfg.add_argument("--port", type=int, default=8001)
+    mcp_cfg.add_argument("--read-only", action="store_true", help="Chỉ bật chế độ Read-Only 10 tools")
+
+    mcp_inst = mcp_sub.add_parser("install", help="Tự động ghi cấu hình MCP vào file của Coding Agent")
+    mcp_inst.add_argument("--client", choices=["all", "antigravity", "cursor", "claude", "vscode", "windsurf"], default="all")
+    mcp_inst.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
+    mcp_inst.add_argument("--host", default="127.0.0.1")
+    mcp_inst.add_argument("--port", type=int, default=8001)
+    mcp_inst.add_argument("--read-only", action="store_true", help="Chỉ bật chế độ Read-Only 10 tools")
+
+    mcp_srv = mcp_sub.add_parser("serve", help="Khởi chạy FastMCP Server độc lập")
+    mcp_srv.add_argument("--transport", choices=["sse", "stdio"], default="sse")
+    mcp_srv.add_argument("--host", default="127.0.0.1")
+    mcp_srv.add_argument("--port", type=int, default=8001)
+    mcp_srv.add_argument("--read-only", action="store_true", help="Chỉ bật chế độ Read-Only 10 tools")
+
     # Command: init
     parser_init = subparsers.add_parser("init", help="Khởi tạo database constraints & seed data")
 
     # Command: ingest
     parser_ingest = subparsers.add_parser("ingest", help="Chạy 1 vòng quét tất cả các adapters")
-    parser_ingest.add_argument("--source", default="all", choices=["all", "coding_agent", "git", "jira", "shortcut"], help="Nguồn cần nạp")
+    parser_ingest.add_argument("--source", default="all", choices=["all", "coding_agent", "git", "jira", "shortcut", "outlook", "confluence", "github", "slack"], help="Nguồn cần nạp")
     parser_ingest.add_argument("--tenant-id", default="local-user", help="Tenant ID")
     parser_ingest.add_argument("--config", default=None, help="Đường dẫn file cấu hình sources.yaml")
 
@@ -2133,6 +2406,7 @@ def main():
         "doctor": cmd_doctor,
         "login": cmd_login,
         "openwebui": cmd_openwebui,
+        "mcp": cmd_mcp,
         "init": cmd_init,
         "ingest": cmd_ingest,
         "status": cmd_status,

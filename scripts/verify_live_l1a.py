@@ -6,6 +6,11 @@ import logging
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from playwright.async_api import async_playwright, Response
 from ptb_acquisition.playwright.outlook_interceptor import OutlookNetworkInterceptor
 from ptb_acquisition.playwright.teams_interceptor import TeamsNetworkInterceptor

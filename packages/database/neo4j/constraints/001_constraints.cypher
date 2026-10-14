@@ -85,3 +85,15 @@ FOR (d:Decision) ON (d.topic);
 
 CREATE INDEX idx_lesson_topic IF NOT EXISTS 
 FOR (l:Lesson) ON (l.topic);
+
+CREATE INDEX idx_evidence_sync_status IF NOT EXISTS 
+FOR (e:Evidence) ON (e.graph_sync_status);
+
+CREATE INDEX idx_evidence_task_id IF NOT EXISTS 
+FOR (e:Evidence) ON (e.task_id);
+
+CREATE INDEX idx_task_owner IF NOT EXISTS 
+FOR (t:UnifiedTask) ON (t.owner_canonical_id);
+
+CREATE INDEX idx_task_project IF NOT EXISTS 
+FOR (t:UnifiedTask) ON (t.project_key);

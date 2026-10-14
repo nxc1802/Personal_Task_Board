@@ -69,7 +69,11 @@ class MockTaskDomainRepository:
         self.tasks[task.id] = task
         return task.id
 
-    async def record_status_transition_audit(self, audit: StatusTransitionAuditRecord) -> str:
+    async def save_task(self, task: UnifiedTaskCandidate) -> str:
+        self.tasks[task.id] = task
+        return task.id
+
+    async def record_status_transition_audit(self, audit: StatusTransitionAuditRecord, **kwargs: Any) -> str:
         self.audits.append(audit)
         return audit.id
 
@@ -170,6 +174,18 @@ class MockCheckpointRepository:
 
 
 class MockGraphitiMemoryClient:
+    def __init__(self):
+        self.decisions: List[Any] = []
+        self.lessons: List[Any] = []
+
+    async def add_decision(self, decision: Any) -> str:
+        self.decisions.append(decision)
+        return getattr(decision, "decision_id", "dec-1")
+
+    async def add_lesson_episode(self, lesson: Any) -> str:
+        self.lessons.append(lesson)
+        return getattr(lesson, "lesson_id", "les-1")
+
     async def search_context(self, query: str, limit: int = 5, include_invalidated: bool = False) -> List[Dict[str, Any]]:
         now = datetime.now(timezone.utc).isoformat()
         return [
@@ -274,7 +290,12 @@ def mock_app_service() -> ApplicationService:
 
 @pytest.fixture
 def mcp_server(mock_app_service: ApplicationService):
-    return create_mcp_server(app_service=mock_app_service)
+    return create_mcp_server(app_service=mock_app_service, read_only=True)
+
+
+@pytest.fixture
+def mcp_server_full(mock_app_service: ApplicationService):
+    return create_mcp_server(app_service=mock_app_service, read_only=False)
 
 
 def _extract_content(result: Any) -> Any:
@@ -635,7 +656,7 @@ async def test_mcp_and_fastapi_shared_application_service():
 @pytest.mark.asyncio
 async def test_mcp_health_healthy(mock_app_service: ApplicationService):
     """Kiểm tra get_mcp_health() và GET /health trả về status 'healthy' (HTTP 200) khi ApplicationService khỏe mạnh."""
-    srv = create_mcp_server(application_service=mock_app_service)
+    srv = create_mcp_server(application_service=mock_app_service, read_only=True)
 
     # 1. Kiểm tra trực tiếp hàm get_mcp_health()
     health_data = await get_mcp_health(mock_app_service)
@@ -659,6 +680,19 @@ async def test_mcp_health_healthy(mock_app_service: ApplicationService):
             "tools_count": 10,
         }
 
+    set_mcp_app_service(None)
+
+
+@pytest.mark.asyncio
+async def test_mcp_health_healthy_full_mode(mock_app_service: ApplicationService):
+    """Kiểm tra get_mcp_health() phản ánh chính xác 19 tools ở chế độ full mode."""
+    srv = create_mcp_server(application_service=mock_app_service, read_only=False)
+    health_data = await get_mcp_health(mock_app_service)
+    assert health_data["tools_count"] == 19
+    with TestClient(srv.sse_app()) as client:
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["tools_count"] == 19
     set_mcp_app_service(None)
 
 
@@ -722,4 +756,221 @@ async def test_mcp_health_reflects_shared_application_service_state(mock_app_ser
 
     set_mcp_app_service(None)
     set_api_app_service(None)
+
+
+# ==============================================================================
+# TESTS FOR EXTENDED MCP CAPABILITIES (Agent & BE for Coding Agents)
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_tool_count_and_capabilities_full_mode(mcp_server_full):
+    """Kiểm tra server ở chế độ full có đầy đủ 19 tools, 3 resources, và 2 prompts cho Coding Agents."""
+    tools = await mcp_server_full.list_tools()
+    tool_names = [t.name for t in tools]
+    assert len(tool_names) == 19, f"Expected 19 tools, got {len(tool_names)}: {tool_names}"
+
+    expected_extended_tools = [
+        "create_task",
+        "update_task_status",
+        "update_task",
+        "delete_task",
+        "approve_task",
+        "dismiss_task",
+        "ask_ptb_agent",
+        "record_decision",
+        "record_lesson_learned",
+    ]
+    for ext_tool in expected_extended_tools:
+        assert ext_tool in tool_names, f"Missing extended tool: {ext_tool}"
+
+    # Resources
+    resources = await mcp_server_full.list_resources()
+    resource_uris = [str(r.uri) for r in resources]
+    assert "ptb://today-plan" in resource_uris
+    assert "ptb://tasks" in resource_uris
+    assert "ptb://system-health" in resource_uris
+
+    # Prompts
+    prompts = await mcp_server_full.list_prompts()
+    prompt_names = [p.name for p in prompts]
+    assert "morning_briefing" in prompt_names
+    assert "task_execution_context" in prompt_names
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_create_task(mcp_server_full):
+    """Kiểm tra tool create_task tạo thành công task mới trong BE từ Coding Agent."""
+    res = await mcp_server_full.call_tool(
+        "create_task",
+        {
+            "title": "Fix memory leak in websocket listener",
+            "description": "Investigate unclosed connection in event loop",
+            "project_key": "CORE",
+            "priority_score": 85.0,
+        },
+    )
+    assert res.is_error is False
+    content = _extract_content(res)
+    assert isinstance(content, dict)
+    assert content["title"] == "Fix memory leak in websocket listener"
+    assert content["status"] == "TODO"
+    assert content["priority_score"] == 85.0
+    task_id = content["id"]
+
+    # Tra cứu lại qua get_tasks thấy task vừa tạo
+    tasks_res = await mcp_server_full.call_tool("get_tasks", {"filters": {"status": "TODO"}})
+    tasks = _extract_content(tasks_res)
+    assert any(t["id"] == task_id for t in tasks)
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_update_task_status(mcp_server_full):
+    """Kiểm tra tool update_task_status cập nhật trạng thái kèm audit log."""
+    res = await mcp_server_full.call_tool(
+        "update_task_status",
+        {
+            "task_id": "task-101",
+            "new_status": "IN_PROGRESS",
+            "actor": "CODING_AGENT",
+        },
+    )
+    assert res.is_error is False
+    content = _extract_content(res)
+    assert content["success"] is True
+
+    # Kiểm tra get_task_context thấy status mới là IN_PROGRESS
+    ctx_res = await mcp_server_full.call_tool("get_task_context", {"task_id": "task-101"})
+    ctx = _extract_content(ctx_res)
+    assert ctx["task"]["status"] == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_update_task(mcp_server_full):
+    """Kiểm tra tool update_task chỉnh sửa thông tin chi tiết task."""
+    res = await mcp_server_full.call_tool(
+        "update_task",
+        {
+            "task_id": "task-101",
+            "title": "Triển khai FastMCP Server v2",
+            "priority_score": 98.0,
+            "description": "Updated by Cursor Coding Agent",
+        },
+    )
+    assert res.is_error is False
+    content = _extract_content(res)
+    assert content["success"] is True
+    assert content["task"]["title"] == "Triển khai FastMCP Server v2"
+    assert content["task"]["priority_score"] == 98.0
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_delete_task(mcp_server_full):
+    """Kiểm tra tool delete_task loại bỏ / dismiss task."""
+    res = await mcp_server_full.call_tool("delete_task", {"task_id": "task-101"})
+    assert res.is_error is False
+    content = _extract_content(res)
+    assert content["success"] is True
+
+    ctx_res = await mcp_server_full.call_tool("get_task_context", {"task_id": "task-101"})
+    ctx = _extract_content(ctx_res)
+    assert ctx["task"]["status"] == "DISMISSED"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_approve_and_dismiss_review(mcp_server_full):
+    """Kiểm tra tool approve_task và dismiss_task thao tác trên review queue."""
+    appr_res = await mcp_server_full.call_tool("approve_task", {"review_id": "task-102", "new_status": "TODO"})
+    assert appr_res.is_error is False
+    appr_data = _extract_content(appr_res)
+    assert appr_data["success"] is True
+
+    rev_res = await mcp_server_full.call_tool("get_review_queue", {})
+    rev_items = _extract_content(rev_res)
+    assert len(rev_items) == 0
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_ask_ptb_agent(mcp_server_full):
+    """Kiểm tra tool ask_ptb_agent trả lời tổng hợp dữ liệu đồ thị."""
+    res = await mcp_server_full.call_tool("ask_ptb_agent", {"prompt": "Có task nào đang bị blocked không?"})
+    assert res.is_error is False
+    data = _extract_content(res)
+    assert isinstance(data, dict)
+    assert "reply" in data
+    assert data["context_grounded"] is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_record_decision_and_lesson(mcp_server_full):
+    """Kiểm tra tools record_decision và record_lesson_learned ghi vào graph memory."""
+    dec_res = await mcp_server_full.call_tool(
+        "record_decision",
+        {
+            "summary": "Sử dụng Stdio transport cho Coding Agents",
+            "rationale": "Bảo mật và tích hợp trực tiếp không cần mở port mạng",
+            "project_key": "MCP",
+        },
+    )
+    assert dec_res.is_error is False
+    dec_data = _extract_content(dec_res)
+    assert dec_data["success"] is True
+    assert dec_data["decision"]["summary"] == "Sử dụng Stdio transport cho Coding Agents"
+
+    les_res = await mcp_server_full.call_tool(
+        "record_lesson_learned",
+        {
+            "topic": "FastMCP Windows Event Loop",
+            "solution": "Sử dụng ProactorEventLoop trên Windows",
+            "error_context": "RuntimeError: Event loop is closed",
+        },
+    )
+    assert les_res.is_error is False
+    les_data = _extract_content(les_res)
+    assert les_data["success"] is True
+    assert les_data["lesson"]["topic"] == "FastMCP Windows Event Loop"
+
+
+@pytest.mark.asyncio
+async def test_mcp_resources_and_prompts(mcp_server_full):
+    """Kiểm tra đọc MCP resources và lấy MCP prompts."""
+    r1 = await mcp_server_full.read_resource("ptb://today-plan")
+    assert len(r1) > 0
+    assert "top_tasks" in r1[0].content
+
+    r2 = await mcp_server_full.read_resource("ptb://system-health")
+    assert len(r2) > 0
+    assert "status" in r2[0].content
+
+    p1 = await mcp_server_full.get_prompt("morning_briefing", {})
+    assert len(p1.messages) > 0
+    assert "today-plan" in p1.messages[0].content.text
+
+
+@pytest.mark.asyncio
+async def test_cli_mcp_config_and_install():
+    """Kiểm tra lệnh CLI ptb mcp config và ptb mcp install qua cmd_mcp."""
+    import argparse
+    from scripts.ptb_cli import cmd_mcp
+
+    args_config = argparse.Namespace(
+        mcp_action="config",
+        transport="stdio",
+        read_only=False,
+        host="127.0.0.1",
+        port=8001,
+        client="all",
+    )
+    ret1 = await cmd_mcp(args_config)
+    assert ret1 == 0
+
+    args_sse = argparse.Namespace(
+        mcp_action="config",
+        transport="sse",
+        read_only=False,
+        host="127.0.0.1",
+        port=8001,
+        client="all",
+    )
+    ret2 = await cmd_mcp(args_sse)
+    assert ret2 == 0
 

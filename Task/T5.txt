@@ -1,0 +1,1 @@
+Xuất Agent, BE thành MCP để Coding Agent có thể sử dụng bên cạnh việc User sử dụng thông qua WebOpenUI

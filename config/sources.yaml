@@ -138,3 +138,40 @@ sources:
       - "main"
       - "master"
       - "develop"
+
+  # ----------------------------------------------------------------------------
+  # 7. Confluence Knowledge & Meeting Notes (REST API)
+  # ----------------------------------------------------------------------------
+  confluence:
+    enabled: false
+    source_type: "confluence"
+    base_url: "${CONFLUENCE_BASE_URL:-https://your-domain.atlassian.net/wiki}"
+    email: "${CONFLUENCE_EMAIL:-user@example.com}"
+    api_token: "${CONFLUENCE_API_TOKEN:-}"
+    space_keys:
+      - "ENG"
+      - "OPS"
+    poll_interval_seconds: 120
+
+  # ----------------------------------------------------------------------------
+  # 8. GitHub Issues & Pull Requests (REST API v3)
+  # ----------------------------------------------------------------------------
+  github:
+    enabled: false
+    source_type: "github"
+    api_token: "${GITHUB_TOKEN:-}"
+    repositories:
+      - "owner/repo"
+    poll_interval_seconds: 60
+
+  # ----------------------------------------------------------------------------
+  # 9. Slack Conversations & Threads (Web API)
+  # ----------------------------------------------------------------------------
+  slack:
+    enabled: false
+    source_type: "slack"
+    bot_token: "${SLACK_BOT_TOKEN:-}"
+    channels:
+      - "general"
+      - "devops"
+    poll_interval_seconds: 60

@@ -340,6 +340,76 @@ PORTAL_HTML = r"""<!DOCTYPE html>
       to { transform: rotate(360deg); }
     }
     .btn.loading .spinner { display: inline-block; }
+
+    /* Chatbot Styles */
+    .chip {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: #cbd5e1;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: var(--font);
+    }
+    .chip:hover {
+      background: rgba(59, 130, 246, 0.25);
+      border-color: var(--accent);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+    .chat-container {
+      background: #0d131f;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-top: 14px;
+      height: 360px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .chat-bubble {
+      max-width: 88%;
+      padding: 12px 18px;
+      border-radius: 14px;
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+    .chat-bubble.ai {
+      align-self: flex-start;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: #f1f5f9;
+      box-shadow: var(--shadow-sm);
+    }
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: var(--accent-gradient);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+    .bubble-header {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+      opacity: 0.85;
+    }
+    .bubble-content p { margin-bottom: 8px; }
+    .bubble-content p:last-child { margin-bottom: 0; }
+    .bubble-content ul, .bubble-content ol { margin-left: 20px; margin-bottom: 8px; }
+    .bubble-content strong { color: #93c5fd; }
+    .bubble-content code {
+      background: rgba(0,0,0,0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
@@ -453,10 +523,16 @@ PORTAL_HTML = r"""<!DOCTYPE html>
               <input type="text" id="gitRepoPath" value="" placeholder="Mặc định: workspace hiện tại hoặc thư mục mẹ...">
             </div>
 
-            <button id="btnScanL1" class="btn btn-primary" style="width: 100%;" onclick="runLayer1Scan()">
-              <span class="spinner" id="spinnerScan"></span>
-              <span>🔄 Kích Hoạt Quét Toàn Bộ Layer 1 & Lưu Database</span>
-            </button>
+            <div style="display: flex; gap: 10px; margin-top: 4px;">
+              <button id="btnScanL1" class="btn btn-primary" style="flex: 1; padding: 10px 10px; font-size: 13px;" onclick="runLayer1Scan()">
+                <span class="spinner" id="spinnerScan"></span>
+                <span>🔄 Quét Local (Git & Agent)</span>
+              </button>
+              <button id="btnScanTeams" class="btn btn-primary" style="flex: 1; padding: 10px 10px; font-size: 13px; background: linear-gradient(135deg, #6366f1, #8b5cf6);" onclick="runTeamsScan()">
+                <span class="spinner" id="spinnerTeams"></span>
+                <span>💬 Quét Microsoft Teams</span>
+              </button>
+            </div>
             <div id="scanResultBox" style="display: none;" class="log-box"></div>
           </div>
         </div>
@@ -477,8 +553,55 @@ PORTAL_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Panel 3: Live Task Board View -->
-    <div class="card">
+    <!-- Panel 3: Interactive AI Chatbot Q&A over Neo4j Database -->
+    <div class="card" style="margin-top: 24px; border: 1px solid rgba(59, 130, 246, 0.4); box-shadow: 0 8px 32px rgba(59, 130, 246, 0.1);">
+      <div class="card-header">
+        <div class="card-title">
+          <span>💬</span> Trợ Lý AI Hỏi Đáp Dữ Liệu (Neo4j Chatbot Q&A)
+        </div>
+        <span class="badge badge-primary">Gemma 4 26B MoE & Neo4j Single-Store</span>
+      </div>
+
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Hỏi đáp trực tiếp bằng ngôn ngữ tự nhiên về toàn bộ dữ liệu thực tế đang lưu trong cơ sở dữ liệu: ai là người nhắn, nhóm thảo luận nào, hạn chót task, Git commits từ các dự án local và tiến độ của Coding Agents.
+      </p>
+
+      <!-- Quick prompts -->
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+        <button class="chip" onclick="askQuickPrompt('Ai là những người nhắn giao việc cho tôi và họ nhắn trong những group nào?')">
+          👤 Ai nhắn việc & group nào?
+        </button>
+        <button class="chip" onclick="askQuickPrompt('Hôm nay có những task nào cần hoàn thành và hạn chót thế nào?')">
+          ⚡ Task cần làm & hạn chót
+        </button>
+        <button class="chip" onclick="askQuickPrompt('Các coding agent và Git commits gần đây trên máy đang làm những gì?')">
+          💻 Coding Agent & Git trên máy
+        </button>
+        <button class="chip" onclick="askQuickPrompt('Tóm tắt tổng quan toàn bộ tiến độ công việc trong database')">
+          📊 Tóm tắt tiến độ tổng thể
+        </button>
+      </div>
+
+      <!-- Chat history area -->
+      <div id="chatHistory" class="chat-container">
+        <div class="chat-bubble ai">
+          <div class="bubble-header">🤖 PTB AI Assistant</div>
+          <div class="bubble-content">Xin chào! Tôi có thể giúp bạn tra cứu bất kỳ thông tin nào trong cơ sở dữ liệu Neo4j (Tasks, người giao việc, nhóm Teams, commits Git hoặc coding agents). Bạn hãy chọn câu hỏi mẫu ở trên hoặc gõ câu hỏi bên dưới nhé!</div>
+        </div>
+      </div>
+
+      <!-- Chat input area -->
+      <div style="display: flex; gap: 10px; margin-top: 14px;">
+        <input type="text" id="chatInput" placeholder="Nhập câu hỏi về dữ liệu trong database... (Nhấn Enter để gửi)" onkeydown="if(event.key==='Enter') sendChatMessage()">
+        <button id="btnSendChat" class="btn btn-primary" onclick="sendChatMessage()" style="white-space: nowrap; padding: 10px 22px;">
+          <span class="spinner" id="spinnerChat"></span>
+          <span>Gửi Hỏi Đáp 🚀</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Panel 4: Live Task Board View -->
+    <div class="card" style="margin-top: 24px;">
       <div class="card-header">
         <div class="card-title">
           <span>📋</span> Danh Sách Công Việc Trong Cơ Sở Dữ Liệu (Neo4j Single-Store)
@@ -495,9 +618,10 @@ PORTAL_HTML = r"""<!DOCTYPE html>
         <table>
           <thead>
             <tr>
-              <th>Tiêu Đề Công Việc</th>
+              <th style="width: 32%;">Tiêu Đề Công Việc</th>
+              <th>Người Giao Việc / Nhắn</th>
+              <th>Nhóm / Kênh Thảo Luận</th>
               <th>Người Thực Hiện</th>
-              <th>Người Giao Việc</th>
               <th>Hạn Chót (Deadline)</th>
               <th>Độ Tin Cậy</th>
               <th>Trạng Thái</th>
@@ -505,7 +629,7 @@ PORTAL_HTML = r"""<!DOCTYPE html>
           </thead>
           <tbody id="taskTableBody">
             <tr>
-              <td colspan="6" class="empty-state">Đang tải dữ liệu từ Neo4j...</td>
+              <td colspan="7" class="empty-state">Đang tải dữ liệu từ Neo4j...</td>
             </tr>
           </tbody>
         </table>
@@ -514,6 +638,9 @@ PORTAL_HTML = r"""<!DOCTYPE html>
   </main>
 
   <script>
+    // Chatbot history state
+    let chatHistoryState = [];
+
     // Load tasks on startup
     document.addEventListener("DOMContentLoaded", () => {
       loadTasks();
@@ -529,7 +656,7 @@ PORTAL_HTML = r"""<!DOCTYPE html>
         document.getElementById("taskCountBadge").innerText = `${tasks.length} Tasks`;
 
         if (!tasks || tasks.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Chưa có công việc nào trong database. Hãy nhập tin nhắn ở trên hoặc kích hoạt quét Layer 1!</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Chưa có công việc nào trong database. Hãy nhập tin nhắn ở trên hoặc kích hoạt quét Layer 1!</td></tr>`;
           return;
         }
 
@@ -539,8 +666,9 @@ PORTAL_HTML = r"""<!DOCTYPE html>
               <div style="font-weight: 700; color: #fff;">${escapeHtml(t.title)}</div>
               <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">${escapeHtml(t.description || '')}</div>
             </td>
+            <td><span style="font-weight: 700; color: #f59e0b;">${escapeHtml(t.requester_name || 'Hệ thống / -')}</span></td>
+            <td><span class="badge" style="background: rgba(99, 102, 241, 0.16); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 11px;">${escapeHtml(t.channel_or_group || 'Chung')}</span></td>
             <td><span style="font-weight: 600; color: #93c5fd;">${escapeHtml(t.owner_name || 'Chưa gán')}</span></td>
-            <td>${escapeHtml(t.requester_name || '-')}</td>
             <td>${t.due_date ? formatDateTime(t.due_date) : '<span style="color:var(--text-dim)">Không có</span>'}</td>
             <td>
               <span class="badge ${t.extraction_confidence >= 0.65 ? 'badge-success' : 'badge-warning'}">
@@ -553,8 +681,97 @@ PORTAL_HTML = r"""<!DOCTYPE html>
           </tr>
         `).join("");
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-state" style="color: #f87171;">Lỗi tải dữ liệu: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color: #f87171;">Lỗi tải dữ liệu: ${err.message}</td></tr>`;
       }
+    }
+
+    function askQuickPrompt(promptText) {
+      document.getElementById("chatInput").value = promptText;
+      sendChatMessage();
+    }
+
+    async function sendChatMessage() {
+      const input = document.getElementById("chatInput");
+      const btn = document.getElementById("btnSendChat");
+      const spinner = document.getElementById("spinnerChat");
+      const chatBox = document.getElementById("chatHistory");
+      const userText = input.value.trim();
+
+      if (!userText) return;
+
+      // Append user bubble
+      input.value = "";
+      btn.disabled = true;
+      spinner.style.display = "inline-block";
+
+      const userBubble = document.createElement("div");
+      userBubble.className = "chat-bubble user";
+      userBubble.innerHTML = `<div class="bubble-header">👤 Bạn</div><div class="bubble-content">${escapeHtml(userText)}</div>`;
+      chatBox.appendChild(userBubble);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      // Append thinking bubble
+      const thinkingBubble = document.createElement("div");
+      thinkingBubble.className = "chat-bubble ai";
+      thinkingBubble.id = "thinkingBubble";
+      thinkingBubble.innerHTML = `<div class="bubble-header">🤖 PTB AI Assistant</div><div class="bubble-content"><em>⏳ Đang truy vấn Neo4j và suy luận câu trả lời...</em></div>`;
+      chatBox.appendChild(thinkingBubble);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      try {
+        const resp = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: userText,
+            history: chatHistoryState
+          })
+        });
+
+        const data = await resp.json();
+        chatBox.removeChild(thinkingBubble);
+
+        const aiBubble = document.createElement("div");
+        aiBubble.className = "chat-bubble ai";
+        const replyHtml = formatMarkdown(data.reply || "Không có câu trả lời.");
+        aiBubble.innerHTML = `<div class="bubble-header">🤖 PTB AI Assistant</div><div class="bubble-content">${replyHtml}</div>`;
+        chatBox.appendChild(aiBubble);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        // Save history state
+        chatHistoryState.push({ role: "user", content: userText });
+        chatHistoryState.push({ role: "assistant", content: data.reply || "" });
+      } catch (err) {
+        if (document.getElementById("thinkingBubble")) {
+          chatBox.removeChild(thinkingBubble);
+        }
+        const errBubble = document.createElement("div");
+        errBubble.className = "chat-bubble ai";
+        errBubble.innerHTML = `<div class="bubble-header">🤖 PTB AI Assistant</div><div class="bubble-content" style="color:#f87171;">⚠️ Lỗi kết nối Chatbot: ${err.message}</div>`;
+        chatBox.appendChild(errBubble);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      } finally {
+        btn.disabled = false;
+        spinner.style.display = "none";
+      }
+    }
+
+    function formatMarkdown(text) {
+      if (!text) return "";
+      let html = escapeHtml(text);
+      // bold
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      // inline code
+      html = html.replace(/`(.*?)`/g, '<code>$1</code>');
+      // unordered lists
+      html = html.replace(/^\s*[\*\-]\s+(.*)$/gm, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>(\n|\\n)?)+/g, '<ul>$&</ul>');
+      // headers
+      html = html.replace(/^### (.*)$/gm, '<h4 style="color:#60a5fa;margin:8px 0 4px;">$1</h4>');
+      html = html.replace(/^## (.*)$/gm, '<h3 style="color:#93c5fd;margin:10px 0 6px;">$1</h3>');
+      // line breaks
+      html = html.replace(/\n/g, '<br>');
+      return html;
     }
 
     async function processPersonalMessage() {
@@ -633,6 +850,39 @@ PORTAL_HTML = r"""<!DOCTYPE html>
           loadTasks();
         } else {
           box.innerText = `[✗] Lỗi quét: ${data.detail || data.error || JSON.stringify(data)}`;
+        }
+      } catch (err) {
+        box.innerText = `[✗] Lỗi kết nối: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+      }
+    }
+
+    async function runTeamsScan() {
+      const btn = document.getElementById("btnScanTeams");
+      const box = document.getElementById("scanResultBox");
+
+      btn.disabled = true;
+      btn.classList.add("loading");
+      box.style.display = "block";
+      box.innerText = "⏳ Đang kết nối Microsoft Teams qua Playwright Session thực tế & quét gói tin JSON...";
+
+      try {
+        const resp = await fetch("/api/ingest/teams", {
+          method: "POST"
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.status === "success") {
+          box.innerText = `[✓] QUÉT MICROSOFT TEAMS THÀNH CÔNG!\n` +
+            `• Gói tin Teams thu nạp (Captured): ${data.captured_teams}\n` +
+            `• Công việc bóc tách & cập nhật (Tasks): ${data.processed_tasks}\n` +
+            `• Chi tiết: ${data.message || 'Hoàn tất'}\n` +
+            `• Đã đồng bộ trực tiếp vào Neo4j Single-Store.`;
+          loadTasks();
+        } else {
+          box.innerText = `[✗] Lỗi quét Teams: ${data.detail || data.error || JSON.stringify(data)}`;
         }
       } catch (err) {
         box.innerText = `[✗] Lỗi kết nối: ${err.message}`;

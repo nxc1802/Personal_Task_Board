@@ -14,6 +14,8 @@ class SourceType(str, Enum):
     SHORTCUT = "shortcut"
     CONFLUENCE = "confluence"
     GIT = "git"
+    GITHUB = "github"
+    SLACK = "slack"
 
 
 class SourceSyncState(str, Enum):

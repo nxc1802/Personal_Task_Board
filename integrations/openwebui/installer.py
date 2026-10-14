@@ -464,6 +464,32 @@ class OpenWebUIInstaller:
                 },
             },
             {
+                "name": "create_task",
+                "description": "Tạo mới một công việc trong Personal Task Board.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Tiêu đề công việc cần tạo."},
+                        "description": {"type": "string", "description": "Mô tả chi tiết hoặc ghi chú."},
+                        "project_key": {"type": "string", "description": "Mã dự án (ví dụ 'GLOBAL', 'CORE', 'OPS')."},
+                        "due_date": {"type": "string", "description": "Hạn chót (ví dụ '2026-10-15')."},
+                        "priority_score": {"type": "number", "description": "Điểm ưu tiên 0-100."},
+                    },
+                    "required": ["title"],
+                },
+            },
+            {
+                "name": "delete_task",
+                "description": "Loại bỏ hoặc đánh dấu hủy bỏ (DISMISSED) một công việc khỏi bảng.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string", "description": "Mã ID của task cần xóa hoặc bỏ qua."},
+                    },
+                    "required": ["task_id"],
+                },
+            },
+            {
                 "name": "get_waiting_items",
                 "description": "Lấy danh sách các việc đang bị nghẽn (BLOCKED) do chờ người khác.",
                 "parameters": {"type": "object", "properties": {}, "required": []},

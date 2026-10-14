@@ -1,0 +1,4 @@
+Tích hợp UI hiện tại vào WebOpenUI để:
+- Chỉ sử dụng 1 UI thôi, không cần 2 nơi
+- Tạo riêng 1 Tab để hiện thị các thông tin dạng Task Component
+- Tab mới này phải có khả năng tương tác với CRUD với BE thay vì Read-only

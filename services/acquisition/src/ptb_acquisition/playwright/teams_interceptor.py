@@ -214,13 +214,16 @@ class TeamsNetworkInterceptor:
             if not isinstance(msg, dict):
                 continue
 
-            msg_id = str(msg.get("id") or msg.get("sequenceId") or uuid.uuid4().hex)
-            conv_id = str(msg.get("conversationId") or msg.get("threadId") or "unknown_conversation")
-            
-            # Người gửi
+            msg_id = str(msg.get("id") or msg.get("sequenceId") or uuid.uuid4().hex[:12])
+
+            # Người gửi và Cuộc trò chuyện / Nhóm
             props = msg.get("properties") if isinstance(msg.get("properties"), dict) else {}
+            act = props.get("activity") if isinstance(props.get("activity"), dict) else {}
+
             im_display = (
-                msg.get("imdisplayname")
+                act.get("sourceUserImDisplayName")
+                or act.get("userDisplayName")
+                or msg.get("imdisplayname")
                 or msg.get("imDisplayName")
                 or msg.get("displayName")
                 or msg.get("userDisplayName")
@@ -231,7 +234,7 @@ class TeamsNetworkInterceptor:
             from_info = msg.get("from") or {}
             if isinstance(from_info, dict):
                 author_id = str(from_info.get("id") or from_info.get("userPrincipalName") or "unknown_author")
-                author_name = from_info.get("displayName") or im_display
+                author_name = im_display or from_info.get("displayName")
             else:
                 raw_from = str(from_info)
                 if "contacts/8:orgid:" in raw_from:
@@ -241,6 +244,15 @@ class TeamsNetworkInterceptor:
                 else:
                     author_id = raw_from
                 author_name = im_display
+
+            conv_id = str(
+                msg.get("conversationId")
+                or msg.get("conversationid")
+                or msg.get("threadId")
+                or act.get("sourceThreadId")
+                or "unknown_conversation"
+            )
+            thread_topic = props.get("threadTopic") or act.get("sourceThreadTopic")
 
             # Nội dung
             body_info = msg.get("body") or msg.get("content") or {}

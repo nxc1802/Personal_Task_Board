@@ -53,6 +53,7 @@ class KnownPersonRecord:
     # account_ids maps (source_type, tenant_id, account_id) or just account_id
     account_ids: set[str] = field(default_factory=set)
     tenant_ids: set[str] = field(default_factory=set)
+    aliases: set[str] = field(default_factory=set)
 
 
 def normalize_vietnamese_text(text: str) -> str:
@@ -96,6 +97,7 @@ class IdentityResolver:
         aad_object_id: Optional[str] = None,
         account_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        aliases: Optional[List[str]] = None,
     ) -> None:
         """Đăng ký thông tin Person vào registry nội bộ (dùng cho in-memory hoặc cache)."""
         if person_id not in self._persons:
@@ -113,6 +115,10 @@ class IdentityResolver:
             person.tenant_ids.add(tenant_id.strip())
         if primary_email:
             person.primary_email = primary_email.lower().strip()
+        if aliases:
+            for alias in aliases:
+                if alias:
+                    person.aliases.add(alias.strip())
 
     def resolve(
         self,
@@ -158,7 +164,7 @@ class IdentityResolver:
         # 2. Kiểm tra EXACT MATCH trên Account ID
         if clean_account_id:
             for p in self._persons.values():
-                if clean_account_id in p.account_ids:
+                if clean_account_id in p.account_ids or (p.primary_email and clean_account_id.lower() == p.primary_email.lower()):
                     return IdentityResolutionResult(
                         person_id=p.person_id,
                         canonical_name=p.canonical_name,
@@ -172,7 +178,7 @@ class IdentityResolver:
         # 3. Kiểm tra EXACT MATCH trên Email
         if norm_email:
             for p in self._persons.values():
-                if p.primary_email and p.primary_email == norm_email:
+                if (p.primary_email and p.primary_email == norm_email) or norm_email in p.account_ids:
                     return IdentityResolutionResult(
                         person_id=p.person_id,
                         canonical_name=p.canonical_name,
@@ -180,6 +186,25 @@ class IdentityResolver:
                         is_exact_match=True,
                         is_candidate_signal=False,
                         resolution_method="email",
+                        confidence=1.0,
+                    )
+
+        # 3b. Kiểm tra EXACT MATCH trên Canonical Name hoặc Aliases KHI KHÔNG CÓ external_id / email đối lập và cùng tenant
+        if clean_aad_id is None and clean_account_id is None and norm_email is None and display_name:
+            norm_disp = normalize_vietnamese_text(display_name)
+            for p in self._persons.values():
+                if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
+                    continue
+                p_norm = normalize_vietnamese_text(p.canonical_name)
+                alias_norms = {normalize_vietnamese_text(a) for a in p.aliases}
+                if norm_disp == p_norm or norm_disp in alias_norms:
+                    return IdentityResolutionResult(
+                        person_id=p.person_id,
+                        canonical_name=p.canonical_name,
+                        primary_email=p.primary_email,
+                        is_exact_match=True,
+                        is_candidate_signal=False,
+                        resolution_method="exact_canonical_name",
                         confidence=1.0,
                     )
 

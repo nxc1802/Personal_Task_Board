@@ -147,6 +147,9 @@ class TaskDomainRepository:
             t.explicit_deadline = $explicit_deadline,
             t.project_key = $project_key,
             t.customer_id = $customer_id,
+            t.owner_name = $owner_name,
+            t.requester_name = $requester_name,
+            t.channel_or_group = $channel_or_group,
             t.extraction_confidence = $extraction_confidence,
             t.correlation_confidence = $correlation_confidence,
             t.review_status = $review_status,
@@ -171,6 +174,9 @@ class TaskDomainRepository:
             "explicit_deadline": task.explicit_deadline,
             "project_key": task.project_key,
             "customer_id": task.customer_id,
+            "owner_name": task.owner_name,
+            "requester_name": task.requester_name,
+            "channel_or_group": getattr(task, "channel_or_group", None),
             "extraction_confidence": task.extraction_confidence,
             "correlation_confidence": task.correlation_confidence,
             "review_status": task.review_status,
@@ -185,33 +191,37 @@ class TaskDomainRepository:
         await runner.run(upsert_task_cypher, task_params)
 
         # 2. Liên kết Owner (:Person)-[:ASSIGNED_TO]->(:UnifiedTask) nếu có (thống nhất Person.canonical_id)
-        if task.owner_canonical_id:
+        owner_cid = task.owner_canonical_id or (task.owner_name.strip() if task.owner_name else None)
+        if owner_cid:
             owner_cypher = """
             MATCH (t:UnifiedTask {id: $task_id})
             MERGE (p:Person {canonical_id: $owner_canonical_id})
             ON CREATE SET p.canonical_name = $owner_name, p.id = $owner_canonical_id
-            SET p.id = coalesce(p.id, $owner_canonical_id)
+            SET p.id = coalesce(p.id, $owner_canonical_id),
+                p.canonical_name = coalesce(p.canonical_name, $owner_name)
             MERGE (p)-[:ASSIGNED_TO]->(t)
             """
             await runner.run(owner_cypher, {
                 "task_id": task_id,
-                "owner_canonical_id": task.owner_canonical_id,
-                "owner_name": task.owner_name,
+                "owner_canonical_id": owner_cid,
+                "owner_name": task.owner_name or owner_cid,
             })
 
         # 3. Liên kết Requester (:Person)-[:REQUESTED]->(:UnifiedTask) nếu có (thống nhất Person.canonical_id)
-        if task.requester_canonical_id:
+        requester_cid = task.requester_canonical_id or (task.requester_name.strip() if task.requester_name else None)
+        if requester_cid:
             req_cypher = """
             MATCH (t:UnifiedTask {id: $task_id})
             MERGE (req:Person {canonical_id: $requester_canonical_id})
             ON CREATE SET req.canonical_name = $requester_name, req.id = $requester_canonical_id
-            SET req.id = coalesce(req.id, $requester_canonical_id)
+            SET req.id = coalesce(req.id, $requester_canonical_id),
+                req.canonical_name = coalesce(req.canonical_name, $requester_name)
             MERGE (req)-[:REQUESTED]->(t)
             """
             await runner.run(req_cypher, {
                 "task_id": task_id,
-                "requester_canonical_id": task.requester_canonical_id,
-                "requester_name": task.requester_name,
+                "requester_canonical_id": requester_cid,
+                "requester_name": task.requester_name or requester_cid,
             })
 
         # 4. Unwind evidences & liên kết (:UnifiedTask)-[:HAS_EVIDENCE]->(:Evidence) và (:Evidence)-[:DERIVED_FROM]->(:RawEvent)
@@ -262,6 +272,7 @@ class TaskDomainRepository:
         task_dict["owner_name"] = row.get("owner_name") or task_dict.get("owner_name")
         task_dict["requester_canonical_id"] = row.get("requester_canonical_id") or task_dict.get("requester_canonical_id")
         task_dict["requester_name"] = row.get("requester_name") or task_dict.get("requester_name")
+        task_dict["channel_or_group"] = row.get("channel_or_group") or task_dict.get("channel_or_group")
 
         if "status" in task_dict and isinstance(task_dict["status"], str):
             try:
@@ -363,11 +374,28 @@ class TaskDomainRepository:
             row = await result.single()
             return self._parse_task_candidate(row)
 
+    async def get_active_tasks(self) -> list[UnifiedTaskCandidate]:
+        """Truy vấn nhanh các tasks đang hoạt động (TODO, IN_PROGRESS, BLOCKED) tận dụng Neo4j index."""
+        return await self.list_tasks(filters={"status": [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED]})
+
     async def list_tasks(self, filters: Optional[dict] = None) -> list[UnifiedTaskCandidate]:
         """Lấy danh sách tasks và lọc theo tiêu chí (status, project, customer, owner, due_range, etc.)."""
         driver = self._get_driver()
-        cypher = """
+
+        status_where_clause = ""
+        cypher_params: dict[str, Any] = {}
+        if filters and "status" in filters and filters["status"]:
+            req_status = filters["status"]
+            if isinstance(req_status, (list, set, tuple)):
+                status_vals = [s.value if hasattr(s, "value") else str(s) for s in req_status]
+            else:
+                status_vals = [req_status.value if hasattr(req_status, "value") else str(req_status)]
+            status_where_clause = "WHERE t.status IN $status_vals"
+            cypher_params["status_vals"] = status_vals
+
+        cypher = f"""
         MATCH (t:UnifiedTask)
+        {status_where_clause}
         OPTIONAL MATCH (owner:Person)-[:ASSIGNED_TO]->(t)
         OPTIONAL MATCH (req:Person)-[:REQUESTED]->(t)
         OPTIONAL MATCH (t)-[:HAS_EVIDENCE]->(e:Evidence)
@@ -377,15 +405,46 @@ class TaskDomainRepository:
                req.canonical_id AS requester_canonical_id,
                req.canonical_name AS requester_name,
                collect(e) AS evidences
-        ORDER BY coalesce(t.priority_score, 0.0) DESC, coalesce(t.updated_at, '') DESC
+        ORDER BY 
+          CASE t.status
+            WHEN 'IN_PROGRESS' THEN 1
+            WHEN 'TODO' THEN 2
+            WHEN 'BLOCKED' THEN 3
+            WHEN 'DONE' THEN 4
+            WHEN 'DISMISSED' THEN 5
+            ELSE 6
+          END ASC,
+          coalesce(t.priority_score, 0.0) DESC,
+          coalesce(t.due_date, '9999-12-31') ASC,
+          coalesce(t.updated_at, '') DESC
         """
         tasks: list[UnifiedTaskCandidate] = []
         async with driver.session(database=self.neo4j_client.database) as session:
-            result = await session.run(cypher)
+            result = await session.run(cypher, cypher_params)
             async for row in result:
                 candidate = self._parse_task_candidate(row)
                 if candidate:
                     tasks.append(candidate)
+
+        def _task_sort_key(t: UnifiedTaskCandidate):
+            s_val = t.status.value if hasattr(t.status, "value") else str(t.status)
+            rank = {
+                "IN_PROGRESS": 1,
+                "TODO": 2,
+                "BLOCKED": 3,
+                "DONE": 4,
+                "DISMISSED": 5,
+            }.get(str(s_val).strip().upper(), 6)
+            p_score = float(t.priority_score or 0.0)
+            updated = t.updated_at or datetime.min.replace(tzinfo=timezone.utc)
+            due_ts = (
+                t.due_date.timestamp()
+                if t.due_date and hasattr(t.due_date, "timestamp")
+                else 9999999999.0
+            )
+            return (rank, -p_score, due_ts, -updated.timestamp())
+
+        tasks.sort(key=_task_sort_key)
 
         if not filters:
             return tasks
@@ -498,6 +557,8 @@ class TaskDomainRepository:
                     continue
 
             filtered.append(t)
+
+        filtered.sort(key=_task_sort_key)
 
         if "limit" in filters and isinstance(filters["limit"], int):
             return filtered[:filters["limit"]]

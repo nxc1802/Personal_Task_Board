@@ -1,0 +1,1 @@
+Hoàn thiện Benchmark đầy đủ để đánh giá toàn diện dự án, mục tiêu đạt được 90%+ cho toàn benchmark. Nếu như chưa đạt được thì truy tìm nguyên nhân trong code dự án và đề xuất cách chỉnh sửa.

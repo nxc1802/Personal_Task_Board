@@ -113,8 +113,12 @@ class TaskMerger:
             merged.requester_canonical_id = candidate.requester_canonical_id
             merged.requester_name = candidate.requester_name
 
+        if not merged.due_date and candidate.due_date:
+            merged.due_date = candidate.due_date
+            merged.explicit_deadline = candidate.explicit_deadline
+
         # 5. Inferred status transition if candidate brings completion / blocker signal
-        if candidate.inferred_status and not merged.inferred_status:
+        if candidate.inferred_status:
             merged.inferred_status = candidate.inferred_status
 
         # 6. Priority score: adopt higher score

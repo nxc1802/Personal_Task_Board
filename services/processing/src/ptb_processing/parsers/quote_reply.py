@@ -134,11 +134,13 @@ class TeamsQuoteReplyParser:
                     or content.get("author_external_id")
                 )
 
-            body = content.get("body", {})
+            body = content.get("body")
             if isinstance(body, dict):
                 raw_html = body.get("content", "")
+            elif isinstance(body, str):
+                raw_html = body
             else:
-                raw_html = content.get("content", "")
+                raw_html = content.get("content") or content.get("text") or content.get("message") or ""
         else:
             raw_html = str(content or "")
 

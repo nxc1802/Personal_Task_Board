@@ -60,9 +60,9 @@ class AntigravityWatcher(BaseAgentWatcher):
                         for sid in os.listdir(brain_dir)
                         if os.path.isdir(os.path.join(brain_dir, sid))
                     ]
-                    # Sắp xếp theo session mới nhất trước, lấy tối đa 5 sessions gần nhất
+                    # Sắp xếp theo session mới nhất trước, quét toàn bộ sessions trên máy
                     session_dirs.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-                    for session_dir in session_dirs[:5]:
+                    for session_dir in session_dirs[:100]:
                         sid = os.path.basename(session_dir)
                         log_dir = os.path.join(session_dir, ".system_generated", "logs")
                         transcript_path = os.path.join(log_dir, "transcript.jsonl")
@@ -72,8 +72,8 @@ class AntigravityWatcher(BaseAgentWatcher):
                             continue
 
                         records = self.extract_from_transcript(transcript_path, session_id=sid, session_dir=session_dir)
-                        # Lấy tối đa 10 turn gần nhất của mỗi session để giữ focus vào task/cam kết hiện tại
-                        all_records.extend(records[-10:])
+                        # Lấy tối đa 15 turn gần nhất của mỗi session để giữ focus vào task/cam kết
+                        all_records.extend(records[-15:])
                 except Exception as dir_err:
                     logger.debug(f"Error accessing brain dir {brain_dir}: {dir_err}")
                     continue

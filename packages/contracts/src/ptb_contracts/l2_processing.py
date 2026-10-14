@@ -39,6 +39,9 @@ class EvidenceType(str, Enum):
     SHORTCUT_STORY = "shortcut_story"
     EMAIL_THREAD = "email_thread"
     COMPLETION_SIGNAL = "completion_signal"
+    CONFLUENCE_PAGE = "confluence_page"
+    GITHUB_PR = "github_pr"
+    SLACK_MESSAGE = "slack_message"
 
 
 class ParsedMessageContent(BaseModel):
@@ -123,6 +126,7 @@ class UnifiedTaskCandidate(BaseModel):
     requester_name: Optional[str] = Field(default=None, description="Tên hiển thị chuẩn hóa của requester")
     
     project_key: Optional[str] = Field(default=None, description="e.g. 'OPS', 'CUSTOMER_A'")
+    channel_or_group: Optional[str] = Field(default=None, description="Tên nhóm chat, channel hoặc group trao đổi")
     customer_id: Optional[str] = Field(default=None)
     
     due_date: Optional[datetime] = None

@@ -99,6 +99,10 @@ class TaskCandidateMatcher:
         for repo, pr_num in gl_pr_matches:
             anchors.add(DeterministicAnchor(anchor_type="pr", value=f"gitlab:{repo.lower()}:{pr_num}"))
 
+        pr_ref_matches = re.findall(r"\bPR\s*(?:#|-)?(\d+)\b", text, re.IGNORECASE)
+        for pr_num in pr_ref_matches:
+            anchors.add(DeterministicAnchor(anchor_type="pr", value=f"pr-{pr_num}"))
+
         # 4. Commit SHA: e.g. github.com/.../commit/abcdef123... or explicit commit: abcdef...
         commit_url_matches = re.findall(r"(?:github\.com|gitlab\.com)/[^/\s]+/[^/\s]+/(?:commit|commits)/([0-9a-fA-F]{7,40})", text)
         for c in commit_url_matches:

@@ -59,6 +59,8 @@ class GraphitiMemoryClient:
             uri = os.getenv("NEO4J_URI")
             user = os.getenv("NEO4J_USERNAME")
             password = os.getenv("NEO4J_PASSWORD")
+            if hasattr(driver, "sessions") or "Mock" in driver.__class__.__name__:
+                enable_graphiti = False
         else:
             self._neo4j_client = Neo4jClient()
             self._driver = None

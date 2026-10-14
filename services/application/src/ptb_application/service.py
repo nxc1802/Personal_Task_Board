@@ -555,6 +555,24 @@ class ApplicationService:
             "default_name": "Shortcut Stories",
             "default_tenant_id": "tenant-shortcut",
         },
+        {
+            "key": "confluence",
+            "source_type": "confluence",
+            "default_name": "Confluence Knowledge",
+            "default_tenant_id": "tenant-confluence",
+        },
+        {
+            "key": "github",
+            "source_type": "github",
+            "default_name": "GitHub Repositories",
+            "default_tenant_id": "tenant-github",
+        },
+        {
+            "key": "slack",
+            "source_type": "slack",
+            "default_name": "Slack Workspaces",
+            "default_tenant_id": "tenant-slack",
+        },
     ]
 
     @staticmethod
@@ -576,6 +594,12 @@ class ApplicationService:
             return "jira"
         if s in ("shortcut", "shortcut_stories", "clubhouse"):
             return "shortcut"
+        if s in ("confluence", "confluence_wiki"):
+            return "confluence"
+        if s in ("github", "github_issues", "github_prs"):
+            return "github"
+        if s in ("slack", "slack_channels", "slack_messages"):
+            return "slack"
         return s
 
     @staticmethod
@@ -1173,5 +1197,98 @@ class ApplicationService:
                 fetched.requester_name = task.requester_name
             return fetched
         return task
+
+    async def create_task(
+        self,
+        title: str,
+        description: Optional[str] = None,
+        project_key: Optional[str] = "GLOBAL",
+        due_date: Optional[Union[datetime, str]] = None,
+        priority_score: Optional[float] = 50.0,
+        owner_name: Optional[str] = None,
+        requester_name: Optional[str] = "User",
+        channel_or_group: Optional[str] = "Manual Input",
+        status: Optional[str] = "TODO",
+        actor: str = "USER",
+    ) -> UnifiedTaskCandidate:
+        """Tạo mới một UnifiedTask thủ công từ giao diện hoặc Agent."""
+        clean_title = (title or "").strip()
+        if not clean_title:
+            raise ValueError("Field 'title' cannot be empty")
+
+        now = datetime.now(timezone.utc)
+        parsed_due: Optional[datetime] = None
+        if due_date:
+            if isinstance(due_date, str):
+                due_clean = due_date.strip()
+                if due_clean:
+                    parsed_due = datetime.fromisoformat(due_clean.replace("Z", "+00:00"))
+                    if parsed_due.tzinfo is None:
+                        parsed_due = parsed_due.replace(tzinfo=timezone.utc)
+            elif isinstance(due_date, datetime):
+                parsed_due = due_date if due_date.tzinfo else due_date.replace(tzinfo=timezone.utc)
+
+        canonical_statuses = {
+            TaskStatus.TODO.value,
+            TaskStatus.IN_PROGRESS.value,
+            TaskStatus.BLOCKED.value,
+            TaskStatus.DONE.value,
+            TaskStatus.DISMISSED.value,
+        }
+        status_norm = str(status or "TODO").strip().upper()
+        if status_norm not in canonical_statuses:
+            status_norm = TaskStatus.TODO.value
+        target_status = TaskStatus(status_norm)
+
+        p_score = float(priority_score) if priority_score is not None else 50.0
+        p_score = max(0.0, min(100.0, p_score))
+
+        task_id = str(uuid4())
+        task = UnifiedTaskCandidate(
+            id=task_id,
+            title=clean_title,
+            description=description.strip() if description else "",
+            status=target_status,
+            project_key=(project_key or "GLOBAL").strip().upper(),
+            due_date=parsed_due,
+            explicit_deadline=bool(parsed_due is not None),
+            priority_score=p_score,
+            priority_override=p_score if actor != "SYSTEM" else None,
+            owner_name=owner_name.strip() if owner_name else None,
+            requester_name=requester_name.strip() if requester_name else "User",
+            channel_or_group=channel_or_group or "Manual Input",
+            status_authoritative=True,
+            extraction_confidence=1.0,
+            review_status="auto_approved",
+            created_at=now,
+            updated_at=now,
+            evidences=[],
+        )
+
+        if hasattr(self.task_repo, "save_task"):
+            await self.task_repo.save_task(task)
+        else:
+            await self.task_repo.upsert_task_atomic(task)
+
+        if hasattr(self, "lifecycle") and self.lifecycle:
+            try:
+                await self.lifecycle.on_task_changed(task, now=now)
+            except Exception as ex:
+                logger.debug("Lifecycle on_task_changed skipped: %s", ex)
+
+        return task
+
+    async def delete_task(
+        self,
+        task_id: str,
+        actor: str = "USER",
+    ) -> bool:
+        """Loại bỏ task (chuyển sang DISMISSED có audit trail)."""
+        res = await self.execute_task_action(
+            task_id=task_id,
+            action="DISMISS",
+            actor=actor,
+        )
+        return res.success
 
 

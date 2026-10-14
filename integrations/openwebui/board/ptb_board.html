@@ -927,7 +927,7 @@
         <span class="badge-count" id="count-review">0</span>
       </div>
       <div class="nav-item" onclick="switchView('tasks')" id="tab-tasks">
-        <span>📋 All Tasks</span>
+        <span>📦 Task Components (CRUD)</span>
         <span class="badge-count" id="count-tasks">0</span>
       </div>
       <div class="nav-item" onclick="switchView('waiting')" id="tab-waiting">
@@ -1011,18 +1011,38 @@
       </div>
     </section>
 
-    <!-- 3. ALL TASKS VIEW (KANBAN & LIST) -->
+    <!-- 3. ALL TASKS & TASK COMPONENTS VIEW (CRUD) -->
     <section id="view-tasks" class="view-container">
+      <!-- Quick Action Toolbar for Unified Operations & Full CRUD -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn-primary" onclick="openCreateTaskModal()">
+            <span>➕ Thêm Công Việc Mới</span>
+          </button>
+          <button class="btn" style="background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff;" onclick="openIngestModal()">
+            <span>🚀 Bóc Tách Tin Nhắn</span>
+          </button>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn-sm" onclick="runLayer1Scan()" title="Quét tự động Local Git & Coding Agents">
+            <span>🔄 Quét Local (L1)</span>
+          </button>
+          <button class="btn btn-sm" onclick="runTeamsScan()" title="Quét tin nhắn Microsoft Teams">
+            <span>💬 Quét Teams</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Filter Bar -->
       <div class="filter-bar">
-        <input type="text" class="filter-input" id="filterSearch" placeholder="🔍 Tìm kiếm tiêu đề, người yêu cầu..." oninput="applyTaskFilters()">
+        <input type="text" class="filter-input" id="filterSearch" placeholder="🔍 Tìm kiếm tiêu đề, người yêu cầu, group..." oninput="applyTaskFilters()">
         
         <select class="filter-select" id="filterStatus" onchange="applyTaskFilters()">
           <option value="ALL">Tất cả Trạng thái</option>
-          <option value="TODO">TODO</option>
-          <option value="IN_PROGRESS">IN_PROGRESS</option>
-          <option value="BLOCKED">BLOCKED</option>
-          <option value="DONE">DONE</option>
+          <option value="IN_PROGRESS">⚡ IN_PROGRESS (Ưu tiên đầu)</option>
+          <option value="TODO">📝 TODO</option>
+          <option value="BLOCKED">🚫 BLOCKED</option>
+          <option value="DONE">✅ DONE</option>
         </select>
 
         <select class="filter-select" id="filterProject" onchange="applyTaskFilters()">
@@ -1030,6 +1050,7 @@
           <option value="OPS">OPS</option>
           <option value="CORE">CORE</option>
           <option value="PTB">PTB</option>
+          <option value="GLOBAL">GLOBAL</option>
         </select>
 
         <select class="filter-select" id="filterSource" onchange="applyTaskFilters()">
@@ -1055,27 +1076,33 @@
         </select>
 
         <div style="margin-left: auto; display: flex; gap: 6px;">
-          <button class="btn btn-sm btn-primary" id="btnModeKanban" onclick="setTaskViewMode('kanban')">Kanban</button>
-          <button class="btn btn-sm" id="btnModeList" onclick="setTaskViewMode('list')">Danh sách</button>
+          <button class="btn btn-sm btn-primary" id="btnModeComponents" onclick="setTaskViewMode('components')">📦 Thẻ Components</button>
+          <button class="btn btn-sm" id="btnModeKanban" onclick="setTaskViewMode('kanban')">Kanban</button>
+          <button class="btn btn-sm" id="btnModeList" onclick="setTaskViewMode('list')">Danh Sách</button>
         </div>
       </div>
 
-      <!-- Kanban Container -->
-      <div id="tasksKanbanContainer" class="kanban-board">
+      <!-- 1. Task Components Grid Container (CRUD Interactive) -->
+      <div id="tasksComponentsContainer" class="grid-2" style="margin-bottom: 20px;">
+        <!-- Rendered by JS: Cards with Full CRUD actions -->
+      </div>
+
+      <!-- 2. Kanban Container -->
+      <div id="tasksKanbanContainer" class="kanban-board" style="display: none;">
+        <div class="kanban-col" data-status="IN_PROGRESS" style="border-top: 3px solid #3b82f6;">
+          <div class="kanban-col-header" style="background: rgba(59, 130, 246, 0.1);">
+            <span>⚡ Đang làm (IN_PROGRESS)</span>
+            <span class="badge-count" id="count-col-inprogress">0</span>
+          </div>
+          <div class="kanban-col-cards" id="cards-IN_PROGRESS"></div>
+        </div>
+
         <div class="kanban-col" data-status="TODO">
           <div class="kanban-col-header">
             <span>📝 Cần làm (TODO)</span>
             <span class="badge-count" id="count-col-todo">0</span>
           </div>
           <div class="kanban-col-cards" id="cards-TODO"></div>
-        </div>
-
-        <div class="kanban-col" data-status="IN_PROGRESS">
-          <div class="kanban-col-header">
-            <span>⚡ Đang làm (IN_PROGRESS)</span>
-            <span class="badge-count" id="count-col-inprogress">0</span>
-          </div>
-          <div class="kanban-col-cards" id="cards-IN_PROGRESS"></div>
         </div>
 
         <div class="kanban-col" data-status="BLOCKED">
@@ -1095,7 +1122,7 @@
         </div>
       </div>
 
-      <!-- List Table Container -->
+      <!-- 3. List Table Container -->
       <div id="tasksListContainer" class="table-container" style="display: none;">
         <table>
           <thead>
@@ -1104,10 +1131,12 @@
               <th>Tiêu đề Task</th>
               <th>Trạng thái</th>
               <th>Dự án</th>
-              <th>Người phụ trách</th>
+              <th>Người thực hiện</th>
+              <th>Người giao việc / nhắn</th>
+              <th>Nhóm / Channel</th>
               <th>Hạn chót</th>
               <th>Bằng chứng</th>
-              <th>Thao tác</th>
+              <th>Thao tác (CRUD)</th>
             </tr>
           </thead>
           <tbody id="tasksTableBody">
@@ -1204,43 +1233,136 @@
 
   </main>
 
-  <!-- Edit Task Modal -->
+  <!-- 1. Create Task Modal (CRUD: Create) -->
+  <div class="modal-backdrop" id="createTaskModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">➕ Thêm Công Việc Mới (Manual Create)</div>
+        <button class="btn btn-icon btn-sm" onclick="closeCreateTaskModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Tiêu đề công việc (*)</label>
+          <input type="text" class="form-input" id="createTaskTitle" placeholder="Ví dụ: Fix lỗi auth token timeout...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mô tả / Ghi chú</label>
+          <textarea class="form-textarea" id="createTaskDescription" placeholder="Mô tả chi tiết nội dung công việc..."></textarea>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Dự án</label>
+            <input type="text" class="form-input" id="createTaskProject" value="GLOBAL" placeholder="CORE, OPS, PTB, GLOBAL...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Trạng thái ban đầu</label>
+            <select class="form-select" id="createTaskStatus">
+              <option value="IN_PROGRESS">⚡ IN_PROGRESS (Làm ngay)</option>
+              <option value="TODO" selected>📝 TODO (Cần làm)</option>
+              <option value="BLOCKED">🚫 BLOCKED (Bị nghẽn)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Người thực hiện</label>
+            <input type="text" class="form-input" id="createTaskOwner" value="Tôi">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Điểm ưu tiên (0 - 100)</label>
+            <input type="number" class="form-input" id="createTaskPriority" value="60" min="0" max="100">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hạn chót (Deadline)</label>
+          <input type="datetime-local" class="form-input" id="createTaskDueDate">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeCreateTaskModal()">Hủy</button>
+        <button class="btn btn-primary" onclick="submitCreateTask()">Tạo Công Việc 🚀</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Direct Message Ingestion Modal (AI Extraction) -->
+  <div class="modal-backdrop" id="ingestModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">🚀 Bóc Tách Tin Nhắn Tự Động (AI Extraction)</div>
+        <button class="btn btn-icon btn-sm" onclick="closeIngestModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+          Dán nội dung tin nhắn giao việc hoặc thảo luận từ Teams, chat riêng, email. Mô hình AI sẽ bóc tách người yêu cầu, hạn chót và lưu trực tiếp vào bảng.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Nội dung tin nhắn (*)</label>
+          <textarea class="form-textarea" id="ingestMessageText" style="height: 100px;" placeholder="Ví dụ: 'Nhờ anh Tuấn fix gấp lỗi memory leak production trước 17h chiều nay!'"></textarea>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Người gửi / Người nhắn</label>
+            <input type="text" class="form-input" id="ingestSender" value="User">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Kênh / Group trao đổi</label>
+            <input type="text" class="form-input" id="ingestChannel" value="OpenWebUI Direct">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeIngestModal()">Hủy</button>
+        <button class="btn btn-primary" id="btnSubmitIngest" onclick="submitIngestMessage()">Bóc Tách & Lưu Vào Board ⚡</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Edit Task Modal (CRUD: Update) -->
   <div class="modal-backdrop" id="editModal">
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">Chỉnh sửa Task Candidate</div>
+        <div class="modal-title" id="editModalTitle">Chỉnh Sửa Công Việc</div>
         <button class="btn btn-icon btn-sm" onclick="closeEditModal()">✕</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="editTaskId">
         <div class="form-group">
-          <label class="form-label">Tiêu đề</label>
+          <label class="form-label">Tiêu đề (*)</label>
           <input type="text" class="form-input" id="editTaskTitle">
         </div>
         <div class="form-group">
-          <label class="form-label">Dự án</label>
-          <select class="form-select" id="editTaskProject">
-            <option value="OPS">OPS (DevOps & Staging)</option>
-            <option value="CORE">CORE (Backend & Database)</option>
-            <option value="PTB">PTB (Personal Task Board)</option>
-          </select>
+          <label class="form-label">Mô tả chi tiết</label>
+          <textarea class="form-textarea" id="editTaskDescription" placeholder="Mô tả công việc..."></textarea>
         </div>
-        <div class="form-group">
-          <label class="form-label">Người thực hiện</label>
-          <input type="text" class="form-input" id="editTaskOwner">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Dự án</label>
+            <input type="text" class="form-input" id="editTaskProject" value="GLOBAL">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Điểm ưu tiên (0 - 100)</label>
+            <input type="number" class="form-input" id="editTaskPriority" min="0" max="100">
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Hạn chót (Deadline)</label>
-          <input type="date" class="form-input" id="editTaskDueDate">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Người thực hiện</label>
+            <input type="text" class="form-input" id="editTaskOwner">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Hạn chót (Deadline)</label>
+            <input type="datetime-local" class="form-input" id="editTaskDueDate">
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Ghi chú bằng chứng</label>
-          <textarea class="form-textarea" id="editTaskEvidence" readonly></textarea>
+        <div class="form-group" id="editEvidenceGroup">
+          <label class="form-label">Bằng chứng trích xuất (Evidence)</label>
+          <textarea class="form-textarea" id="editTaskEvidence" readonly style="opacity: 0.8; font-size: 12px;"></textarea>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn" onclick="closeEditModal()">Hủy</button>
-        <button class="btn btn-primary" onclick="saveAndApproveTask()">Lưu & Phê duyệt</button>
+        <button class="btn btn-primary" id="btnSaveEditTask" onclick="saveEditTask()">Lưu Thay Đổi (PATCH) 💾</button>
       </div>
     </div>
   </div>
@@ -1253,7 +1375,7 @@
     const CONFIG = {
       apiBase: "http://127.0.0.1:8000",
       currentView: "today",
-      taskViewMode: "kanban"
+      taskViewMode: "components"
     };
 
     // --- Helper Functions ---
@@ -1645,6 +1767,7 @@
         tasks = await apiFetch("/api/tasks");
       } catch (err) {
         cachedAllTasks = [];
+        renderErrorView("tasksComponentsContainer", err.message);
         renderErrorView("tasksKanbanContainer", err.message);
         renderErrorView("tasksListContainer", err.message);
         document.getElementById("count-tasks").innerText = "!";
@@ -1659,22 +1782,21 @@
 
     function setTaskViewMode(mode) {
       CONFIG.taskViewMode = mode;
+      const compEl = document.getElementById("tasksComponentsContainer");
       const kanbanEl = document.getElementById("tasksKanbanContainer");
       const listEl = document.getElementById("tasksListContainer");
+      const btnComp = document.getElementById("btnModeComponents");
       const btnKanban = document.getElementById("btnModeKanban");
       const btnList = document.getElementById("btnModeList");
 
-      if (mode === "kanban") {
-        kanbanEl.style.display = "grid";
-        listEl.style.display = "none";
-        btnKanban.className = "btn btn-sm btn-primary";
-        btnList.className = "btn btn-sm";
-      } else {
-        kanbanEl.style.display = "none";
-        listEl.style.display = "block";
-        btnKanban.className = "btn btn-sm";
-        btnList.className = "btn btn-sm btn-primary";
-      }
+      if (compEl) compEl.style.display = mode === "components" ? "grid" : "none";
+      if (kanbanEl) kanbanEl.style.display = mode === "kanban" ? "grid" : "none";
+      if (listEl) listEl.style.display = mode === "list" ? "block" : "none";
+
+      if (btnComp) btnComp.className = mode === "components" ? "btn btn-sm btn-primary" : "btn btn-sm";
+      if (btnKanban) btnKanban.className = mode === "kanban" ? "btn btn-sm btn-primary" : "btn btn-sm";
+      if (btnList) btnList.className = mode === "list" ? "btn btn-sm btn-primary" : "btn btn-sm";
+
       applyTaskFilters();
     }
 
@@ -1697,11 +1819,90 @@
         return true;
       });
 
-      if (CONFIG.taskViewMode === "kanban") {
+      if (CONFIG.taskViewMode === "components") {
+        renderComponentCards(filteredTasks);
+      } else if (CONFIG.taskViewMode === "kanban") {
         renderKanban(filteredTasks);
       } else {
         renderTable(filteredTasks);
       }
+    }
+
+    function renderComponentCards(tasks) {
+      const container = document.getElementById("tasksComponentsContainer");
+      if (!container) return;
+      container.innerHTML = "";
+
+      if (tasks.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state" style="grid-column: 1 / -1;">
+            <div class="empty-state-icon">📋</div>
+            <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px;">Không tìm thấy công việc nào phù hợp</div>
+            <div style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">Hãy tạo mới công việc thủ công hoặc dán tin nhắn để AI tự động trích xuất.</div>
+            <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()">➕ Thêm công việc mới</button>
+          </div>
+        `;
+        return;
+      }
+
+      tasks.forEach(t => {
+        const taskId = t.id || t.task_id;
+        const pScore = t.priority_score || (t.priority ? t.priority.total_score : 50);
+        const pClass = getPriorityClass(pScore);
+        const isInProgress = t.status === "IN_PROGRESS";
+        const snippet = t.description || (t.evidences && t.evidences[0] ? t.evidences[0].snippet : t.primary_evidence_snippet) || "";
+
+        const card = document.createElement("div");
+        card.className = "card";
+        if (isInProgress) {
+          card.style.border = "1.5px solid var(--accent-primary)";
+          card.style.boxShadow = "0 2px 10px rgba(37, 99, 235, 0.16)";
+        }
+
+        card.innerHTML = `
+          <div class="card-header">
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <span class="priority-badge ${pClass}" title="Độ ưu tiên: ${pScore.toFixed(1)}/100">${pScore.toFixed(0)}</span>
+              <span class="tag tag-project">${escapeHtml(t.project_key || "GLOBAL")}</span>
+              <span class="tag tag-status status-${t.status}">
+                ${isInProgress ? "⚡ IN_PROGRESS" : escapeHtml(t.status)}
+              </span>
+              ${t.channel_or_group ? `<span class="tag tag-source" style="font-size: 10px;">${escapeHtml(t.channel_or_group)}</span>` : ""}
+            </div>
+            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(t.due_date)}</span>
+          </div>
+
+          <div class="card-title" style="margin-bottom: 6px; font-size: 14.5px;">${escapeHtml(t.title)}</div>
+
+          ${snippet ? `
+            <div style="font-size: 12.5px; color: var(--text-secondary); background: var(--bg-muted); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 8px; line-height: 1.4;">
+              ${escapeHtml(snippet)}
+            </div>
+          ` : ""}
+
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--text-muted); margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
+            <span>👤 Phụ trách: <strong style="color: var(--text-primary);">${escapeHtml(t.owner_name || "Tôi")}</strong></span>
+            <span>📣 Người yêu cầu: <strong style="color: var(--text-primary);">${escapeHtml(t.requester_name || "Self")}</strong></span>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; margin-top: auto; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 11px; color: var(--text-muted);">Trạng thái:</span>
+              <select class="filter-select" style="font-size: 11px; padding: 2px 6px;" onchange="updateTaskStatus('${taskId}', this.value)">
+                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>⚡ IN_PROGRESS</option>
+                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>📝 TODO</option>
+                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>🚫 BLOCKED</option>
+                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>✅ DONE</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Chỉnh sửa thông tin task">✏️ Sửa</button>
+              <button class="btn btn-sm" style="color: var(--danger-text); border-color: var(--danger-border);" onclick="deleteTask('${taskId}')" title="Xóa hoặc hủy bỏ task">🗑️ Xóa</button>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
     }
 
     function renderKanban(tasks) {
@@ -2064,23 +2265,234 @@
       }
     }
 
+    // --- Modals & CRUD Operations ---
+    function openCreateTaskModal() {
+      document.getElementById("createTaskTitle").value = "";
+      document.getElementById("createTaskDescription").value = "";
+      document.getElementById("createTaskProject").value = "GLOBAL";
+      document.getElementById("createTaskStatus").value = "IN_PROGRESS";
+      document.getElementById("createTaskOwner").value = "Tôi";
+      document.getElementById("createTaskPriority").value = "70";
+      document.getElementById("createTaskDueDate").value = "";
+      document.getElementById("createTaskModal").classList.add("active");
+      setTimeout(() => {
+        const input = document.getElementById("createTaskTitle");
+        if (input) input.focus();
+      }, 50);
+    }
+
+    function closeCreateTaskModal() {
+      document.getElementById("createTaskModal").classList.remove("active");
+    }
+
+    async function submitCreateTask() {
+      const title = (document.getElementById("createTaskTitle").value || "").trim();
+      if (!title) {
+        showToast("Vui lòng nhập tiêu đề công việc (*)", "warning");
+        return;
+      }
+      const description = (document.getElementById("createTaskDescription").value || "").trim();
+      const projectKey = (document.getElementById("createTaskProject").value || "GLOBAL").trim();
+      const statusVal = document.getElementById("createTaskStatus").value || "TODO";
+      const ownerName = (document.getElementById("createTaskOwner").value || "Tôi").trim();
+      const priorityScore = parseFloat(document.getElementById("createTaskPriority").value) || 50.0;
+      const dueDateVal = document.getElementById("createTaskDueDate").value;
+
+      const payload = {
+        title,
+        description,
+        project_key: projectKey,
+        status: statusVal,
+        owner_name: ownerName,
+        requester_name: "Self",
+        priority_score: priorityScore,
+        actor: "USER"
+      };
+      if (dueDateVal) {
+        payload.due_date = new Date(dueDateVal).toISOString();
+      }
+
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/tasks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        const created = await res.json();
+        closeCreateTaskModal();
+        showToast(`Đã tạo thành công task: ${escapeHtml(created.title)}`, "success");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi tạo task: ${err.message}`, "warning");
+      }
+    }
+
+    function openIngestModal() {
+      document.getElementById("ingestMessageText").value = "";
+      document.getElementById("ingestSender").value = "User";
+      document.getElementById("ingestChannel").value = "Direct Chat";
+      document.getElementById("ingestModal").classList.add("active");
+      setTimeout(() => {
+        const input = document.getElementById("ingestMessageText");
+        if (input) input.focus();
+      }, 50);
+    }
+
+    function closeIngestModal() {
+      document.getElementById("ingestModal").classList.remove("active");
+    }
+
+    async function submitIngestMessage() {
+      const message = (document.getElementById("ingestMessageText").value || "").trim();
+      if (!message) {
+        showToast("Vui lòng nhập nội dung tin nhắn cần bóc tách", "warning");
+        return;
+      }
+      const sender = (document.getElementById("ingestSender").value || "User").trim();
+      const channel = (document.getElementById("ingestChannel").value || "Direct Chat").trim();
+      const btn = document.getElementById("btnSubmitIngest");
+      if (btn) btn.innerText = "Đang phân tích AI... ⏳";
+
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/ingest/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, sender, channel })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        closeIngestModal();
+        if (data.task) {
+          showToast(`AI đã bóc tách thành công: ${escapeHtml(data.task.title)}`, "success");
+        } else {
+          showToast(data.message || "Tin nhắn đã được lưu trữ.", "info");
+        }
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi bóc tách tin nhắn: ${err.message}`, "warning");
+      } finally {
+        if (btn) btn.innerText = "Bóc Tách & Lưu Vào Board ⚡";
+      }
+    }
+
+    async function runLayer1Scan() {
+      showToast("Đang quét Git local và Coding Agents...", "info");
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/ingest/layer1`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit: 10 })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        showToast(`Quét L1: Bắt ${data.ingested || 0} sự kiện, xử lý ${data.processed_tasks || 0} tasks.`, "success");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi quét Layer 1: ${err.message}`, "warning");
+      }
+    }
+
+    async function runTeamsScan() {
+      showToast("Đang quét Microsoft Teams...", "info");
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/ingest/teams`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit: 15 })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        showToast(`Quét Teams: Bắt ${data.captured_events || 0} tin nhắn, trích xuất ${data.processed_tasks || 0} tasks.`, "success");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi quét Teams: ${err.message}`, "warning");
+      }
+    }
+
+    async function deleteTask(taskId) {
+      if (!confirm("Bạn có chắc chắn muốn xóa/hủy bỏ công việc này không?")) {
+        return;
+      }
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        showToast("Đã loại bỏ công việc thành công!", "info");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi xóa công việc: ${err.message}`, "warning");
+      }
+    }
+
     let currentEditingRevId = null;
+    let isEditingReviewQueueItem = false;
+
     function openEditModal(revId) {
       currentEditingRevId = revId;
+      isEditingReviewQueueItem = true;
       const reviewItem = (cachedReviewQueue || []).find(
         x => x.id === revId || x.candidate_task?.id === revId
       );
-      const taskFromAll = (cachedAllTasks || []).find(
-        x => x.id === revId || x.task_id === revId
-      );
-      const cand = reviewItem ? reviewItem.candidate_task : taskFromAll;
+      const cand = reviewItem ? reviewItem.candidate_task : null;
 
       document.getElementById("editTaskId").value = (cand && (cand.id || cand.task_id)) ? (cand.id || cand.task_id) : revId;
+      document.getElementById("editModalTitle").innerText = "Chỉnh Sửa Task Candidate (Review)";
       document.getElementById("editTaskTitle").value = cand ? (cand.title || "") : "";
-      document.getElementById("editTaskProject").value = cand ? (cand.project_key || "OPS") : "OPS";
+      document.getElementById("editTaskDescription").value = cand ? (cand.description || "") : "";
+      document.getElementById("editTaskProject").value = cand ? (cand.project_key || "GLOBAL") : "GLOBAL";
+      document.getElementById("editTaskPriority").value = cand ? (cand.priority_score ?? 50) : 50;
       document.getElementById("editTaskOwner").value = cand ? (cand.owner_name || "Tôi") : "Tôi";
-      document.getElementById("editTaskDueDate").value = (cand && cand.due_date) ? String(cand.due_date).substring(0, 10) : "";
+      document.getElementById("editTaskDueDate").value = (cand && cand.due_date) ? String(cand.due_date).substring(0, 16) : "";
       document.getElementById("editTaskEvidence").value = (cand && (cand.evidences?.[0]?.snippet || cand.evidence_snippet)) || "";
+
+      document.getElementById("editModal").classList.add("active");
+    }
+
+    function openEditTaskModal(taskId) {
+      currentEditingRevId = taskId;
+      isEditingReviewQueueItem = false;
+      const task = (cachedAllTasks || []).find(x => (x.id === taskId || x.task_id === taskId));
+
+      document.getElementById("editTaskId").value = taskId;
+      document.getElementById("editModalTitle").innerText = "✏️ Chỉnh Sửa Công Việc";
+      document.getElementById("editTaskTitle").value = task ? (task.title || "") : "";
+      document.getElementById("editTaskDescription").value = task ? (task.description || "") : "";
+      document.getElementById("editTaskProject").value = task ? (task.project_key || "GLOBAL") : "GLOBAL";
+      document.getElementById("editTaskPriority").value = task ? (task.priority_score ?? (task.priority ? task.priority.total_score : 50)) : 50;
+      document.getElementById("editTaskOwner").value = task ? (task.owner_name || "Tôi") : "Tôi";
+
+      if (task && task.due_date) {
+        try {
+          const d = new Date(task.due_date);
+          const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+          document.getElementById("editTaskDueDate").value = isoLocal;
+        } catch (_) {
+          document.getElementById("editTaskDueDate").value = "";
+        }
+      } else {
+        document.getElementById("editTaskDueDate").value = "";
+      }
+
+      const snippet = (task && (task.evidences && task.evidences[0] ? task.evidences[0].snippet : task.primary_evidence_snippet)) || "";
+      document.getElementById("editTaskEvidence").value = snippet;
 
       document.getElementById("editModal").classList.add("active");
     }
@@ -2088,15 +2500,31 @@
     function closeEditModal() {
       document.getElementById("editModal").classList.remove("active");
       currentEditingRevId = null;
+      isEditingReviewQueueItem = false;
     }
 
-    async function saveAndApproveTask() {
+    async function saveEditTask() {
       const taskId = document.getElementById("editTaskId").value || currentEditingRevId;
-      const title = document.getElementById("editTaskTitle").value;
+      if (!taskId) return;
+      const title = (document.getElementById("editTaskTitle").value || "").trim();
+      if (!title) {
+        showToast("Tiêu đề không được để trống (*)", "warning");
+        return;
+      }
+      const description = document.getElementById("editTaskDescription").value;
       const projectKey = document.getElementById("editTaskProject").value;
       const ownerName = document.getElementById("editTaskOwner").value;
+      const priorityScore = parseFloat(document.getElementById("editTaskPriority").value) || 50;
       const dueDateVal = document.getElementById("editTaskDueDate").value;
-      const payload = { title, project_key: projectKey, owner_name: ownerName, actor: "USER" };
+
+      const payload = {
+        title,
+        description,
+        project_key: projectKey,
+        owner_name: ownerName,
+        priority_score: priorityScore,
+        actor: "USER"
+      };
       if (dueDateVal) {
         payload.due_date = new Date(dueDateVal).toISOString();
       }
@@ -2112,10 +2540,19 @@
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
         closeEditModal();
-        await approveReviewItem(taskId);
+        if (isEditingReviewQueueItem) {
+          await approveReviewItem(taskId);
+        } else {
+          showToast("Đã lưu cập nhật công việc thành công!", "success");
+          renderCurrentView();
+        }
       } catch (err) {
         showToast(`Lỗi lưu task: ${err.message}`, "warning");
       }
+    }
+
+    async function saveAndApproveTask() {
+      await saveEditTask();
     }
 
     // --- Master Render Router ---

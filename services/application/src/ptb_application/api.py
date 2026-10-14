@@ -123,6 +123,19 @@ class TaskPatchRequest(BaseModel):
     actor: str = "USER"
 
 
+class TaskCreateRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    due_date: Optional[Union[datetime, str]] = None
+    priority_score: Optional[float] = Field(default=50.0, ge=0.0, le=100.0)
+    project_key: Optional[str] = "GLOBAL"
+    owner_name: Optional[str] = None
+    requester_name: Optional[str] = "User"
+    channel_or_group: Optional[str] = "Manual Input"
+    status: Optional[str] = "TODO"
+    actor: str = "USER"
+
+
 class TaskStatusChangeRequest(BaseModel):
     status: Optional[str] = None
     new_status: Optional[str] = None
@@ -138,6 +151,11 @@ class IngestMessageRequest(BaseModel):
     message: str
     sender: Optional[str] = "User"
     source: Optional[str] = "Direct Input"
+
+
+class ChatbotMessageRequest(BaseModel):
+    message: str
+    history: Optional[List[Dict[str, str]]] = Field(default_factory=list)
 
 
 # ==============================================================================
@@ -245,6 +263,28 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             filters["limit"] = limit
 
         return await service.list_tasks(filters=filters if filters else None)
+
+    @app.post("/api/tasks", response_model=UnifiedTaskCandidate, status_code=status.HTTP_201_CREATED)
+    async def create_new_task(
+        body: TaskCreateRequest,
+        service: ApplicationService = Depends(get_application_service),
+    ) -> UnifiedTaskCandidate:
+        """Tạo mới một UnifiedTask thủ công từ giao diện hoặc Agent."""
+        try:
+            return await service.create_task(
+                title=body.title,
+                description=body.description,
+                project_key=body.project_key,
+                due_date=body.due_date,
+                priority_score=body.priority_score,
+                owner_name=body.owner_name,
+                requester_name=body.requester_name,
+                channel_or_group=body.channel_or_group,
+                status=body.status,
+                actor=body.actor,
+            )
+        except ValueError as ex:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ex))
 
     # --------------------------------------------------------------------------
     # 4. GET /api/tasks/{task_id}
@@ -438,6 +478,19 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                 detail=res.message,
             )
         return res
+
+    @app.delete("/api/tasks/{task_id}")
+    @app.post("/api/tasks/{task_id}/delete")
+    async def delete_task_endpoint(
+        task_id: str,
+        actor: str = Query(default="USER"),
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
+        """Loại bỏ hoặc đánh dấu DISMISSED cho một UnifiedTask."""
+        ok = await service.delete_task(task_id=task_id, actor=actor)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Task '{task_id}' not found")
+        return {"success": True, "task_id": task_id, "message": "Task dismissed successfully"}
 
     # --------------------------------------------------------------------------
     # 10. POST /api/tasks/{task_id}/split
@@ -717,6 +770,110 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         }
 
     # --------------------------------------------------------------------------
+    # 17B. POST /api/ingest/teams (On-Demand Microsoft Teams Capture & Sweep)
+    # --------------------------------------------------------------------------
+    @app.post("/api/ingest/teams")
+    async def ingest_teams_api(
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
+        """Kích hoạt quét và bắt gói tin tin nhắn Microsoft Teams qua Playwright Session thực tế."""
+        from pathlib import Path
+        from playwright.async_api import async_playwright, Response
+        from ptb_acquisition.playwright.teams_interceptor import TeamsNetworkInterceptor
+        from ptb_acquisition.queue import LocalIngestionQueue
+        from ptb_processing.pipeline import ProcessingPipeline
+        from ptb_processing.worker import ProcessingWorker
+
+        possible_paths = [
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        storage_path = next((p for p in possible_paths if p.exists()), None)
+        if not storage_path or not storage_path.exists():
+            raise HTTPException(
+                status_code=400,
+                detail="Chưa có phiên đăng nhập Microsoft Teams. Vui lòng chạy lệnh 'ptb login microsoft' để đăng nhập lần đầu.",
+            )
+
+        raw_repo = service.raw_event_repo
+        task_repo = service.task_repo
+        if raw_repo is None or task_repo is None:
+            raise HTTPException(status_code=500, detail="ApplicationService chưa được cấu hình đầy đủ repos")
+
+        queue = LocalIngestionQueue(maxsize=1000)
+        teams_interceptor = TeamsNetworkInterceptor(
+            queue=queue,
+            tenant_id="local-user",
+            raw_event_repo=raw_repo,
+        )
+
+        captured_records = []
+
+        async def on_teams_resp(response: Response):
+            url = response.url
+            if response.status == 200 and ("teams" in url or "skype" in url):
+                if any(k in url for k in ["api", "chat", "msg", "conversation", "thread", "message", "channel"]):
+                    try:
+                        data = await response.json()
+                        recs = teams_interceptor.parse_payload(data, request_url=url)
+                        if recs:
+                            for r in recs:
+                                captured_records.append(r)
+                                if hasattr(raw_repo, "persist_raw_event"):
+                                    await raw_repo.persist_raw_event(r)
+                                elif hasattr(raw_repo, "upsert"):
+                                    await raw_repo.upsert(r)
+                    except Exception as e:
+                        logger.debug("Teams response parse error: %s", e)
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"]
+                )
+                context = await browser.new_context(
+                    storage_state=str(storage_path),
+                    viewport={"width": 1280, "height": 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                )
+                page = await context.new_page()
+                page.on("response", on_teams_resp)
+
+                try:
+                    await page.goto("https://teams.microsoft.com/v2/", wait_until="domcontentloaded", timeout=25000)
+                    await asyncio.sleep(8)
+                    try:
+                        await page.evaluate("""() => {
+                            const el = document.querySelector('[data-tid="message-pane-list-viewport"]') || window;
+                            if (el.scrollBy) el.scrollBy(0, -300);
+                        }""")
+                        await asyncio.sleep(2)
+                    except Exception as scroll_err:
+                        logger.debug("Teams scroll evaluation ignored: %s", scroll_err)
+                except Exception as nav_err:
+                    logger.warning("Teams navigation warning: %s", nav_err)
+
+                await browser.close()
+        except Exception as e:
+            logger.warning("Playwright capture error: %s", e)
+
+        proc_pipe = getattr(service, "processing_pipeline", None) or getattr(service, "_processing_pipeline", None)
+        if proc_pipe is None:
+            proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
+
+        worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
+        processed_statuses = await worker.process_batch(limit=5)
+
+        return {
+            "status": "success",
+            "captured_teams": len(captured_records),
+            "processed_tasks": len(processed_statuses),
+            "message": f"Đã quét và bắt {len(captured_records)} sự kiện Teams thực tế, bóc tách {len(processed_statuses)} công việc.",
+        }
+
+    # --------------------------------------------------------------------------
     # 18. POST /api/database/init (Initialize Constraints & Schema)
     # --------------------------------------------------------------------------
     @app.post("/api/database/init")
@@ -753,6 +910,166 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         from ptb_database.setup_all import setup_neo4j
         ok = await setup_neo4j()
         return {"status": "success", "constraints_restored": ok}
+
+    # --------------------------------------------------------------------------
+    # 20. POST /api/chat (Interactive AI Chatbot Q&A over Neo4j Database)
+    # --------------------------------------------------------------------------
+    @app.post("/api/chat")
+    async def chat_with_database_api(
+        req: ChatbotMessageRequest,
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
+        """Trợ lý AI hỏi đáp trực tiếp về toàn bộ dữ liệu (Tasks, Teams, Git, Coding Agents) trong Neo4j."""
+        import asyncio
+        import json
+        import re
+        import urllib.request
+        from ptb_database.neo4j_client import Neo4jClient
+
+        client = service.neo4j_client if service.neo4j_client else Neo4jClient()
+        driver = client.get_driver()
+
+        tasks = []
+        messages = []
+        commits = []
+        agents = []
+
+        try:
+            async with driver.session() as s:
+                # 1. Fetch Tasks
+                res_t = await s.run("""
+                MATCH (t:UnifiedTask)
+                RETURN t.title AS title, t.status AS status, t.owner_name AS owner,
+                       t.requester_name AS requester, t.channel_or_group AS group_name,
+                       t.due_date AS due_date, t.priority_score AS priority
+                ORDER BY coalesce(t.priority_score, 0) DESC
+                LIMIT 25
+                """)
+                tasks = [dict(row) async for row in res_t]
+
+                # 2. Fetch Teams messages
+                res_m = await s.run("""
+                MATCH (r:RawEvent {source_type: 'ms_teams_web'})
+                WHERE r.author_display_name IS NOT NULL AND r.normalized_text IS NOT NULL
+                RETURN r.author_display_name AS author, r.channel_or_group AS group_name,
+                       r.normalized_text AS text, r.event_timestamp AS ts
+                ORDER BY r.event_timestamp DESC
+                LIMIT 15
+                """)
+                messages = [dict(row) async for row in res_m]
+
+                # 3. Fetch Git commits
+                res_g = await s.run("""
+                MATCH (r:RawEvent {source_type: 'git'})
+                RETURN r.author_display_name AS author, r.conversation_or_project_id AS repo,
+                       r.normalized_text AS text
+                ORDER BY r.event_timestamp DESC
+                LIMIT 10
+                """)
+                commits = [dict(row) async for row in res_g]
+
+                # 4. Fetch Coding Agent actions
+                res_a = await s.run("""
+                MATCH (r:RawEvent {source_type: 'coding_agent'})
+                RETURN r.author_display_name AS role, r.conversation_or_project_id AS workspace,
+                       r.normalized_text AS text
+                ORDER BY r.event_timestamp DESC
+                LIMIT 10
+                """)
+                agents = [dict(row) async for row in res_a]
+        except Exception as e:
+            logger.warning("Lỗi khi truy vấn context từ Neo4j: %s", e)
+
+        # Build context
+        task_lines = [
+            f"- [{t['status']}] '{t['title']}' | Người giao/nhắn: {t['requester'] or 'N/A'} | Nhóm: {t['group_name'] or 'N/A'} | Hạn chót: {t['due_date'] or 'N/A'}"
+            for t in tasks
+        ]
+        msg_lines = [
+            f"- [Teams] {m['author']} trong '{m['group_name']}': \"{str(m['text'])[:120]}...\""
+            for m in messages[:12]
+        ]
+        git_lines = [
+            f"- [Git Repo: {g['repo']}] {g['author']}: \"{str(g['text'])[:100]}...\""
+            for g in commits[:8]
+        ]
+        agent_lines = [
+            f"- [Coding Agent] {a['role']} ({str(a['workspace'])[:35]}): \"{str(a['text'])[:100]}...\""
+            for a in agents[:8]
+        ]
+
+        context_prompt = f"""DƯỚI ĐÂY LÀ DỮ LIỆU THỰC TẾ ĐANG LƯU TRONG CƠ SỞ DỮ LIỆU NEO4J CỦA NGƯỜI DÙNG:
+
+=== 1. DANH SÁCH CÔNG VIỆC (UNIFIED TASKS) ===
+{chr(10).join(task_lines)}
+
+=== 2. CÁC TIN NHẮN TEAMS GẦN ĐÂY (NGƯỜI NHẮN & NHÓM) ===
+{chr(10).join(msg_lines)}
+
+=== 3. CÁC GIT COMMITS TRÊN CÁC DỰ ÁN LOCAL ===
+{chr(10).join(git_lines)}
+
+=== 4. PHIÊN LÀM VIỆC CỦA CODING AGENTS TRÊN MÁY ===
+{chr(10).join(agent_lines)}
+"""
+
+        system_prompt = (
+            "Bạn là Trợ lý AI Thông Minh của Personal Task Board. Bạn có quyền truy vấn trực tiếp vào Cơ sở Dữ liệu Đồ thị Neo4j của người dùng.\n"
+            "Nhiệm vụ: Dựa trên dữ liệu thực tế được cung cấp, hãy trả lời câu hỏi của người dùng một cách chính xác, chi tiết, rõ ràng bằng Tiếng Việt.\n"
+            "- Nếu người dùng hỏi ai là người nhắn/giao việc, nhắn trong group nào: hãy liệt kê cụ thể tên người, tên nhóm/kênh và nội dung công việc tương ứng.\n"
+            "- Trình bày mạch lạc bằng Markdown có gạch đầu dòng và in đậm tên người, nhóm và công việc."
+        )
+
+        base_url = (os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")).rstrip("/")
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY", "")
+        model = os.getenv("PTB_EXTRACTION_MODEL") or os.getenv("LLM_MODEL", "gemma-4-26b-a4b-it")
+
+        conversation_messages = [
+            {"role": "system", "content": f"{system_prompt}\n\n{context_prompt}"}
+        ]
+        for h in req.history[-6:]:
+            if isinstance(h, dict) and "role" in h and "content" in h:
+                conversation_messages.append({"role": h["role"], "content": h["content"]})
+        conversation_messages.append({"role": "user", "content": req.message})
+
+        payload = {
+            "model": model,
+            "messages": conversation_messages,
+            "temperature": 0.2,
+            "max_tokens": 2048,
+        }
+
+        def _call_llm():
+            http_req = urllib.request.Request(
+                f"{base_url}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(http_req, timeout=60.0) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        try:
+            res_data = await asyncio.to_thread(_call_llm)
+            reply = res_data["choices"][0]["message"]["content"]
+            cleaned = re.sub(r"<(think|thought)>.*?</\1>", "", reply, flags=re.DOTALL).strip()
+            if not cleaned:
+                cleaned = re.sub(r"<\/?(think|thought)>", "", reply).strip()
+            return {
+                "reply": cleaned,
+                "tasks_count": len(tasks),
+                "events_count": len(messages) + len(commits) + len(agents)
+            }
+        except Exception as e:
+            logger.error("Chatbot API call failed: %s", e)
+            return {
+                "reply": f"⚠️ Có lỗi khi xử lý câu hỏi qua LLM: {str(e)}",
+                "tasks_count": len(tasks),
+                "events_count": len(messages) + len(commits) + len(agents)
+            }
 
     return app
 

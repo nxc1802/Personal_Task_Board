@@ -3,6 +3,12 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv()
+
 from ptb_database.neo4j_client import Neo4jClient
 
 
