@@ -81,6 +81,9 @@ CURRENT_USER_NAME=Local User
 > *(Xem thêm [Mục 4](#4-hướng-dẫn-cấu-hình-chi-tiết-env--config) nếu bạn muốn dùng OpenAI, Anthropic Claude, hoặc Ollama cục bộ)*.
 
 ### Bước 3: Khởi chạy toàn bộ hệ thống
+
+> ⚠️ **Lưu ý quan trọng**: Đảm bảo ứng dụng **Docker Desktop đã được mở** và biểu tượng cá voi ở góc dưới đã chuyển sang **màu xanh lá (`Engine: Running`)** trước khi gõ lệnh. Nếu chưa bật Docker Desktop, lệnh sẽ báo lỗi `failed to connect to docker API at npipe...`.
+
 Khởi chạy với một lệnh duy nhất:
 ```bash
 docker compose up -d --build
