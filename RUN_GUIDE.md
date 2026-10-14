@@ -37,9 +37,12 @@ Sau khi đã bật Docker Desktop (Engine Running), bạn chọn 1 trong 2 cách
 ### Cách 1: Khởi chạy bằng Docker Compose (Khuyên Dùng — 1 Lệnh Duy Nhất)
 Mở terminal PowerShell/Bash tại thư mục dự án:
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
-*(Nếu là lần đầu chạy hoặc vừa sửa code, thêm cờ `--build`: `docker compose up -d --build`)*
+
+> 💡 **Tại sao luôn cần cờ `--build`?** Tham số `--build` đảm bảo Docker đóng gói toàn bộ mã nguồn mới nhất và cài đặt đầy đủ các gói workspace vào container `ptb-app`. Nếu chạy thiếu `--build`, Docker có thể không phát hiện được container mới hoặc dùng cache cũ khiến dịch vụ cổng 8000 không khởi động.
+
+> ⏱️ **Lưu ý về thời gian khởi động**: Sau khi gõ lệnh, hệ thống cần khoảng **20 – 40 giây** để container Neo4j khởi động, tự động nạp constraint/indexes và kiểm tra healthcheck. Trong 20 giây đầu nếu mở ngay `localhost:8000/portal` có thể thấy thông báo `ERR_CONNECTION_REFUSED`. Bạn hãy đợi khoảng 30 giây (hoặc kiểm tra `docker ps` thấy `(healthy)`) rồi nhấn F5 tải lại trang.
 
 **Hệ thống sẽ tự động thực hiện ngầm:**
 - Khởi động cơ sở dữ liệu đồ thị **Neo4j 5.26** (Cổng `7687` & `7474`).
@@ -168,6 +171,7 @@ docker compose exec ptb-app ptb doctor --deep
 | Mã Lỗi / Hiện Tượng | Nguyên Nhân | Cách Xử Lý |
 |---|---|---|
 | **`failed to connect to docker API... pipe/dockerDesktopLinuxEngine`** | Chưa bật Docker Desktop hoặc Engine chưa sẵn sàng. | Mở Docker Desktop từ Start Menu, đợi icon cá voi chuyển màu xanh lá rồi chạy lại lệnh. |
+| **`localhost đã từ chối kết nối (ERR_CONNECTION_REFUSED)` khi vào port 8000** | 1. Mở web quá sớm khi container `ptb_app` đang khởi động.<br>2. Chạy lệnh thiếu cờ `--build` khiến container `ptb_app` chưa được build. | 1. Đợi khoảng 20-30 giây rồi nhấn F5 tải lại trang.<br>2. Chạy lại lệnh: `docker compose up -d --build`<br>3. Xem log kiểm tra: `docker compose logs -f ptb-app` khi nào in banner `READY` là hoàn tất. |
 | **`PTB_STORAGE_001`** | Mất kết nối Neo4j hoặc sai mật khẩu. | Kiểm tra `docker compose ps neo4j` và kiểm tra `NEO4J_PASSWORD` trong file `.env`. |
 | **`PTB_LLM_001`** | Chưa cấu hình LLM API Key. | Điền `LLM_API_KEY` của Gemini hoặc OpenAI vào file `.env`. |
 | **Cổng `8000`, `8001`, `3000` bị báo `already in use`** | Có phần mềm khác đang chiếm cổng. | Đổi `APP_PORT` hoặc `MCP_PORT` trong file `.env`. |

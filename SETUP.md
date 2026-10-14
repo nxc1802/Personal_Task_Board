@@ -322,6 +322,7 @@ Tất cả 25 tests phải chuyển sang màu xanh (`25 passed`).
 | Hiện Tượng / Lỗi | Nguyên Nhân | Cách Xử Lý |
 |---|---|---|
 | **`failed to connect to docker API... pipe/dockerDesktopLinuxEngine`** | Docker Desktop chưa được bật trên máy tính. | Bật ứng dụng Docker Desktop, đợi biểu tượng Docker chuyển sang màu xanh (Running) rồi chạy lại lệnh. |
+| **`localhost đã từ chối kết nối (ERR_CONNECTION_REFUSED)` khi vào port 8000** | 1. Mở web quá sớm khi container `ptb_app` đang khởi động.<br>2. Chạy lệnh thiếu cờ `--build` khiến container `ptb_app` chưa được build. | 1. Đợi khoảng 20-30 giây rồi nhấn F5 tải lại trang.<br>2. Chạy lại lệnh: `docker compose up -d --build`<br>3. Kiểm tra tiến độ: `docker compose logs -f ptb-app` xem đã in banner `READY` chưa. |
 | **`PTB_STORAGE_001: Mất kết nối Neo4j`** | Container Neo4j chưa chạy hoặc sai mật khẩu. | 1. Kiểm tra container: `docker compose ps neo4j`<br>2. Kiểm tra mật khẩu `NEO4J_PASSWORD` trong file `.env` đã khớp với container chưa. |
 | **`PTB_LLM_001: LLM API key unconfigured`** | Chưa nhập `LLM_API_KEY` trong file `.env`. | Mở file `.env` và điền khóa API của Gemini hoặc OpenAI vào biến `LLM_API_KEY`. |
 | **Cổng mạng bị xung đột (`8000`, `8001`, `3000`, hoặc `7687` already in use)** | Có ứng dụng khác đang chiếm cổng. | Đổi cổng ánh xạ trong file `.env` (ví dụ `APP_PORT=8010`, `MCP_PORT=8011`) hoặc tắt tiến trình đang chiếm cổng cũ. |
