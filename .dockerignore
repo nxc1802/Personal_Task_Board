@@ -2,11 +2,12 @@
 .github
 .venv
 venv
-__pycache__
-*.pyc
-*.pyo
-*.pyd
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
 .pytest_cache
+**/.pytest_cache
 .coverage
 htmlcov
 .mypy_cache
@@ -15,4 +16,5 @@ node_modules
 .pnpm-store
 *.log
 *.tmp
-data/playwright/storage_state.json
+data/
+*.gguf

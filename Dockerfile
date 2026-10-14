@@ -22,7 +22,7 @@ COPY services/application/pyproject.toml ./services/application/
 COPY services/mcp/pyproject.toml ./services/mcp/
 
 # Install base dependencies into isolated virtual environment
-RUN uv sync --frozen --no-dev --no-install-workspace
+RUN uv sync --frozen --no-dev --no-install-workspace --all-packages
 
 # -----------------------------------------------------------------------------
 # Final Production Runner Stage
@@ -53,7 +53,7 @@ COPY --chown=ptbuser:ptbuser . /app
 
 # Sync and install workspace packages
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --all-packages
 
 # Initialize runtime state directories with non-root ownership
 RUN mkdir -p /app/data/openwebui /app/data/playwright /app/logs \
