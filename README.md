@@ -10,6 +10,8 @@
 ![OpenWebUI Board](https://img.shields.io/badge/OpenWebUI-Port%203000-orange)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
+> 🚀 **Cài đặt trên máy mới?** Xem ngay [**HƯỚNG DẪN SETUP CHI TIẾT (SETUP.md)**](./SETUP.md) — Khởi chạy hệ thống trong 1 phút bằng Docker Compose hoặc Python UV.
+
 ---
 
 ## 📖 Mục Lục
