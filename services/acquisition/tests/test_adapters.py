@@ -24,7 +24,12 @@ from ptb_contracts import (
     SourceType,
 )
 from ptb_acquisition.adapters.agent_adapters import AgentWatchersAdapter, CodingAgentAdapter
-from ptb_acquisition.adapters.base import AcquisitionAdapter
+from ptb_acquisition.adapters.base import (
+    AcquisitionAdapter,
+    AdapterAuthenticationError,
+    AdapterRateLimitError,
+    AdapterTransientError,
+)
 from ptb_acquisition.pipeline import AcquisitionPipeline
 from tests.support.test_doubles import (
     InMemoryCheckpointRepository,
@@ -417,3 +422,285 @@ def test_playwright_interceptors_emit_standard_raw_event():
     assert len(or_rec.content_hash) == 64
     assert or_rec.normalized_text == "Mọi thứ đã sẵn sàng cho pipeline."
     assert or_rec.captured_at is not None
+
+
+# --- 5. Multi-Source Pipeline: Registration, Partial Failure Isolation, Checkpoint Scoping & Deduplication ---
+
+class FailingAdapter(AcquisitionAdapter):
+    """Adapter giả lập lỗi rate limit, auth, hoặc network để kiểm tra error isolation."""
+
+    def __init__(
+        self,
+        source_type: SourceType,
+        error_type: str = "rate_limit",
+        tenant_id: str = "test-tenant",
+    ):
+        super().__init__(source_type=source_type, tenant_id=tenant_id)
+        self.error_type = error_type
+
+    async def discover(self) -> List[Dict[str, str]]:
+        return [{"stream_id": "fail-stream", "name": f"Failing {self.source_type.value}"}]
+
+    async def backfill(
+        self, stream_id: str, since: Optional[datetime] = None
+    ) -> AsyncIterator[RawEventRecord]:
+        if self.error_type == "rate_limit":
+            raise AdapterRateLimitError("Rate limit exceeded: 429 Too Many Requests", retry_after_seconds=30, source_type=self.source_type)
+        elif self.error_type == "auth":
+            raise AdapterAuthenticationError("Unauthorized: 401 Invalid Token", source_type=self.source_type)
+        elif self.error_type == "network":
+            raise AdapterTransientError("Connection reset by peer: ECONNRESET", source_type=self.source_type)
+        else:
+            raise RuntimeError(f"Simulated unknown failure: {self.error_type}")
+        if False:
+            yield None  # type: ignore
+
+    async def poll_incremental(
+        self, stream_id: str, checkpoint: Optional[IngestionCheckpointRecord] = None
+    ) -> AsyncIterator[RawEventRecord]:
+        if self.error_type == "rate_limit":
+            raise AdapterRateLimitError("Rate limit in incremental poll", retry_after_seconds=60, source_type=self.source_type)
+        raise RuntimeError("Incremental failure")
+        if False:
+            yield None  # type: ignore
+
+    async def health(self) -> Dict[str, str]:
+        return {"status": "unhealthy", "source_type": self.source_type.value}
+
+
+@pytest.mark.asyncio
+async def test_pipeline_multi_source_registration_and_lookup():
+    pipeline = AcquisitionPipeline()
+
+    adapter_coding = DummyAdapter(tenant_id="tenant-1")
+    adapter_git = DummyAdapter(tenant_id="tenant-1")
+    adapter_git.source_type = SourceType.GIT
+
+    pipeline.register_adapter(adapter_coding, name="coding_agents")
+    pipeline.register_adapter(adapter_git, name="git")
+
+    assert pipeline.get_adapter("coding_agents") is adapter_coding
+    assert pipeline.get_adapter(SourceType.CODING_AGENT) is adapter_coding
+    assert pipeline.get_adapter("coding_agent") is adapter_coding
+    assert pipeline.get_adapter("git") is adapter_git
+    assert pipeline.get_adapter(SourceType.GIT) is adapter_git
+    assert pipeline.get_adapter("unknown") is None
+
+    registered = pipeline.list_registered_adapters()
+    assert len(registered) == 2
+    names = [r["name"] for r in registered]
+    assert "coding_agents" in names
+    assert "git" in names
+
+
+@pytest.mark.asyncio
+async def test_pipeline_sync_all_registered_partial_failure_tolerance():
+    """Kiểm tra partial failure: lỗi ở adapter Jira (429) và Confluence (401)
+
+    không làm sập pipeline hay ảnh hưởng tới CodingAgent và Git đang hoạt động bình thường.
+    """
+    raw_repo = InMemoryRawEventRepository()
+    ckpt_repo = InMemoryCheckpointRepository()
+    pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="tenant-1")
+
+    now = datetime.now(timezone.utc)
+
+    # 1. Adapter thành công: Coding Agent với 2 events
+    ok_adapter = DummyAdapter(tenant_id="tenant-1")
+    ok_adapter.events = [
+        RawEventRecord(
+            id="ok-1",
+            tenant_id="tenant-1",
+            source_type=SourceType.CODING_AGENT,
+            external_id="ext-ok-1",
+            idempotency_key="ok-key-1",
+            event_timestamp=now,
+            author_external_id="user",
+            conversation_or_project_id="proj",
+            raw_payload={"msg": "first ok"},
+        ),
+        RawEventRecord(
+            id="ok-2",
+            tenant_id="tenant-1",
+            source_type=SourceType.CODING_AGENT,
+            external_id="ext-ok-2",
+            idempotency_key="ok-key-2",
+            event_timestamp=now + timedelta(seconds=1),
+            author_external_id="user",
+            conversation_or_project_id="proj",
+            raw_payload={"msg": "second ok"},
+        ),
+    ]
+
+    # 2. Adapter lỗi rate limit: Jira
+    rate_limited_adapter = FailingAdapter(SourceType.JIRA, error_type="rate_limit", tenant_id="tenant-1")
+
+    # 3. Adapter lỗi auth: Confluence
+    auth_failed_adapter = FailingAdapter(SourceType.CONFLUENCE, error_type="auth", tenant_id="tenant-1")
+
+    # 4. Adapter lỗi network: Slack
+    net_failed_adapter = FailingAdapter(SourceType.SLACK, error_type="network", tenant_id="tenant-1")
+
+    pipeline.register_adapter(ok_adapter, name="coding_agents")
+    pipeline.register_adapter(rate_limited_adapter, name="jira")
+    pipeline.register_adapter(auth_failed_adapter, name="confluence")
+    pipeline.register_adapter(net_failed_adapter, name="slack")
+
+    # sync_all_registered KHÔNG được ném exception
+    results = await pipeline.sync_all_registered()
+
+    # Kiểm tra kết quả chi tiết từng source
+    assert results["coding_agents"]["status"] == "success"
+    assert results["coding_agents"]["count"] == 2
+
+    assert results["jira"]["status"] == "error"
+    assert "429" in results["jira"]["error"]
+
+    assert results["confluence"]["status"] == "error"
+    assert "401" in results["confluence"]["error"]
+
+    assert results["slack"]["status"] == "error"
+    assert "ECONNRESET" in results["slack"]["error"]
+
+    # Stats tổng thể ghi nhận đúng số event nạp và số lỗi
+    assert pipeline.stats["ingested"] == 2
+    assert pipeline.stats["persisted"] == 2
+    assert pipeline.stats["errors"] == 3
+    assert raw_repo.count == 2
+
+
+@pytest.mark.asyncio
+async def test_pipeline_sync_source_on_demand():
+    """Kiểm tra sync_source chạy riêng lẻ theo tên hoặc SourceType."""
+    raw_repo = InMemoryRawEventRepository()
+    pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, tenant_id="tenant-1")
+
+    adapter = DummyAdapter(tenant_id="tenant-1")
+    adapter.events = [
+        RawEventRecord(
+            id="src-1",
+            tenant_id="tenant-1",
+            source_type=SourceType.CODING_AGENT,
+            external_id="ext-src-1",
+            idempotency_key="key-src-1",
+            event_timestamp=datetime.now(timezone.utc),
+            author_external_id="user",
+            conversation_or_project_id="proj",
+            raw_payload={"action": "test sync_source"},
+        )
+    ]
+    pipeline.register_adapter(adapter, name="coding_agents")
+
+    # Chạy theo tên
+    count = await pipeline.sync_source("coding_agents")
+    assert count == 1
+    assert raw_repo.count == 1
+
+    # Chạy adapter lỗi với raise_on_error=False không được crash
+    fail_adapter = FailingAdapter(SourceType.GITHUB, error_type="auth", tenant_id="tenant-1")
+    pipeline.register_adapter(fail_adapter, name="github")
+    fail_count = await pipeline.sync_source("github", raise_on_error=False)
+    assert fail_count == 0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_composite_checkpoint_scoping():
+    """Kiểm tra checkpoint scoping độc lập theo (tenant_id, source_type, stream_id)."""
+    ckpt_repo = InMemoryCheckpointRepository()
+    raw_repo = InMemoryRawEventRepository()
+
+    pipeline_user1 = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="user-1")
+    pipeline_user2 = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="user-2")
+
+    t1 = datetime(2026, 10, 1, 10, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 10, 1, 11, 0, 0, tzinfo=timezone.utc)
+
+    # User 1 lưu checkpoint
+    ckpt_user1 = IngestionCheckpointRecord(
+        id="ckpt-u1",
+        source_type=SourceType.GIT,
+        stream_id="repo-main",
+        last_event_timestamp=t1,
+        last_external_id="commit-aaa",
+        tenant_id="user-1",
+    )
+    await ckpt_repo.save_checkpoint(ckpt_user1)
+
+    # User 2 lưu checkpoint trên cùng source và stream nhưng khác tenant
+    ckpt_user2 = IngestionCheckpointRecord(
+        id="ckpt-u2",
+        source_type=SourceType.GIT,
+        stream_id="repo-main",
+        last_event_timestamp=t2,
+        last_external_id="commit-bbb",
+        tenant_id="user-2",
+    )
+    await ckpt_repo.save_checkpoint(ckpt_user2)
+
+    # Kiểm tra truy xuất checkpoint đúng tenant
+    loaded_u1 = await pipeline_user1._load_checkpoint(SourceType.GIT, "repo-main")
+    loaded_u2 = await pipeline_user2._load_checkpoint(SourceType.GIT, "repo-main")
+
+    assert loaded_u1 is not None
+    assert loaded_u1.last_external_id == "commit-aaa"
+    assert loaded_u1.last_event_timestamp == t1
+
+    assert loaded_u2 is not None
+    assert loaded_u2.last_external_id == "commit-bbb"
+    assert loaded_u2.last_event_timestamp == t2
+
+
+@pytest.mark.asyncio
+async def test_pipeline_replay_deduplication_across_restarts():
+    """Kiểm tra replay safety: chạy lại ingestion sau khi khởi động lại pipeline
+
+    tuyệt đối không tạo ra duplicate task hoặc duplicate raw events trong repository.
+    """
+    shared_repo = InMemoryRawEventRepository()
+    now = datetime.now(timezone.utc)
+
+    event_payload = {
+        "id": "event-rep-1",
+        "tenant_id": "tenant-rep",
+        "source_type": SourceType.GIT,
+        "external_id": "commit-12345",
+        "idempotency_key": "deterministic-hash-rep-1",
+        "event_timestamp": now,
+        "author_external_id": "developer",
+        "conversation_or_project_id": "repo-alpha",
+        "raw_payload": {"message": "feat: initial commit"},
+        "normalized_text": "feat: initial commit",
+    }
+
+    rec = RawEventRecord(
+        id=event_payload["id"],
+        tenant_id=event_payload["tenant_id"],
+        source_type=event_payload["source_type"],
+        external_id=event_payload["external_id"],
+        idempotency_key=event_payload["idempotency_key"],
+        event_timestamp=event_payload["event_timestamp"],
+        author_external_id=event_payload["author_external_id"],
+        conversation_or_project_id=event_payload["conversation_or_project_id"],
+        raw_payload=event_payload["raw_payload"],
+        normalized_text=event_payload["normalized_text"],
+    )
+
+    # Run 1: Pipeline instance 1
+    p1 = AcquisitionPipeline(raw_event_repo=shared_repo, tenant_id="tenant-rep")
+    pushed1 = await p1.ingest_event(rec)
+    assert pushed1 is True
+    assert p1.stats["ingested"] == 1
+    assert p1.stats["deduplicated"] == 0
+    assert shared_repo.count == 1
+
+    # Run 2: Giả lập restart process -> Tạo Pipeline instance mới hoàn toàn với cùng storage repo
+    p2 = AcquisitionPipeline(raw_event_repo=shared_repo, tenant_id="tenant-rep")
+    pushed2 = await p2.ingest_event(rec)
+
+    # Phải bị phát hiện là duplicate từ repo và không nạp vào queue
+    assert pushed2 is False
+    assert p2.stats["ingested"] == 0
+    assert p2.stats["deduplicated"] == 1
+    # Số lượng trong kho lưu trữ không tăng
+    assert shared_repo.count == 1
+

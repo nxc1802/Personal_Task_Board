@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +9,45 @@
       --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       
-      /* Light Theme */
+      /* OpenWebUI Dark Palette (Default) */
+      --bg-primary: #171717;
+      --bg-surface: #212121;
+      --bg-elevated: #282828;
+      --bg-muted: #1e1e1e;
+      --border: #303030;
+      --border-focus: #525252;
+      --text-primary: #ececec;
+      --text-secondary: #b4b4b4;
+      --text-muted: #737373;
+      
+      --accent-primary: #3b82f6;
+      --accent-hover: #60a5fa;
+      --accent-subtle: rgba(59, 130, 246, 0.15);
+      --accent-text: #93c5fd;
+      
+      --success-bg: rgba(16, 185, 129, 0.15);
+      --success-border: rgba(16, 185, 129, 0.3);
+      --success-text: #34d399;
+      --warning-bg: rgba(245, 158, 11, 0.15);
+      --warning-border: rgba(245, 158, 11, 0.3);
+      --warning-text: #fbbf24;
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --danger-border: rgba(239, 68, 68, 0.3);
+      --danger-text: #f87171;
+      --info-bg: rgba(59, 130, 246, 0.15);
+      --info-border: rgba(59, 130, 246, 0.3);
+      --info-text: #60a5fa;
+
+      --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+      --card-shadow-hover: 0 4px 12px 0 rgb(0 0 0 / 0.5);
+      --modal-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html.light, body.light {
       --bg-primary: #f8fafc;
       --bg-surface: #ffffff;
       --bg-elevated: #ffffff;
@@ -41,45 +79,6 @@
       --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
       --card-shadow-hover: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
       --modal-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.2), 0 8px 10px -6px rgb(0 0 0 / 0.2);
-      --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 14px;
-      --transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    html.dark, body.dark, @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-primary: #0f172a;
-        --bg-surface: #1e293b;
-        --bg-elevated: #334155;
-        --bg-muted: #1e293b;
-        --border: #334155;
-        --border-focus: #60a5fa;
-        --text-primary: #f8fafc;
-        --text-secondary: #cbd5e1;
-        --text-muted: #64748b;
-        
-        --accent-primary: #3b82f6;
-        --accent-hover: #60a5fa;
-        --accent-subtle: #1e3a8a;
-        --accent-text: #93c5fd;
-        
-        --success-bg: #064e3b;
-        --success-border: #047857;
-        --success-text: #a7f3d0;
-        --warning-bg: #78350f;
-        --warning-border: #b45309;
-        --warning-text: #fef3c7;
-        --danger-bg: #7f1d1d;
-        --danger-border: #b91c1c;
-        --danger-text: #fecaca;
-        --info-bg: #0c4a6e;
-        --info-border: #0369a1;
-        --info-text: #bae6fd;
-
-        --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
-        --card-shadow-hover: 0 6px 12px -2px rgb(0 0 0 / 0.4);
-      }
     }
 
     * {
@@ -443,18 +442,129 @@
       background-color: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      padding: 16px;
+      padding: 12px 14px;
       box-shadow: var(--card-shadow);
       transition: var(--transition);
       display: flex;
       flex-direction: column;
-      gap: 12px;
       position: relative;
     }
 
     .card:hover {
       box-shadow: var(--card-shadow-hover);
       border-color: var(--border-focus);
+    }
+
+    /* Compact Card Architecture (Collapsed by default, expand on click) */
+    .card-summary {
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      user-select: none;
+      border-radius: var(--radius-sm);
+      transition: background-color 0.15s ease;
+    }
+
+    .card-summary:hover {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .card-summary-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .card-summary-badges {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .card-summary-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-toggle-expand {
+      background: var(--bg-muted);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .btn-toggle-expand:hover, .btn-toggle-expand.expanded {
+      color: var(--text-primary);
+      border-color: var(--accent-primary);
+      background: var(--accent-subtle);
+    }
+
+    .chevron-icon {
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      flex-shrink: 0;
+    }
+
+    .card-summary-title {
+      font-size: 14.5px;
+      font-weight: 600;
+      line-height: 1.4;
+      color: var(--text-primary);
+    }
+
+    .card-summary-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .meta-id {
+      font-family: var(--font-mono);
+      background: var(--bg-muted);
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      font-size: 10.5px;
+    }
+
+    .meta-dot {
+      color: var(--border);
+    }
+
+    .meta-item strong {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .card-details {
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+      animation: fadeIn 0.15s ease-in-out;
+    }
+
+    .task-description-box {
+      background: var(--bg-muted);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
     }
 
     .card-header {
@@ -687,7 +797,7 @@
       position: relative;
     }
     .card-in-progress::before {
-      content: "⚡ ĐANG THỰC HIỆN";
+      content: "ĐANG THỰC HIỆN";
       position: absolute;
       top: -10px;
       right: 14px;
@@ -1247,49 +1357,78 @@
           <span id="statusText">Checking API...</span>
         </div>
 
+        <!-- 1-Click Platform Sync Control -->
+        <div class="sync-control-group" style="display: inline-flex; align-items: center; position: relative;">
+          <button class="btn btn-sm btn-primary" id="btnSyncPlatforms" onclick="syncPlatforms('all')" style="border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 1px solid rgba(255,255,255,0.25); display: inline-flex; align-items: center; gap: 5px;" title="Tự động quét và thu thập dữ liệu mới từ các nền tảng">
+            <span id="syncSpinner" style="display:none; animation: spin 1s linear infinite;">↻</span>
+            <span id="syncBtnText">Thu Thập Nền Tảng</span>
+          </button>
+          <button class="btn btn-sm btn-primary" onclick="toggleSyncDropdown(event)" style="border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 5px 8px;" title="Chọn nền tảng cụ thể">
+            ▾
+          </button>
+          <div id="syncDropdownMenu" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 5px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--modal-shadow); z-index: 1000; min-width: 260px; padding: 6px 0;">
+            <div style="padding: 6px 14px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Thu Thập Nền Tảng</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('all')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Toàn bộ nền tảng (All)</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('teams')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Microsoft Teams (Cookie / Web)</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('outlook')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Microsoft Outlook (Cookie / Web)</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('git')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Local Git Commits</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('coding_agent')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Coding Agents (Cursor, Claude, Antigravity)</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('jira')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Jira Cloud / Server</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('github')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">GitHub Issues & PRs</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('slack')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Slack Workspaces</div>
+            <div style="border-top: 1px solid var(--border); margin: 4px 0;"></div>
+            <div class="sync-drop-item" onclick="openCookieManagerModal()" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px; color: var(--accent-primary); font-weight: 600;">Quản lý Cookie & Đăng nhập...</div>
+          </div>
+        </div>
+
         <button class="btn btn-sm" onclick="refreshCurrentView()" title="Tải lại dữ liệu">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
           Làm mới
         </button>
 
-        <button class="btn btn-icon btn-sm" id="themeToggleBtn" onclick="toggleTheme()" title="Chuyển theme Dark/Light">
-          <span id="themeIcon">🌙</span>
+        <button class="btn btn-sm" id="btnApiKeyConfig" onclick="openApiKeyModal()" title="Cấu hình X-PTB-API-KEY">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-1.5 1.5L16 7l-1.5-1.5-3 3 1.5 1.5L9.5 13l-1.5-1.5L6 13.5l2 2-5 5a2 2 0 0 0 3 3l5-5 2 2 2-2-1.5-1.5 3-3 1.5 1.5 3-3-1.5-1.5 1.5-1.5 2-2z"/></svg>
+          <span id="apiKeyBtnText">API Key</span>
+        </button>
+
+        <button class="btn btn-sm" id="themeToggleBtn" onclick="toggleTheme()" title="Chuyển theme Dark/Light">
+          <span id="themeText">Theme</span>
         </button>
       </div>
     </div>
 
-    <!-- 8 Tabs Navigation according to docs/v1.md -->
+    <!-- 8 Tabs Navigation without emoji icons -->
     <nav class="nav-bar">
       <div class="nav-item active" onclick="switchView('today')" id="tab-today">
-        <span>📌 Today</span>
+        <span>Today</span>
         <span class="badge-count" id="count-today">0</span>
       </div>
       <div class="nav-item" onclick="switchView('review')" id="tab-review">
-        <span>📥 Inbox / Review</span>
+        <span>Inbox / Review</span>
         <span class="badge-count" id="count-review">0</span>
       </div>
       <div class="nav-item" onclick="switchView('tasks')" id="tab-tasks">
-        <span>📦 Task Components (CRUD)</span>
+        <span>Task Components</span>
         <span class="badge-count" id="count-tasks">0</span>
       </div>
       <div class="nav-item" onclick="switchView('waiting')" id="tab-waiting">
-        <span>⏳ Waiting</span>
+        <span>Waiting</span>
         <span class="badge-count" id="count-waiting">0</span>
       </div>
       <div class="nav-item" onclick="switchView('forgotten')" id="tab-forgotten">
-        <span>🕰️ Forgotten</span>
+        <span>Forgotten</span>
         <span class="badge-count" id="count-forgotten">0</span>
       </div>
       <div class="nav-item" onclick="switchView('decisions')" id="tab-decisions">
-        <span>💡 Decisions</span>
+        <span>Decisions</span>
         <span class="badge-count" id="count-decisions">0</span>
       </div>
       <div class="nav-item" onclick="switchView('lessons')" id="tab-lessons">
-        <span>📖 Lessons</span>
+        <span>Lessons</span>
         <span class="badge-count" id="count-lessons">0</span>
       </div>
       <div class="nav-item" onclick="switchView('health')" id="tab-health">
-        <span>🩺 Sources / Health</span>
+        <span>Sources / Health</span>
         <span class="badge-count" id="count-health">Healthy</span>
       </div>
     </nav>
@@ -1301,7 +1440,7 @@
     <!-- Global System / Error Banner -->
     <div id="globalSystemBanner" class="system-banner banner-error" style="display: none;">
       <div class="banner-content">
-        <span class="banner-icon" id="bannerIcon">🛑</span>
+        <span class="banner-icon" id="bannerIcon"></span>
         <div class="banner-text-wrap">
           <span class="banner-title" id="bannerTitle">SYSTEM STATUS</span>
           <span class="banner-message" id="bannerMessage"></span>
@@ -1316,46 +1455,48 @@
     <section id="view-today" class="view-container active">
       <div class="headline-card">
         <div class="headline-content">
-          <div class="headline-icon">☀️</div>
           <div>
             <div class="headline-text" id="todayHeadline">Đang tải kế hoạch hôm nay...</div>
             <div class="headline-meta" id="todayMeta">Dữ liệu được sắp xếp tất định theo hệ số ưu tiên (L4 Intelligence)</div>
           </div>
         </div>
         <div id="todayRiskAlert" style="display:none; color: var(--danger-text); font-weight: 600; font-size: 13px;">
-          ⚠️ Phát hiện rủi ro tiến độ
+          Phát hiện rủi ro tiến độ
         </div>
       </div>
 
       <!-- Quick Tag Filter Bar -->
       <div class="quick-filter-bar" id="todayQuickFilterBar">
-        <span class="filter-label">🏷️ Lọc theo thẻ:</span>
+        <span class="filter-label">Lọc theo thẻ:</span>
         <button class="filter-tag-pill active" id="tagPill-all" onclick="setTodayTagFilter('all')">
           Tất cả (<span id="count-tag-all">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-in_progress" onclick="setTodayTagFilter('in_progress')">
-          ⚡ Đang làm (<span id="count-tag-in_progress">0</span>)
+          Đang làm (<span id="count-tag-in_progress">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-overdue" onclick="setTodayTagFilter('overdue')">
-          ⏰ Quá hạn (<span id="count-tag-overdue">0</span>)
+          Quá hạn (<span id="count-tag-overdue">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-production" onclick="setTodayTagFilter('production')">
-          🚨 Production (<span id="count-tag-production">0</span>)
+          Production (<span id="count-tag-production">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-customer" onclick="setTodayTagFilter('customer')">
-          🏢 Khách hàng (<span id="count-tag-customer">0</span>)
+          Khách hàng (<span id="count-tag-customer">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-commitment" onclick="setTodayTagFilter('commitment')">
-          🤝 Cam kết (<span id="count-tag-commitment">0</span>)
+          Cam kết (<span id="count-tag-commitment">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-agent" onclick="setTodayTagFilter('agent')">
-          🤖 Coding Agent (<span id="count-tag-agent">0</span>)
+          Coding Agent (<span id="count-tag-agent">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-git" onclick="setTodayTagFilter('git')">
-          🐙 Git Commit (<span id="count-tag-git">0</span>)
+          Git Commit (<span id="count-tag-git">0</span>)
         </button>
         <button class="filter-tag-pill" id="tagPill-teams" onclick="setTodayTagFilter('teams')">
-          💬 MS Teams (<span id="count-tag-teams">0</span>)
+          MS Teams (<span id="count-tag-teams">0</span>)
+        </button>
+        <button class="filter-tag-pill" id="tagPill-outlook" onclick="setTodayTagFilter('outlook')">
+          MS Outlook (<span id="count-tag-outlook">0</span>)
         </button>
       </div>
 
@@ -1373,7 +1514,6 @@
     <section id="view-review" class="view-container">
       <div class="headline-card" style="border-left: 4px solid #f59e0b;">
         <div class="headline-content">
-          <div class="headline-icon">📥</div>
           <div>
             <div class="headline-text">Review Queue (Confidence 0.40 - 0.64)</div>
             <div class="headline-meta">Các task được AI trích xuất cần bạn duyệt hoặc bổ sung thông tin trước khi chính thức đưa vào Task Board.</div>
@@ -1392,32 +1532,35 @@
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap;">
         <div style="display: flex; gap: 8px; align-items: center;">
           <button class="btn btn-primary" onclick="openCreateTaskModal()">
-            <span>➕ Thêm Công Việc Mới</span>
+            <span>Thêm Công Việc Mới</span>
           </button>
           <button class="btn" style="background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff;" onclick="openIngestModal()">
-            <span>🚀 Bóc Tách Tin Nhắn</span>
+            <span>Bóc Tách Tin Nhắn</span>
           </button>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <button class="btn btn-sm" onclick="runLayer1Scan()" title="Quét tự động Local Git & Coding Agents">
-            <span>🔄 Quét Local (L1)</span>
+            <span>Quét Local (Git/Agents)</span>
           </button>
           <button class="btn btn-sm" onclick="runTeamsScan()" title="Quét tin nhắn Microsoft Teams">
-            <span>💬 Quét Teams</span>
+            <span>Quét Teams</span>
+          </button>
+          <button class="btn btn-sm" onclick="runOutlookScan()" title="Quét email Microsoft Outlook">
+            <span>Quét Outlook</span>
           </button>
         </div>
       </div>
 
       <!-- Filter Bar -->
       <div class="filter-bar">
-        <input type="text" class="filter-input" id="filterSearch" placeholder="🔍 Tìm kiếm tiêu đề, người yêu cầu, group..." oninput="applyTaskFilters()">
+        <input type="text" class="filter-input" id="filterSearch" placeholder="Tìm kiếm tiêu đề, người yêu cầu, group..." oninput="applyTaskFilters()">
         
         <select class="filter-select" id="filterStatus" onchange="applyTaskFilters()">
           <option value="ALL">Tất cả Trạng thái</option>
-          <option value="IN_PROGRESS">⚡ IN_PROGRESS (Ưu tiên đầu)</option>
-          <option value="TODO">📝 TODO</option>
-          <option value="BLOCKED">🚫 BLOCKED</option>
-          <option value="DONE">✅ DONE</option>
+          <option value="IN_PROGRESS">IN_PROGRESS (Ưu tiên đầu)</option>
+          <option value="TODO">TODO</option>
+          <option value="BLOCKED">BLOCKED</option>
+          <option value="DONE">DONE</option>
         </select>
 
         <select class="filter-select" id="filterProject" onchange="applyTaskFilters()">
@@ -1431,6 +1574,7 @@
         <select class="filter-select" id="filterSource" onchange="applyTaskFilters()">
           <option value="ALL">Tất cả Nguồn</option>
           <option value="ms_teams">MS Teams</option>
+          <option value="ms_outlook">MS Outlook</option>
           <option value="jira">Jira</option>
           <option value="shortcut">Shortcut</option>
           <option value="cursor">Cursor Agent</option>
@@ -1451,7 +1595,7 @@
         </select>
 
         <div style="margin-left: auto; display: flex; gap: 6px;">
-          <button class="btn btn-sm btn-primary" id="btnModeComponents" onclick="setTaskViewMode('components')">📦 Thẻ Components</button>
+          <button class="btn btn-sm btn-primary" id="btnModeComponents" onclick="setTaskViewMode('components')">Thẻ Components</button>
           <button class="btn btn-sm" id="btnModeKanban" onclick="setTaskViewMode('kanban')">Kanban</button>
           <button class="btn btn-sm" id="btnModeList" onclick="setTaskViewMode('list')">Danh Sách</button>
         </div>
@@ -1466,7 +1610,7 @@
       <div id="tasksKanbanContainer" class="kanban-board" style="display: none;">
         <div class="kanban-col" data-status="IN_PROGRESS" style="border-top: 3px solid #3b82f6;">
           <div class="kanban-col-header" style="background: rgba(59, 130, 246, 0.1);">
-            <span>⚡ Đang làm (IN_PROGRESS)</span>
+            <span>Đang làm (IN_PROGRESS)</span>
             <span class="badge-count" id="count-col-inprogress">0</span>
           </div>
           <div class="kanban-col-cards" id="cards-IN_PROGRESS"></div>
@@ -1474,7 +1618,7 @@
 
         <div class="kanban-col" data-status="TODO">
           <div class="kanban-col-header">
-            <span>📝 Cần làm (TODO)</span>
+            <span>Cần làm (TODO)</span>
             <span class="badge-count" id="count-col-todo">0</span>
           </div>
           <div class="kanban-col-cards" id="cards-TODO"></div>
@@ -1482,7 +1626,7 @@
 
         <div class="kanban-col" data-status="BLOCKED">
           <div class="kanban-col-header">
-            <span>🚫 Bị nghẽn (BLOCKED)</span>
+            <span>Bị nghẽn (BLOCKED)</span>
             <span class="badge-count" id="count-col-blocked">0</span>
           </div>
           <div class="kanban-col-cards" id="cards-BLOCKED"></div>
@@ -1490,7 +1634,7 @@
 
         <div class="kanban-col" data-status="DONE">
           <div class="kanban-col-header">
-            <span>✅ Hoàn thành (DONE)</span>
+            <span>Hoàn thành (DONE)</span>
             <span class="badge-count" id="count-col-done">0</span>
           </div>
           <div class="kanban-col-cards" id="cards-DONE"></div>
@@ -1542,7 +1686,6 @@
     <section id="view-forgotten" class="view-container">
       <div class="headline-card" style="border-left: 4px solid #ef4444;">
         <div class="headline-content">
-          <div class="headline-icon">🕰️</div>
           <div>
             <div class="headline-text">Cam kết trôi quá hạn (Forgotten Commitments)</div>
             <div class="headline-meta">Các lời hứa hoặc cam kết trong chat/họp đã trôi nhiều ngày mà chưa có hành động hoàn tất.</div>
@@ -1559,7 +1702,6 @@
     <section id="view-decisions" class="view-container">
       <div class="headline-card">
         <div class="headline-content">
-          <div class="headline-icon">💡</div>
           <div>
             <div class="headline-text">Danh mục Quyết định Kiến trúc & Kỹ thuật</div>
             <div class="headline-meta">Kho tri thức lưu các Architectural Decision Records (ADR) được trích xuất từ chat và coding agents.</div>
@@ -1576,7 +1718,6 @@
     <section id="view-lessons" class="view-container">
       <div class="headline-card">
         <div class="headline-content">
-          <div class="headline-icon">📖</div>
           <div>
             <div class="headline-text">Bài học kinh nghiệm sửa lỗi (Lessons Learned)</div>
             <div class="headline-meta">Được trích xuất tự động từ các phiên debug thành công của Cursor, Claude Code, Antigravity.</div>
@@ -1593,7 +1734,6 @@
     <section id="view-health" class="view-container">
       <div class="headline-card">
         <div class="headline-content">
-          <div class="headline-icon">🩺</div>
           <div>
             <div class="headline-text">Tình trạng Đồng bộ Nguồn Dữ liệu (Coverage & Health)</div>
             <div class="headline-meta">Kiểm soát tiến trình Acquisition L1: Playwright Interceptors, API Watchers và Coding Agent turn monitors.</div>
@@ -1612,7 +1752,7 @@
   <div class="modal-backdrop" id="createTaskModal">
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">➕ Thêm Công Việc Mới (Manual Create)</div>
+        <div class="modal-title">Thêm Công Việc Mới (Manual Create)</div>
         <button class="btn btn-icon btn-sm" onclick="closeCreateTaskModal()">✕</button>
       </div>
       <div class="modal-body">
@@ -1632,9 +1772,9 @@
           <div class="form-group">
             <label class="form-label">Trạng thái ban đầu</label>
             <select class="form-select" id="createTaskStatus">
-              <option value="IN_PROGRESS">⚡ IN_PROGRESS (Làm ngay)</option>
-              <option value="TODO" selected>📝 TODO (Cần làm)</option>
-              <option value="BLOCKED">🚫 BLOCKED (Bị nghẽn)</option>
+              <option value="IN_PROGRESS">IN_PROGRESS (Làm ngay)</option>
+              <option value="TODO" selected>TODO (Cần làm)</option>
+              <option value="BLOCKED">BLOCKED (Bị nghẽn)</option>
             </select>
           </div>
         </div>
@@ -1648,14 +1788,29 @@
             <input type="number" class="form-input" id="createTaskPriority" value="60" min="0" max="100">
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Hạn chót (Deadline)</label>
-          <input type="datetime-local" class="form-input" id="createTaskDueDate">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Hạn chót (Deadline)</label>
+            <input type="datetime-local" class="form-input" id="createTaskDueDate">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nguồn / Kênh (Source)</label>
+            <select class="form-select" id="createTaskSource">
+              <option value="direct" selected>Nhập thủ công (Direct)</option>
+              <option value="teams">Microsoft Teams</option>
+              <option value="outlook">Microsoft Outlook</option>
+              <option value="jira">Jira Software</option>
+              <option value="github">GitHub</option>
+              <option value="agent">Coding Agent (IDE)</option>
+              <option value="slack">Slack</option>
+              <option value="confluence">Confluence</option>
+            </select>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn" onclick="closeCreateTaskModal()">Hủy</button>
-        <button class="btn btn-primary" onclick="submitCreateTask()">Tạo Công Việc 🚀</button>
+        <button class="btn btn-primary" id="btnSubmitCreateTask" onclick="submitCreateTask()">Tạo Công Việc</button>
       </div>
     </div>
   </div>
@@ -1664,7 +1819,7 @@
   <div class="modal-backdrop" id="ingestModal">
     <div class="modal">
       <div class="modal-header">
-        <div class="modal-title">🚀 Bóc Tách Tin Nhắn Tự Động (AI Extraction)</div>
+        <div class="modal-title">Bóc Tách Tin Nhắn Tự Động (AI Extraction)</div>
         <button class="btn btn-icon btn-sm" onclick="closeIngestModal()">✕</button>
       </div>
       <div class="modal-body">
@@ -1688,7 +1843,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn" onclick="closeIngestModal()">Hủy</button>
-        <button class="btn btn-primary" id="btnSubmitIngest" onclick="submitIngestMessage()">Bóc Tách & Lưu Vào Board ⚡</button>
+        <button class="btn btn-primary" id="btnSubmitIngest" onclick="submitIngestMessage()">Bóc Tách & Lưu Vào Board</button>
       </div>
     </div>
   </div>
@@ -1716,8 +1871,14 @@
             <input type="text" class="form-input" id="editTaskProject" value="GLOBAL">
           </div>
           <div class="form-group">
-            <label class="form-label">Điểm ưu tiên (0 - 100)</label>
-            <input type="number" class="form-input" id="editTaskPriority" min="0" max="100">
+            <label class="form-label">Trạng thái (Status)</label>
+            <select class="form-select" id="editTaskStatus">
+              <option value="IN_PROGRESS">IN_PROGRESS (Đang làm)</option>
+              <option value="TODO">TODO (Cần làm)</option>
+              <option value="BLOCKED">BLOCKED (Bị nghẽn)</option>
+              <option value="DONE">DONE (Hoàn thành)</option>
+              <option value="DISMISSED">DISMISSED (Đã hủy)</option>
+            </select>
           </div>
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -1726,8 +1887,18 @@
             <input type="text" class="form-input" id="editTaskOwner">
           </div>
           <div class="form-group">
+            <label class="form-label">Điểm ưu tiên (0 - 100)</label>
+            <input type="number" class="form-input" id="editTaskPriority" min="0" max="100">
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
             <label class="form-label">Hạn chót (Deadline)</label>
             <input type="datetime-local" class="form-input" id="editTaskDueDate">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nguồn dữ liệu (Source)</label>
+            <input type="text" class="form-input" id="editTaskSource" readonly style="opacity: 0.8; font-size: 12px;" value="Nhập thủ công">
           </div>
         </div>
         <div class="form-group" id="editEvidenceGroup">
@@ -1737,7 +1908,85 @@
       </div>
       <div class="modal-footer">
         <button class="btn" onclick="closeEditModal()">Hủy</button>
-        <button class="btn btn-primary" id="btnSaveEditTask" onclick="saveEditTask()">Lưu Thay Đổi (PATCH) 💾</button>
+        <button class="btn btn-primary" id="btnSaveEditTask" onclick="saveEditTask()">Lưu Thay Đổi (PATCH)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Cookie & Session Manager Modal (Teams & Outlook Auth) -->
+  <div class="modal-backdrop" id="cookieManagerModal">
+    <div class="modal" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title">Đăng Nhập Microsoft Teams</div>
+        <button class="btn btn-icon btn-sm" onclick="closeCookieManagerModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="background: var(--bg-muted); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: 600; font-size: 13px;">Trạng thái phiên:</span>
+            <span id="cookieStatusBadge" class="tag tag-status status-TODO">Đang kiểm tra...</span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;" id="cookieStatusDetails">
+            Đang tải thông tin từ hệ thống...
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px; text-align: center; padding: 16px 12px; background: var(--bg-surface); border: 1px dashed var(--border); border-radius: var(--radius-md);">
+          <div style="font-size: 32px; margin-bottom: 8px;">🔐</div>
+          <div style="font-weight: 600; font-size: 14px; margin-bottom: 6px;">Đăng Nhập Trực Tiếp Vào Microsoft Teams</div>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5;">
+            Bấm nút dưới đây để mở cửa sổ trình duyệt đăng nhập Teams. Bạn chỉ cần nhập tài khoản một lần, hệ thống sẽ <strong>tự động lưu cookie</strong> và bắt đầu thu thập tin nhắn vào bảng.
+          </p>
+          <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+            <button class="btn btn-primary" onclick="triggerDirectLogin('teams')" style="font-size: 13px; font-weight: 600; padding: 10px 20px; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);">
+              🚀 Đăng Nhập Microsoft Teams
+            </button>
+            <button class="btn" onclick="triggerDirectLogin('outlook')" style="font-size: 12px; padding: 8px 14px;" title="Đăng nhập Outlook nếu muốn đồng bộ email">
+              Đăng Nhập Outlook
+            </button>
+          </div>
+        </div>
+
+        <div id="loginProgressArea" style="display: none; background: var(--bg-surface); border: 1.5px solid var(--accent-primary); border-radius: var(--radius-md); padding: 14px; margin-top: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; color: var(--accent-primary);" id="loginProgressTitle">
+            <span id="loginProgressSpinner" class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent-primary); border-radius: 50%; display: inline-block; animation: spin 1s linear infinite;"></span>
+            <span id="loginProgressText">Đang mở cửa sổ đăng nhập Teams...</span>
+          </div>
+          <p style="margin-top: 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;" id="loginProgressSub">
+            Cửa sổ trình duyệt đang được mở trên màn hình máy tính của bạn. Hãy đăng nhập tài khoản Microsoft trên cửa sổ đó, hệ thống sẽ TỰ ĐỘNG bắt cookie và cập nhật dữ liệu ngay khi bạn hoàn tất!
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeCookieManagerModal()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. API Key Configuration Modal (Auth Integration) -->
+  <div class="modal-backdrop" id="apiKeyModal">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <div class="modal-title">Cấu hình API Key (X-PTB-API-KEY)</div>
+        <button class="btn btn-icon btn-sm" onclick="closeApiKeyModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.5;">
+          Khi Personal Task Board API (cổng 8000) được cấu hình <code>PTB_API_KEY</code>, mọi yêu cầu giao tiếp từ giao diện cần đính kèm header <code>X-PTB-API-KEY</code>. Khóa này được lưu an toàn trong trình duyệt (localStorage).
+        </div>
+        <div class="form-group">
+          <label class="form-label">Khóa API (PTB_API_KEY)</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="password" class="form-input" id="inputApiKey" placeholder="Nhập API Key tại đây..." style="flex: 1;">
+            <button class="btn btn-sm" type="button" onclick="toggleApiKeyVisibility()" id="btnToggleApiKeyVis">Hiện</button>
+          </div>
+        </div>
+        <div id="apiKeyStatusBox" style="display: none; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm" onclick="clearApiKey()" style="color: var(--danger-text); border-color: var(--danger-border);">Xóa Key</button>
+        <button class="btn btn-sm" id="btnTestApiKey" onclick="testApiKeyConnection()">Kiểm Tra Kết Nối</button>
+        <button class="btn btn-sm btn-primary" id="btnSaveApiKey" onclick="saveApiKey()">Lưu & Áp Dụng</button>
       </div>
     </div>
   </div>
@@ -1748,30 +1997,172 @@
   <!-- Application Logic (Live REST API Only) -->
   <script>
     function getApiBase() {
-      if (typeof window !== "undefined") {
-        if (window.location.port === "8000" || window.location.pathname.includes("/board")) {
-          return "";
+      try {
+        if (typeof window !== "undefined" && window.location) {
+          if (window.location.port === "8000") {
+            return "";
+          }
+          let host = window.location.hostname;
+          if (!host || host === "about:srcdoc" || host === "null") {
+            try {
+              if (window.parent && window.parent.location && window.parent.location.hostname) {
+                host = window.parent.location.hostname;
+              }
+            } catch (_) {}
+          }
+          host = host || "127.0.0.1";
+          const proto = window.location.protocol && window.location.protocol.startsWith("http") ? window.location.protocol : "http:";
+          return `${proto}//${host}:8000`;
         }
-        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-          return `${window.location.protocol}//${window.location.hostname}:8000`;
-        }
-      }
+      } catch (_) {}
       return "http://127.0.0.1:8000";
+    }
+
+    function getApiKey() {
+      try {
+        if (typeof window !== "undefined" && window.location) {
+          const params = new URLSearchParams(window.location.search);
+          const keyFromUrl = params.get("api_key") || params.get("apiKey") || params.get("key");
+          if (keyFromUrl) {
+            localStorage.setItem("ptb_api_key", keyFromUrl);
+            return keyFromUrl;
+          }
+        }
+        return (typeof localStorage !== "undefined" ? localStorage.getItem("ptb_api_key") : "") || "";
+      } catch (_) {
+        return "";
+      }
     }
 
     const CONFIG = {
       apiBase: getApiBase(),
+      apiKey: getApiKey(),
       currentView: "today",
       taskViewMode: "components"
     };
+
+    function getApiHeaders(customHeaders = {}) {
+      const h = { "Content-Type": "application/json", ...customHeaders };
+      if (CONFIG.apiKey && CONFIG.apiKey.trim()) {
+        h["X-PTB-API-KEY"] = CONFIG.apiKey.trim();
+      }
+      return h;
+    }
+
+    // --- API Key Configuration Management ---
+    function openApiKeyModal() {
+      const input = document.getElementById("inputApiKey");
+      if (input) input.value = CONFIG.apiKey || "";
+      const statusBox = document.getElementById("apiKeyStatusBox");
+      if (statusBox) statusBox.style.display = "none";
+      const m = document.getElementById("apiKeyModal");
+      if (m) m.classList.add("active");
+    }
+
+    function closeApiKeyModal() {
+      const m = document.getElementById("apiKeyModal");
+      if (m) m.classList.remove("active");
+    }
+
+    function toggleApiKeyVisibility() {
+      const input = document.getElementById("inputApiKey");
+      const btn = document.getElementById("btnToggleApiKeyVis");
+      if (!input || !btn) return;
+      if (input.type === "password") {
+        input.type = "text";
+        btn.innerText = "Ẩn";
+      } else {
+        input.type = "password";
+        btn.innerText = "Hiện";
+      }
+    }
+
+    function saveApiKey() {
+      const input = document.getElementById("inputApiKey");
+      const keyVal = input ? input.value.trim() : "";
+      CONFIG.apiKey = keyVal;
+      try {
+        if (keyVal) {
+          localStorage.setItem("ptb_api_key", keyVal);
+        } else {
+          localStorage.removeItem("ptb_api_key");
+        }
+      } catch (_) {}
+      updateApiKeyIndicator();
+      closeApiKeyModal();
+      showToast(keyVal ? "Đã lưu API Key thành công!" : "Đã xóa API Key.", "success");
+      checkApiConnection(true);
+      renderCurrentView();
+    }
+
+    function clearApiKey() {
+      const input = document.getElementById("inputApiKey");
+      if (input) input.value = "";
+      saveApiKey();
+    }
+
+    async function testApiKeyConnection() {
+      const input = document.getElementById("inputApiKey");
+      const keyVal = input ? input.value.trim() : "";
+      const statusBox = document.getElementById("apiKeyStatusBox");
+      const btn = document.getElementById("btnTestApiKey");
+      if (btn) btn.innerText = "Đang kiểm tra... ⏳";
+      if (statusBox) {
+        statusBox.style.display = "block";
+        statusBox.style.background = "var(--bg-muted)";
+        statusBox.style.color = "var(--text-secondary)";
+        statusBox.innerText = "Đang gửi yêu cầu xác thực tới API...";
+      }
+      try {
+        const testHeaders = { "Content-Type": "application/json" };
+        if (keyVal) testHeaders["X-PTB-API-KEY"] = keyVal;
+        const res = await fetch(`${CONFIG.apiBase}/api/tasks?limit=1`, {
+          headers: testHeaders,
+          signal: AbortSignal.timeout(3500)
+        });
+        if (res.ok) {
+          if (statusBox) {
+            statusBox.style.background = "rgba(16, 185, 129, 0.15)";
+            statusBox.style.color = "#10b981";
+            statusBox.innerText = "✓ Xác thực thành công! Khóa API hợp lệ.";
+          }
+        } else if (res.status === 401 || res.status === 403) {
+          if (statusBox) {
+            statusBox.style.background = "rgba(239, 68, 68, 0.15)";
+            statusBox.style.color = "#ef4444";
+            statusBox.innerText = "✕ Lỗi xác thực (401/403): Khóa API không đúng hoặc không có quyền.";
+          }
+        } else {
+          if (statusBox) {
+            statusBox.style.background = "rgba(245, 158, 11, 0.15)";
+            statusBox.style.color = "#f59e0b";
+            statusBox.innerText = `Phản hồi HTTP ${res.status}: ${res.statusText}`;
+          }
+        }
+      } catch (err) {
+        if (statusBox) {
+          statusBox.style.background = "rgba(239, 68, 68, 0.15)";
+          statusBox.style.color = "#ef4444";
+          statusBox.innerText = `Không thể kết nối API: ${err.message}`;
+        }
+      } finally {
+        if (btn) btn.innerText = "Kiểm Tra Kết Nối";
+      }
+    }
+
+    function updateApiKeyIndicator() {
+      const btnText = document.getElementById("apiKeyBtnText");
+      if (btnText) {
+        btnText.innerText = CONFIG.apiKey ? "API Key ✓" : "API Key";
+      }
+    }
 
     // --- Helper Functions ---
     function showToast(msg, type = "info") {
       const container = document.getElementById("toastContainer");
       const toast = document.createElement("div");
       toast.className = "toast";
-      const icon = type === "success" ? "✅" : (type === "warning" ? "⚠️" : "ℹ️");
-      toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(msg)}</span>`;
+      toast.innerHTML = `<span>${escapeHtml(msg)}</span>`;
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.opacity = "0";
@@ -1804,14 +2195,14 @@
     }
 
     function getPriorityMeta(score) {
-      if (score >= 75) return { text: "🔥 Khẩn cấp", class: "priority-critical" };
-      if (score >= 50) return { text: "⚡ Ưu tiên cao", class: "priority-high" };
-      if (score >= 30) return { text: "📌 Ưu tiên vừa", class: "priority-medium" };
-      return { text: "📝 Tiêu chuẩn", class: "priority-low" };
+      if (score >= 75) return { text: "Khẩn cấp", class: "priority-critical" };
+      if (score >= 50) return { text: "Ưu tiên cao", class: "priority-high" };
+      if (score >= 30) return { text: "Ưu tiên vừa", class: "priority-medium" };
+      return { text: "Tiêu chuẩn", class: "priority-low" };
     }
 
     function getSourceInfo(t) {
-      if (!t) return { type: "direct", name: "Nhập Thủ Công", badgeClass: "source-direct", contextDetail: "Tạo thủ công", icon: "✍️", actionLabel: "Xem Chi Tiết ↗", link: null };
+      if (!t) return { type: "direct", name: "Nhập Thủ Công", badgeClass: "source-direct", contextDetail: "Tạo thủ công", icon: "", actionLabel: "Xem Chi Tiết ↗", link: null };
 
       // Collect all possible indicators
       const link = (t.deep_link || t.external_url || (t.evidences && t.evidences[0] ? t.evidences[0].external_url : "") || "").toLowerCase();
@@ -1821,7 +2212,7 @@
       const rawLink = t.deep_link || t.external_url || (t.evidences && t.evidences[0] ? t.evidences[0].external_url : null);
 
       // 1. Microsoft Teams
-      if (link.includes("teams.microsoft.com") || sType.includes("teams") || sType.includes("ms_teams") || channel.toLowerCase().includes("teams") || channel.toLowerCase().includes("core dev ptb")) {
+      if (link.includes("teams.microsoft.com") || link.includes("teams.cloud.microsoft") || sType.includes("teams") || sType.includes("ms_teams") || channel.toLowerCase().includes("teams") || channel.toLowerCase().includes("core dev ptb")) {
         let contextDetail = channel ? `Kênh: ${channel}` : "Cuộc trò chuyện Teams";
         return {
           type: "teams",
@@ -1903,10 +2294,10 @@
 
     function formatDueDateBadge(isoStr, isAtRisk, riskReason) {
       if (isAtRisk && riskReason) {
-        return `<span class="due-badge due-overdue" title="${escapeHtml(riskReason)}">⚠️ ${escapeHtml(riskReason)}</span>`;
+        return `<span class="due-badge due-overdue" title="${escapeHtml(riskReason)}">${escapeHtml(riskReason)}</span>`;
       }
       if (!isoStr) {
-        return `<span class="due-badge due-safe" title="Không có hạn chót cụ thể">⏱ Không có hạn</span>`;
+        return `<span class="due-badge due-safe" title="Không có hạn chót cụ thể">Không có hạn</span>`;
       }
       const due = new Date(isoStr);
       const now = new Date();
@@ -1915,13 +2306,13 @@
 
       if (diffDays < 0) {
         const overdueDays = Math.abs(diffDays).toFixed(1);
-        return `<span class="due-badge due-overdue" title="Hạn gốc: ${dateText}">⚠️ Quá hạn ${overdueDays} ngày (${dateText})</span>`;
+        return `<span class="due-badge due-overdue" title="Hạn gốc: ${dateText}">Quá hạn ${overdueDays} ngày (${dateText})</span>`;
       } else if (diffDays <= 1) {
-        return `<span class="due-badge due-urgent" title="Hạn chót: ${dateText}">⏳ Hôm nay (${dateText})</span>`;
+        return `<span class="due-badge due-urgent" title="Hạn chót: ${dateText}">Hôm nay (${dateText})</span>`;
       } else if (diffDays <= 3) {
-        return `<span class="due-badge due-urgent" title="Hạn chót: ${dateText}">⏳ Còn ${Math.ceil(diffDays)} ngày (${dateText})</span>`;
+        return `<span class="due-badge due-urgent" title="Hạn chót: ${dateText}">Còn ${Math.ceil(diffDays)} ngày (${dateText})</span>`;
       } else {
-        return `<span class="due-badge due-safe" title="Hạn chót: ${dateText}">📅 ${dateText}</span>`;
+        return `<span class="due-badge due-safe" title="Hạn chót: ${dateText}">${dateText}</span>`;
       }
     }
 
@@ -1980,7 +2371,7 @@
       } else {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(trimmed).then(() => {
-            showToast(`📋 Đã sao chép đường dẫn file vào clipboard: ${trimmed}`, "success");
+            showToast(`Đã sao chép đường dẫn file vào clipboard: ${trimmed}`, "success");
           }).catch(() => {
             prompt("Đường dẫn file nguồn:", trimmed);
           });
@@ -1990,17 +2381,63 @@
       }
     }
 
-    // Helper: Sort tasks prioritizing IN_PROGRESS first, then priority score descending (Task 1 requirement)
-    function sortTasksWithInProgressFirst(tasks) {
+    // Helper: Canonical Sort Contract (Frozen by Orchestrator)
+    // Primary:   status_rank ASC (IN_PROGRESS=1, TODO=2, BLOCKED=3, DONE=4, DISMISSED=5)
+    // Secondary: priority_score DESC
+    // Tertiary:  due_date ASC (nulls last)
+    // Quaternary: updated_at DESC
+    function getStatusRank(status) {
+      const s = String(status || "").trim().toUpperCase();
+      if (s === "IN_PROGRESS" || s === "IN PROGRESS") return 1;
+      if (s === "TODO" || s === "PENDING") return 2;
+      if (s === "BLOCKED") return 3;
+      if (s === "DONE") return 4;
+      if (s === "DISMISSED") return 5;
+      return 6;
+    }
+
+    function getTaskPriorityScore(t) {
+      if (!t) return 0.0;
+      if (t.priority_override != null) return parseFloat(t.priority_override) || 0.0;
+      if (t.priority && t.priority.total_score != null) return parseFloat(t.priority.total_score) || 0.0;
+      if (t.priority_score != null) return parseFloat(t.priority_score) || 0.0;
+      return 0.0;
+    }
+
+    function parseTimestampSafe(val, defaultVal) {
+      if (!val) return defaultVal;
+      const d = new Date(val);
+      const ts = d.getTime();
+      return isNaN(ts) ? defaultVal : ts;
+    }
+
+    function canonicalSortTasks(tasks) {
       if (!Array.isArray(tasks)) return [];
       return [...tasks].sort((a, b) => {
-        const aInProgress = a.status === "IN_PROGRESS" ? 1 : 0;
-        const bInProgress = b.status === "IN_PROGRESS" ? 1 : 0;
-        if (aInProgress !== bInProgress) return bInProgress - aInProgress;
-        const aScore = a.priority ? (a.priority.total_score || 0) : (a.priority_score || 0);
-        const bScore = b.priority ? (b.priority.total_score || 0) : (b.priority_score || 0);
-        return bScore - aScore;
+        // 1. Primary: status_rank ASC (IN_PROGRESS=1, TODO=2, BLOCKED=3, DONE=4, DISMISSED=5)
+        const rankA = getStatusRank(a ? a.status : null);
+        const rankB = getStatusRank(b ? b.status : null);
+        if (rankA !== rankB) return rankA - rankB;
+
+        // 2. Secondary: priority_score DESC
+        const scoreA = getTaskPriorityScore(a);
+        const scoreB = getTaskPriorityScore(b);
+        if (scoreA !== scoreB) return scoreB - scoreA;
+
+        // 3. Tertiary: due_date ASC (nulls last)
+        const dueA = parseTimestampSafe(a ? a.due_date : null, 9999999999999);
+        const dueB = parseTimestampSafe(b ? b.due_date : null, 9999999999999);
+        if (dueA !== dueB) return dueA - dueB;
+
+        // 4. Quaternary: updated_at DESC (nulls last)
+        const updA = parseTimestampSafe(a ? a.updated_at : null, -9999999999999);
+        const updB = parseTimestampSafe(b ? b.updated_at : null, -9999999999999);
+        return updB - updA;
       });
+    }
+
+    function sortTasksWithInProgressFirst(tasks) {
+      return canonicalSortTasks(tasks);
     }
 
     // Master Reusable Task Card Template (Unified for Today View & Components CRUD View)
@@ -2034,153 +2471,196 @@
 
       const activeTags = [];
       if (isOverdue) {
-        activeTags.push(`<span class="tag-chip tag-danger" onclick="setTodayTagFilter('overdue')" title="Nhấn để lọc các việc quá hạn">⏰ Quá hạn chót</span>`);
+        activeTags.push(`<span class="tag-chip tag-danger" onclick="event.stopPropagation(); setTodayTagFilter('overdue')" title="Nhấn để lọc các việc quá hạn">Quá hạn chót</span>`);
       }
       if ((p.production_impact_score || 0) > 0 || (t.title && /prod|release|hotfix|sự cố/i.test(t.title))) {
-        activeTags.push(`<span class="tag-chip tag-danger" onclick="setTodayTagFilter('production')" title="Nhấn để lọc các việc Production">🚨 Sự cố Production</span>`);
+        activeTags.push(`<span class="tag-chip tag-danger" onclick="event.stopPropagation(); setTodayTagFilter('production')" title="Nhấn để lọc các việc Production">Sự cố Production</span>`);
       }
       if ((p.customer_impact_score || 0) > 0 || (t.title && /khách hàng|đối tác|customer|client/i.test(t.title))) {
-        activeTags.push(`<span class="tag-chip tag-warning" onclick="setTodayTagFilter('customer')" title="Nhấn để lọc các việc Khách hàng">🏢 Khách hàng / Đối tác</span>`);
+        activeTags.push(`<span class="tag-chip tag-warning" onclick="event.stopPropagation(); setTodayTagFilter('customer')" title="Nhấn để lọc các việc Khách hàng">Khách hàng / Đối tác</span>`);
       }
       if ((p.commitment_weight || 0) > 0 || (t.title && /cam kết|hứa/i.test(t.title))) {
-        activeTags.push(`<span class="tag-chip tag-info" onclick="setTodayTagFilter('commitment')" title="Nhấn để lọc các việc có cam kết">🤝 Cam kết trực tiếp</span>`);
+        activeTags.push(`<span class="tag-chip tag-info" onclick="event.stopPropagation(); setTodayTagFilter('commitment')" title="Nhấn để lọc các việc có cam kết">Cam kết trực tiếp</span>`);
       }
       if ((p.stale_age_score || 0) > 0) {
-        activeTags.push(`<span class="tag-chip tag-warning" title="Công việc đã tồn đọng nhiều ngày chưa xử lý">⏳ Tồn đọng lâu ngày</span>`);
+        activeTags.push(`<span class="tag-chip tag-warning" title="Công việc đã tồn đọng nhiều ngày chưa xử lý">Tồn đọng lâu ngày</span>`);
       }
 
       return `
-        <!-- Card Header: Qualitative Priority, Source, Scope, Status, Due Date -->
-        <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
-          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-            <span class="priority-badge ${pMeta.class}" title="Độ ưu tiên được tính toán tự động: ${pMeta.text}">
-              ${pMeta.text}
-            </span>
-            <span class="source-badge ${sourceInfo.badgeClass}" style="cursor: pointer;" onclick="setTodayTagFilter('${sourceInfo.type}')" title="Nhấn để lọc nguồn ${sourceInfo.name}">
-              ${sourceInfo.icon}
-              <span>${sourceInfo.name}</span>
-            </span>
-            <span class="tag tag-project" title="Mã dự án">${escapeHtml(t.project_key || "GLOBAL")}</span>
-            <span class="tag tag-status status-${t.status}" title="Trạng thái thực thi">
-              ${isInProgress ? "⚡ IN_PROGRESS" : escapeHtml(t.status)}
-            </span>
+        <!-- Compact Summary Header (Always visible, Click to expand) -->
+        <div class="card-summary" onclick="toggleTaskCardDetails('${taskId}', event)">
+          <div class="card-summary-top">
+            <div class="card-summary-badges">
+              <span class="priority-badge ${pMeta.class}" title="Độ ưu tiên: ${pMeta.text}">
+                ${pMeta.text}
+              </span>
+              <span class="source-badge ${sourceInfo.badgeClass}" onclick="event.stopPropagation(); setTodayTagFilter('${sourceInfo.type}')" title="Nhấn để lọc nguồn ${sourceInfo.name}">
+                ${sourceInfo.icon}
+                <span>${sourceInfo.name}</span>
+              </span>
+              <span class="tag tag-project" title="Mã dự án">${escapeHtml(t.project_key || "GLOBAL")}</span>
+              <span class="tag tag-status status-${t.status}" title="Trạng thái thực thi">
+                ${isInProgress ? "IN_PROGRESS" : escapeHtml(t.status)}
+              </span>
+            </div>
+            <div class="card-summary-right">
+              ${dueBadge}
+              <button type="button" class="btn-toggle-expand" id="expand-btn-${taskId}" title="Bấm để mở rộng / thu gọn chi tiết">
+                <span class="expand-text">Chi tiết</span>
+                <svg class="chevron-icon" id="chevron-${taskId}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            ${dueBadge}
-          </div>
-        </div>
 
-        <!-- Task Title & Context Identity Line -->
-        <div style="margin: 2px 0 6px 0;">
-          <div class="card-title" style="font-size: 15px; font-weight: 700; line-height: 1.45; color: var(--text-primary); margin-bottom: 4px;">
+          <div class="card-summary-title">
             ${escapeHtml(t.title)}
           </div>
-          <div style="display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); flex-wrap: wrap;">
-            <span style="font-family: var(--font-mono); background: var(--bg-muted); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);">
-              ID: #${escapeHtml(shortId)}
-            </span>
-            ${sourceInfo.contextDetail ? `
-              <span style="display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); font-weight: 500;">
-                📍 <strong>${escapeHtml(sourceInfo.contextDetail)}</strong>
-              </span>
-            ` : ""}
-            ${t.created_at ? `<span>Tạo: ${formatDate(t.created_at)}</span>` : ""}
+
+          <div class="card-summary-meta">
+            <span class="meta-id">#${escapeHtml(shortId)}</span>
+            ${sourceInfo.contextDetail ? `<span class="meta-item"><strong>${escapeHtml(sourceInfo.contextDetail)}</strong></span><span class="meta-dot">•</span>` : ""}
+            <span class="meta-item">Người gửi: <strong>${escapeHtml(requester)}</strong></span>
+            <span class="meta-dot">•</span>
+            <span class="meta-item">Phụ trách: <strong>${escapeHtml(owner)}</strong></span>
+            ${t.created_at ? `<span class="meta-dot">•</span><span class="meta-item">Tạo: ${formatDate(t.created_at)}</span>` : ""}
           </div>
         </div>
 
-        <!-- Evidence & Conversation Context Block -->
-        ${snippet ? `
-          <div class="evidence-box">
-            <div class="evidence-header">
-              <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--text-primary);">
-                <span>💬 Bằng chứng trích xuất (Evidence Context):</span>
-              </span>
-              <span style="display: inline-flex; align-items: center; gap: 6px;">
-                <span>Người gửi: <strong style="color: var(--text-primary);">${escapeHtml(requester)}</strong></span>
-                ${evidenceTime ? `<span style="opacity: 0.7;">(${evidenceTime})</span>` : ""}
-              </span>
+        <!-- Collapsible Details Drawer (Hidden by default, shown upon click) -->
+        <div class="card-details" id="card-details-${taskId}" style="display: none;">
+          ${(t.description && t.description.trim() !== t.title.trim() && t.description.trim() !== snippet.trim()) ? `
+            <div class="task-description-box">
+              <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">Mô tả nhiệm vụ:</div>
+              <div style="color: var(--text-secondary); line-height: 1.5; font-size: 12.5px;">${escapeHtml(t.description)}</div>
             </div>
-            <div class="evidence-quote">
-              “${escapeHtml(snippet)}”
-            </div>
-            <div class="evidence-meta">
-              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <span>🎯 Phụ trách: <strong style="color: var(--text-primary);">${escapeHtml(owner)}</strong></span>
-                ${confidence != null ? `
-                  <span class="confidence-pill" title="Độ tin cậy trích xuất AI">
-                    🎯 Confidence: <strong>${confidence}%</strong>
-                  </span>
-                ` : ""}
-                ${candidateCount > 0 ? `
-                  <span class="merge-pill" title="Hệ thống đã tự động gộp các tin nhắn trùng lặp">
-                    🔀 Gộp ${candidateCount} tin nhắn (${correlationPct || 70}%)
-                  </span>
+          ` : ""}
+
+          <!-- Evidence & Conversation Context Block -->
+          ${snippet ? `
+            <div class="evidence-box">
+              <div class="evidence-header">
+                <span style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--text-primary);">
+                  <span>Bằng chứng trích xuất (Evidence Context):</span>
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 6px;">
+                  <span>Người gửi: <strong style="color: var(--text-primary);">${escapeHtml(requester)}</strong></span>
+                  ${evidenceTime ? `<span style="opacity: 0.7;">(${evidenceTime})</span>` : ""}
+                </span>
+              </div>
+              <div class="evidence-quote">
+                “${escapeHtml(snippet)}”
+              </div>
+              <div class="evidence-meta">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <span>Phụ trách: <strong style="color: var(--text-primary);">${escapeHtml(owner)}</strong></span>
+                  ${confidence != null ? `
+                    <span class="confidence-pill" title="Độ tin cậy trích xuất AI">
+                      Confidence: <strong>${confidence}%</strong>
+                    </span>
+                  ` : ""}
+                  ${candidateCount > 0 ? `
+                    <span class="merge-pill" title="Hệ thống đã tự động gộp các tin nhắn trùng lặp">
+                      Gộp ${candidateCount} tin nhắn (${correlationPct || 70}%)
+                    </span>
+                  ` : ""}
+                </div>
+                ${deepLink ? `
+                  <button type="button" class="evidence-link-btn" onclick="event.stopPropagation(); handleDeepLink('${escapeHtml(deepLink).replace(/'/g, "\\'")}', event)" title="Mở trực tiếp nguồn gốc hoặc sao chép đường dẫn">
+                    ${sourceInfo.icon}
+                    <span>${sourceInfo.actionLabel}</span>
+                  </button>
                 ` : ""}
               </div>
-              ${deepLink ? `
-                <button type="button" class="evidence-link-btn" onclick="handleDeepLink('${escapeHtml(deepLink).replace(/'/g, "\\'")}', event)" title="Mở trực tiếp nguồn gốc hoặc sao chép đường dẫn">
-                  ${sourceInfo.icon}
-                  <span>${sourceInfo.actionLabel}</span>
-                </button>
+            </div>
+          ` : ""}
+
+          <!-- Characteristics & Priority Impact -->
+          ${(activeTags.length > 0 || cleanExplanation) ? `
+            <div class="priority-details">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">
+                <span>ĐẶC TÍNH & MỨC ĐỘ ẢNH HƯỞNG</span>
+                <span style="font-weight: 600; color: var(--accent-primary);">${pMeta.text}</span>
+              </div>
+              ${activeTags.length > 0 ? `
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                  ${activeTags.join("")}
+                </div>
+              ` : ""}
+              ${cleanExplanation ? `
+                <div class="explanation-text">
+                  <strong>Phân tích lý do:</strong> ${cleanExplanation}
+                </div>
               ` : ""}
             </div>
-          </div>
-        ` : ""}
+          ` : ""}
 
-        <!-- Characteristics & Priority Impact (Pure human information, NO raw math numbers) -->
-        ${(activeTags.length > 0 || cleanExplanation) ? `
-          <div class="priority-details">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">
-              <span>🎯 ĐẶC TÍNH & MỨC ĐỘ ẢNH HƯỞNG</span>
-              <span style="font-weight: 600; color: var(--accent-primary);">${pMeta.text}</span>
+          <!-- Action Footer (Interactive CRUD & Status Changes) -->
+          <div class="card-footer-actions">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Chuyển trạng thái:</span>
+              <select class="filter-select" style="font-size: 11.5px; padding: 3px 8px; font-weight: 600;" onchange="event.stopPropagation(); updateTaskStatus('${taskId}', this.value)">
+                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>IN_PROGRESS (Đang làm)</option>
+                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>TODO (Cần làm)</option>
+                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>BLOCKED (Bị nghẽn)</option>
+                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>DONE (Hoàn thành)</option>
+              </select>
             </div>
-            ${activeTags.length > 0 ? `
-              <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-                ${activeTags.join("")}
-              </div>
-            ` : ""}
-            ${cleanExplanation ? `
-              <div class="explanation-text">
-                💡 <strong>Phân tích lý do:</strong> ${cleanExplanation}
-              </div>
-            ` : ""}
-          </div>
-        ` : ""}
-
-        <!-- Action Footer (Interactive CRUD & Status Changes) -->
-        <div class="card-footer-actions">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Chuyển trạng thái:</span>
-            <select class="filter-select" style="font-size: 11.5px; padding: 3px 8px; font-weight: 600;" onchange="updateTaskStatus('${taskId}', this.value)">
-              <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>⚡ IN_PROGRESS (Đang làm)</option>
-              <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>📝 TODO (Cần làm)</option>
-              <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>🚫 BLOCKED (Bị nghẽn)</option>
-              <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>✅ DONE (Hoàn thành)</option>
-            </select>
-          </div>
-          <div style="display: flex; gap: 6px; align-items: center;">
-            ${t.status === "TODO" ? `
-              <button class="btn btn-sm" onclick="updateTaskStatus('${taskId}', 'IN_PROGRESS')" style="color: var(--accent-primary); border-color: var(--accent-primary); font-weight: 600;" title="Bắt đầu thực hiện ngay">
-                ⚡ Bắt đầu làm
+            <div style="display: flex; gap: 6px; align-items: center;">
+              ${t.status === "TODO" ? `
+                <button class="btn btn-sm" onclick="event.stopPropagation(); updateTaskStatus('${taskId}', 'IN_PROGRESS')" style="color: var(--accent-primary); border-color: var(--accent-primary); font-weight: 600;" title="Bắt đầu thực hiện ngay">
+                  Bắt đầu làm
+                </button>
+              ` : ""}
+              ${t.status === "IN_PROGRESS" ? `
+                <button class="btn btn-sm" onclick="event.stopPropagation(); updateTaskStatus('${taskId}', 'TODO')" title="Tạm hoãn, đưa về TODO">
+                  Tạm hoãn
+                </button>
+              ` : ""}
+              <button class="btn btn-sm" onclick="event.stopPropagation(); openEditTaskModal('${taskId}')" title="Chỉnh sửa thông tin chi tiết">
+                Sửa
               </button>
-            ` : ""}
-            ${t.status === "IN_PROGRESS" ? `
-              <button class="btn btn-sm" onclick="updateTaskStatus('${taskId}', 'TODO')" title="Tạm hoãn, đưa về TODO">
-                ⏸️ Tạm hoãn
+              <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); updateTaskStatus('${taskId}', 'DONE')" title="Đánh dấu hoàn thành task">
+                ✓ Hoàn thành
               </button>
-            ` : ""}
-            <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Chỉnh sửa thông tin chi tiết">
-              ✏️ Sửa
-            </button>
-            <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${taskId}', 'DONE')" title="Đánh dấu hoàn thành task">
-              ✓ Hoàn thành
-            </button>
-            <button class="btn btn-sm" style="color: var(--danger-text); border-color: var(--danger-border);" onclick="deleteTask('${taskId}')" title="Xóa bỏ task">
-              🗑️
-            </button>
+              <button class="btn btn-sm" style="color: var(--danger-text); border-color: var(--danger-border);" onclick="event.stopPropagation(); deleteTask('${taskId}')" title="Xóa bỏ task">
+                Xóa
+              </button>
+            </div>
           </div>
         </div>
       `;
+    }
+
+    // Toggle Card Collapsed/Expanded State
+    function toggleTaskCardDetails(taskId, event) {
+      if (event) {
+        const target = event.target;
+        if (target.closest("button:not(.btn-toggle-expand), select, a, input, .tag-chip")) {
+          return;
+        }
+      }
+      const detailsEl = document.getElementById(`card-details-${taskId}`);
+      const chevronEl = document.getElementById(`chevron-${taskId}`);
+      const btnEl = document.getElementById(`expand-btn-${taskId}`);
+      if (!detailsEl) return;
+      const isHidden = detailsEl.style.display === "none";
+      if (isHidden) {
+        detailsEl.style.display = "flex";
+        if (chevronEl) chevronEl.style.transform = "rotate(180deg)";
+        if (btnEl) {
+          btnEl.classList.add("expanded");
+          const txt = btnEl.querySelector(".expand-text");
+          if (txt) txt.innerText = "Thu gọn";
+        }
+      } else {
+        detailsEl.style.display = "none";
+        if (chevronEl) chevronEl.style.transform = "rotate(0deg)";
+        if (btnEl) {
+          btnEl.classList.remove("expanded");
+          const txt = btnEl.querySelector(".expand-text");
+          if (txt) txt.innerText = "Chi tiết";
+        }
+      }
     }
 
     // --- Tab Switching ---
@@ -2217,11 +2697,11 @@
       if (msgEl) msgEl.innerText = message;
       if (type === "warning") {
         banner.className = "system-banner banner-warning";
-        if (iconEl) iconEl.innerText = "⚠️";
+        if (iconEl) iconEl.innerText = "";
         if (titleEl) titleEl.innerText = "CẢNH BÁO XÁC THỰC";
       } else {
         banner.className = "system-banner banner-error";
-        if (iconEl) iconEl.innerText = "🛑";
+        if (iconEl) iconEl.innerText = "";
         if (titleEl) titleEl.innerText = "LỖI HỆ THỐNG";
       }
       banner.style.display = "flex";
@@ -2237,7 +2717,6 @@
       if (!container) return;
       container.innerHTML = `
         <div class="card" style="border: 1px dashed var(--danger-border); background: var(--danger-bg); padding: 32px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
-          <div style="font-size: 32px;">⚠️</div>
           <div style="font-size: 15px; font-weight: 700; color: var(--danger-text);">
             ${escapeHtml(errorMessage)}
           </div>
@@ -2254,7 +2733,7 @@
       try {
         const res = await fetch(`${CONFIG.apiBase}${endpoint}`, {
           ...options,
-          headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+          headers: getApiHeaders(options.headers || {})
         });
 
         if (!res.ok) {
@@ -2265,6 +2744,15 @@
           } catch (_) {}
 
           const detailLower = String(detail).toLowerCase();
+          if (res.status === 401 || res.status === 403) {
+            if (detailLower.includes("api key") || detailLower.includes("x-ptb-api-key") || !CONFIG.apiKey) {
+              const msg = "API AUTH REQUIRED: Missing or invalid X-PTB-API-KEY (Nhấn 'API Key' ở góc trên để cấu hình)";
+              showSystemBanner(msg, "warning");
+              updateStatusPill(false, "API Auth Required");
+              throw new ApiError(msg, "API_KEY_REQUIRED", res.status);
+            }
+          }
+
           if (res.status === 401 || res.status === 403 || detailLower.includes("microsoft") || detailLower.includes("login") || detailLower.includes("auth_expired") || detailLower.includes("auth_required")) {
             const msg = "MICROSOFT LOGIN REQUIRED (Run 'ptb login microsoft')";
             showSystemBanner(msg, "warning");
@@ -2299,11 +2787,45 @@
 
     async function checkApiConnection(interactive = false) {
       try {
-        const res = await fetch(`${CONFIG.apiBase}/health`, { signal: AbortSignal.timeout(2000) });
+        let res = null;
+        try {
+          res = await fetch(`${CONFIG.apiBase}/health`, {
+            headers: getApiHeaders(),
+            signal: AbortSignal.timeout(2000)
+          });
+        } catch (fetchErr) {
+          if (CONFIG.apiBase.includes("localhost")) {
+            const altBase = CONFIG.apiBase.replace("localhost", "127.0.0.1");
+            res = await fetch(`${altBase}/health`, {
+              headers: getApiHeaders(),
+              signal: AbortSignal.timeout(2000)
+            });
+            CONFIG.apiBase = altBase;
+          } else if (CONFIG.apiBase.includes("127.0.0.1")) {
+            const altBase = CONFIG.apiBase.replace("127.0.0.1", "localhost");
+            res = await fetch(`${altBase}/health`, {
+              headers: getApiHeaders(),
+              signal: AbortSignal.timeout(2000)
+            });
+            CONFIG.apiBase = altBase;
+          } else {
+            throw fetchErr;
+          }
+        }
         if (res.ok) {
-          // Verify sources health for auth expiration
+          // Verify sources health for auth expiration or API key rejection
           try {
-            const healthRes = await fetch(`${CONFIG.apiBase}/api/sources/health`, { signal: AbortSignal.timeout(1500) });
+            const healthRes = await fetch(`${CONFIG.apiBase}/api/sources/health`, {
+              headers: getApiHeaders(),
+              signal: AbortSignal.timeout(1500)
+            });
+            if (healthRes.status === 401 || healthRes.status === 403) {
+              const msg = "API AUTH REQUIRED: Missing or invalid X-PTB-API-KEY (Nhấn 'API Key' ở góc trên để cấu hình)";
+              showSystemBanner(msg, "warning");
+              updateStatusPill(false, "API Auth Required");
+              if (interactive) showToast(msg, "warning");
+              return false;
+            }
             if (healthRes.ok) {
               const healthData = await healthRes.json();
               const tenants = healthData.tenants || [];
@@ -2329,7 +2851,7 @@
           return true;
         } else {
           if (res.status === 401 || res.status === 403) {
-            const msg = "MICROSOFT LOGIN REQUIRED (Run 'ptb login microsoft')";
+            const msg = "API AUTH REQUIRED: Missing or invalid X-PTB-API-KEY (Nhấn 'API Key' ở góc trên để cấu hình)";
             showSystemBanner(msg, "warning");
             updateStatusPill(false, "Auth Required");
           } else {
@@ -2391,6 +2913,7 @@
       if (tag === "agent") return sourceInfo.type === "agent";
       if (tag === "git") return sourceInfo.type === "git";
       if (tag === "teams") return sourceInfo.type === "teams";
+      if (tag === "outlook") return sourceInfo.type === "outlook";
       return true;
     }
 
@@ -2404,7 +2927,8 @@
         commitment: 0,
         agent: 0,
         git: 0,
-        teams: 0
+        teams: 0,
+        outlook: 0
       };
 
       tasks.forEach(t => {
@@ -2419,6 +2943,7 @@
         if (sourceInfo.type === "agent") counts.agent++;
         if (sourceInfo.type === "git") counts.git++;
         if (sourceInfo.type === "teams") counts.teams++;
+        if (sourceInfo.type === "outlook") counts.outlook++;
       });
 
       for (const [key, val] of Object.entries(counts)) {
@@ -2448,7 +2973,6 @@
       if (filtered.length === 0) {
         listContainer.innerHTML = `
           <div class="empty-state" style="grid-column: 1 / -1;">
-            <div class="empty-state-icon">🏷️</div>
             <div style="font-weight: 600; font-size: 15px;">Không có công việc nào thuộc thẻ "${escapeHtml(currentTodayTagFilter)}"</div>
             <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Hãy chọn thẻ khác hoặc nhấn nút bên dưới để xem toàn bộ.</div>
             <button class="btn btn-sm btn-primary" onclick="setTodayTagFilter('all')">Xem Tất Cả Công Việc</button>
@@ -2487,7 +3011,7 @@
       const riskEl = document.getElementById("todayRiskAlert");
       if (data.identified_risks && data.identified_risks.length > 0) {
         riskEl.style.display = "block";
-        riskEl.innerText = `⚠️ ${data.identified_risks[0]}`;
+        riskEl.innerText = `${data.identified_risks[0]}`;
       } else {
         riskEl.style.display = "none";
       }
@@ -2500,6 +3024,10 @@
 
     // 2. INBOX / REVIEW VIEW
     let cachedReviewQueue = [];
+
+    function renderReviewQueueList() {
+      renderReviewView();
+    }
 
     async function renderReviewView() {
       let list = null;
@@ -2520,7 +3048,7 @@
       container.innerHTML = "";
 
       if (list.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">✨</div><div>Hàng đợi duyệt hiện đang trống!</div></div>`;
+        container.innerHTML = `<div class="empty-state"><div>Hàng đợi duyệt hiện đang trống!</div></div>`;
         return;
       }
 
@@ -2533,53 +3061,65 @@
         const sourceInfo = getSourceInfo(cand);
         const ev = (cand.evidences && cand.evidences[0]) ? cand.evidences[0] : null;
 
+        const revId = String(taskId).replace(/[^a-zA-Z0-9_-]/g, "_");
         card.innerHTML = `
-          <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <span class="source-badge ${sourceInfo.badgeClass}">
-                ${sourceInfo.icon}
-                <span>${sourceInfo.name}</span>
-              </span>
-              <span class="tag tag-project">${escapeHtml(cand.project_key || "UNASSIGNED")}</span>
-              <div class="confidence-meter" title="Độ tin cậy trích xuất của AI">
-                <span>Độ tin cậy: ${confPct}%</span>
-                <div class="meter-bar"><div class="meter-fill" style="width: ${confPct}%;"></div></div>
+          <div class="card-summary" onclick="toggleTaskCardDetails('rev-${revId}', event)">
+            <div class="card-summary-top">
+              <div class="card-summary-badges">
+                <span class="source-badge ${sourceInfo.badgeClass}">
+                  ${sourceInfo.icon}
+                  <span>${sourceInfo.name}</span>
+                </span>
+                <span class="tag tag-project">${escapeHtml(cand.project_key || "UNASSIGNED")}</span>
+                <div class="confidence-meter" title="Độ tin cậy trích xuất của AI">
+                  <span>Độ tin cậy: ${confPct}%</span>
+                  <div class="meter-bar"><div class="meter-fill" style="width: ${confPct}%;"></div></div>
+                </div>
+              </div>
+              <div class="card-summary-right">
+                <span style="font-size: 11px; color: var(--text-muted);">${formatDate(cand.due_date)}</span>
+                <button type="button" class="btn-toggle-expand" id="expand-btn-rev-${revId}" title="Bấm để mở rộng / thu gọn chi tiết">
+                  <span class="expand-text">Chi tiết</span>
+                  <svg class="chevron-icon" id="chevron-rev-${revId}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
               </div>
             </div>
-            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(cand.due_date)}</span>
-          </div>
 
-          <div class="card-title" style="font-size: 15px; font-weight: 700; line-height: 1.45; margin: 4px 0 6px 0;">
-            ${escapeHtml(cand.title || "Task không có tiêu đề")}
-          </div>
-
-          <div style="font-size: 12px; color: var(--warning-text); background: var(--warning-bg); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--warning-border);">
-            ⚠️ <strong>Cần xác nhận:</strong> ${escapeHtml(item.reason || "Cần người dùng phê duyệt")}
-          </div>
-
-          ${ev ? `
-            <div class="evidence-box">
-              <div class="evidence-header">
-                <span>💬 Tin nhắn gốc trích xuất:</span>
-                <span>Tác giả: <strong>${escapeHtml(ev.author_canonical_name || cand.requester_name || "Ẩn danh")}</strong></span>
-              </div>
-              <div class="evidence-quote">“${escapeHtml(ev.snippet || "")}”</div>
-              <div class="evidence-meta">
-                <span>Nguồn: <strong>${escapeHtml(sourceInfo.name)}</strong></span>
-                ${sourceInfo.link ? `
-                  <a href="${sourceInfo.link}" target="_blank" class="evidence-link-btn" title="Mở trực tiếp nguồn">
-                    ${sourceInfo.icon}
-                    <span>${sourceInfo.actionLabel}</span>
-                  </a>
-                ` : ""}
-              </div>
+            <div class="card-summary-title">
+              ${escapeHtml(cand.title || "Task không có tiêu đề")}
             </div>
-          ` : ""}
 
-          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; border-top: 1px solid var(--border); padding-top: 8px;">
-            <button class="btn btn-sm" onclick="dismissReviewItem('${taskId}')">✕ Bỏ qua</button>
-            <button class="btn btn-sm" onclick="openEditModal('${taskId}')">✎ Sửa</button>
-            <button class="btn btn-sm btn-primary" onclick="approveReviewItem('${taskId}')">✓ Phê duyệt</button>
+            <div style="font-size: 11.5px; color: var(--warning-text); background: var(--warning-bg); padding: 5px 8px; border-radius: var(--radius-sm); border: 1px solid var(--warning-border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px;">
+              <span><strong>Cần xác nhận:</strong> ${escapeHtml(item.reason || "Cần người dùng phê duyệt")}</span>
+              <span style="font-size: 10.5px; opacity: 0.85;">Tác giả: ${escapeHtml((ev && ev.author_canonical_name) || cand.requester_name || "Ẩn danh")}</span>
+            </div>
+          </div>
+
+          <div class="card-details" id="card-details-rev-${revId}" style="display: none;">
+            ${ev ? `
+              <div class="evidence-box">
+                <div class="evidence-header">
+                  <span>Tin nhắn gốc trích xuất:</span>
+                  <span>Tác giả: <strong>${escapeHtml(ev.author_canonical_name || cand.requester_name || "Ẩn danh")}</strong></span>
+                </div>
+                <div class="evidence-quote">“${escapeHtml(ev.snippet || "")}”</div>
+                <div class="evidence-meta">
+                  <span>Nguồn: <strong>${escapeHtml(sourceInfo.name)}</strong></span>
+                  ${sourceInfo.link ? `
+                    <a href="${sourceInfo.link}" target="_blank" class="evidence-link-btn" title="Mở trực tiếp nguồn" onclick="event.stopPropagation();">
+                      ${sourceInfo.icon}
+                      <span>${sourceInfo.actionLabel}</span>
+                    </a>
+                  ` : ""}
+                </div>
+              </div>
+            ` : ""}
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; border-top: 1px solid var(--border); padding-top: 8px;">
+              <button class="btn btn-sm" onclick="event.stopPropagation(); dismissReviewItem('${taskId}')">✕ Bỏ qua</button>
+              <button class="btn btn-sm" onclick="event.stopPropagation(); openEditModal('${taskId}')">Sửa</button>
+              <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); approveReviewItem('${taskId}')">✓ Phê duyệt</button>
+            </div>
           </div>
         `;
         container.appendChild(card);
@@ -2665,10 +3205,9 @@
       if (tasks.length === 0) {
         container.innerHTML = `
           <div class="empty-state" style="grid-column: 1 / -1;">
-            <div class="empty-state-icon">📋</div>
             <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px;">Không tìm thấy công việc nào phù hợp</div>
             <div style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">Hãy tạo mới công việc thủ công hoặc dán tin nhắn để AI tự động trích xuất.</div>
-            <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()">➕ Thêm công việc mới</button>
+            <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()">Thêm công việc mới</button>
           </div>
         `;
         return;
@@ -2694,7 +3233,11 @@
         if (!col) return;
         col.innerHTML = "";
         
-        let colTasks = tasks.filter(t => t.status === s);
+        let colTasks = tasks.filter(t => {
+          const st = String(t.status || "").trim().toUpperCase();
+          if (s === "TODO") return st === "TODO" || st === "PENDING" || st === "OPEN";
+          return st === s;
+        });
         colTasks.sort((a, b) => {
           const aScore = a.priority ? (a.priority.total_score || 0) : (a.priority_score || 0);
           const bScore = b.priority ? (b.priority.total_score || 0) : (b.priority_score || 0);
@@ -2733,18 +3276,18 @@
             </div>
             <div style="font-weight: 600; font-size: 13.5px; line-height: 1.4; color: var(--text-primary);">${escapeHtml(t.title)}</div>
             <div style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
-              <span>👤 ${escapeHtml(t.owner_name || "Tôi")} | 📣 ${escapeHtml(requester)}</span>
+              <span>${escapeHtml(t.owner_name || "Tôi")} | ${escapeHtml(requester)}</span>
               ${dueBadge}
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; border-top: 1px dashed var(--border); padding-top: 6px;">
               <select class="filter-select" style="font-size: 11px; padding: 2px 6px;" onchange="updateTaskStatus('${taskId}', this.value)">
-                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>⚡ IN_PROGRESS</option>
-                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>📝 TODO</option>
-                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>🚫 BLOCKED</option>
-                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>✅ DONE</option>
+                <option value="IN_PROGRESS" ${t.status === "IN_PROGRESS" ? "selected" : ""}>IN_PROGRESS</option>
+                <option value="TODO" ${t.status === "TODO" ? "selected" : ""}>TODO</option>
+                <option value="BLOCKED" ${t.status === "BLOCKED" ? "selected" : ""}>BLOCKED</option>
+                <option value="DONE" ${t.status === "DONE" ? "selected" : ""}>DONE</option>
               </select>
               <div style="display: flex; gap: 4px;">
-                <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Sửa">✏️</button>
+                <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Sửa">Sửa</button>
                 <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${taskId}', 'DONE')" title="Xong">✓</button>
               </div>
             </div>
@@ -2799,7 +3342,7 @@
           </td>
           <td>
             <div style="display: flex; gap: 4px;">
-              <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Sửa">✏️</button>
+              <button class="btn btn-sm" onclick="openEditTaskModal('${taskId}')" title="Sửa">Sửa</button>
               <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${taskId}', 'DONE')" title="Xong">✓</button>
             </div>
           </td>
@@ -2825,25 +3368,39 @@
       container.innerHTML = "";
 
       if (list.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div>Không có công việc nào đang bị block chờ người khác!</div></div>`;
+        container.innerHTML = `<div class="empty-state"><div>Không có công việc nào đang bị block chờ người khác!</div></div>`;
         return;
       }
 
       list.forEach(item => {
         const card = document.createElement("div");
         card.className = "card";
+        const wId = String(item.task_id || Math.random().toString(36).substring(7)).replace(/[^a-zA-Z0-9_-]/g, "_");
         card.innerHTML = `
-          <div class="card-header">
-            <span class="tag tag-status status-BLOCKED">⏳ Đang đợi: ${item.waiting_days} ngày</span>
-            <span style="font-size: 11px; color: var(--text-muted);">${formatDate(item.blocked_since)}</span>
+          <div class="card-summary" onclick="toggleTaskCardDetails('wait-${wId}', event)">
+            <div class="card-summary-top">
+              <span class="tag tag-status status-BLOCKED">Đang đợi: ${item.waiting_days} ngày</span>
+              <div class="card-summary-right">
+                <span style="font-size: 11px; color: var(--text-muted);">${formatDate(item.blocked_since)}</span>
+                <button type="button" class="btn-toggle-expand" id="expand-btn-wait-${wId}" title="Bấm để mở rộng / thu gọn chi tiết">
+                  <span class="expand-text">Chi tiết</span>
+                  <svg class="chevron-icon" id="chevron-wait-${wId}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="card-summary-title">${escapeHtml(item.title)}</div>
+            <div class="card-summary-meta">
+              <span class="meta-item">Đang chờ: <strong>${escapeHtml(item.waiting_for_person_name)}</strong></span>
+            </div>
           </div>
-          <div class="card-title">${escapeHtml(item.title)}</div>
-          <div class="evidence-box" style="border-left-color: #ef4444;">
-            <span>Đang chờ: <strong>${escapeHtml(item.waiting_for_person_name)}</strong></span>
-            <div style="font-style: normal; margin-top: 2px;">Lý do: ${escapeHtml(item.reason)}</div>
-          </div>
-          <div style="display: flex; justify-content: flex-end; gap: 8px;">
-            <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${item.task_id}', 'IN_PROGRESS')">✓ Đã unblock</button>
+          <div class="card-details" id="card-details-wait-${wId}" style="display: none;">
+            <div class="evidence-box" style="border-left-color: #ef4444;">
+              <span>Đang chờ: <strong>${escapeHtml(item.waiting_for_person_name)}</strong></span>
+              <div style="font-style: normal; margin-top: 2px;">Lý do: ${escapeHtml(item.reason)}</div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); updateTaskStatus('${item.task_id}', 'IN_PROGRESS')">✓ Đã unblock</button>
+            </div>
           </div>
         `;
         container.appendChild(card);
@@ -2867,7 +3424,7 @@
       container.innerHTML = "";
 
       if (list.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🎉</div><div>Không có cam kết nào bị lãng quên tồn đọng!</div></div>`;
+        container.innerHTML = `<div class="empty-state"><div>Không có cam kết nào bị lãng quên tồn đọng!</div></div>`;
         return;
       }
 
@@ -2875,26 +3432,40 @@
         const card = document.createElement("div");
         card.className = "card";
         card.style.borderLeft = "4px solid #ef4444";
+        const fId = String(item.task_id || Math.random().toString(36).substring(7)).replace(/[^a-zA-Z0-9_-]/g, "_");
         card.innerHTML = `
-          <div class="card-header">
-            <span class="tag" style="background: var(--danger-bg); color: var(--danger-text);">⚠️ Quá hạn ${item.days_stale} ngày</span>
-            <span style="font-size: 11px; color: var(--text-muted);">Cam kết lúc: ${formatDate(item.promised_at)}</span>
-          </div>
-          <div class="card-title">${escapeHtml(item.title)}</div>
-          <div class="evidence-box">
-            <span>"${escapeHtml(item.last_conversation_snippet)}"</span>
-            <div class="evidence-meta">
-              <span>Đã hứa với: <strong>${escapeHtml(item.promised_to_name)}</strong></span>
+          <div class="card-summary" onclick="toggleTaskCardDetails('forg-${fId}', event)">
+            <div class="card-summary-top">
+              <span class="tag" style="background: var(--danger-bg); color: var(--danger-text);">Quá hạn ${item.days_stale} ngày</span>
+              <div class="card-summary-right">
+                <span style="font-size: 11px; color: var(--text-muted);">${formatDate(item.promised_at)}</span>
+                <button type="button" class="btn-toggle-expand" id="expand-btn-forg-${fId}" title="Bấm để mở rộng / thu gọn chi tiết">
+                  <span class="expand-text">Chi tiết</span>
+                  <svg class="chevron-icon" id="chevron-forg-${fId}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="card-summary-title">${escapeHtml(item.title)}</div>
+            <div class="card-summary-meta">
+              <span class="meta-item">Đã hứa với: <strong>${escapeHtml(item.promised_to_name)}</strong></span>
             </div>
           </div>
-          <div style="font-size: 12px; color: var(--text-secondary); background: var(--bg-muted); padding: 8px; border-radius: var(--radius-sm);">
-            🎯 <strong>Gợi ý:</strong> ${escapeHtml(item.suggested_action)}
-          </div>
-          ${item.task_id ? `
-            <div style="display: flex; justify-content: flex-end; gap: 8px;">
-              <button class="btn btn-sm btn-primary" onclick="updateTaskStatus('${item.task_id}', 'DONE')">✓ Đã gửi / Đã giải quyết</button>
+          <div class="card-details" id="card-details-forg-${fId}" style="display: none;">
+            <div class="evidence-box">
+              <span>"${escapeHtml(item.last_conversation_snippet)}"</span>
+              <div class="evidence-meta">
+                <span>Đã hứa với: <strong>${escapeHtml(item.promised_to_name)}</strong></span>
+              </div>
             </div>
-          ` : ""}
+            <div style="font-size: 12px; color: var(--text-secondary); background: var(--bg-muted); padding: 8px; border-radius: var(--radius-sm);">
+              <strong>Gợi ý:</strong> ${escapeHtml(item.suggested_action)}
+            </div>
+            ${item.task_id ? `
+              <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); updateTaskStatus('${item.task_id}', 'DONE')">✓ Đã gửi / Đã giải quyết</button>
+              </div>
+            ` : ""}
+          </div>
         `;
         container.appendChild(card);
       });
@@ -2918,7 +3489,7 @@
       container.innerHTML = "";
 
       if (list.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🏛️</div><div>Chưa có Architecture Decision nào được ghi nhận.</div></div>`;
+        container.innerHTML = `<div class="empty-state"><div>Chưa có Architecture Decision nào được ghi nhận.</div></div>`;
         return;
       }
 
@@ -2960,7 +3531,7 @@
       container.innerHTML = "";
 
       if (list.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📖</div><div>Chưa có Bài học kinh nghiệm nào được ghi nhận.</div></div>`;
+        container.innerHTML = `<div class="empty-state"><div>Chưa có Bài học kinh nghiệm nào được ghi nhận.</div></div>`;
         return;
       }
 
@@ -2977,7 +3548,7 @@
             <strong>Hiện tượng:</strong> ${escapeHtml(l.description)}
           </div>
           <div style="background: var(--bg-muted); border-left: 3px solid #10b981; padding: 8px 12px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px;">
-            💡 <strong>Giải pháp:</strong> ${escapeHtml(l.solution)}
+            <strong>Giải pháp:</strong> ${escapeHtml(l.solution)}
           </div>
         `;
         container.appendChild(card);
@@ -3008,7 +3579,7 @@
 
       const tenants = data.tenants || [];
       if (tenants.length === 0) {
-        grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;"><div class="empty-state-icon">🩺</div><div>Không có nguồn dữ liệu nào được đăng ký.</div></div>`;
+        grid.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;"><div>Không có nguồn dữ liệu nào được đăng ký.</div></div>`;
         return;
       }
 
@@ -3031,7 +3602,7 @@
           <div style="font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px;">
             <div>Đồng bộ gần nhất: <strong>${formatDate(src.last_successful_sync)}</strong></div>
             <div>Tổng số mục đã bắt: <strong>${(src.items_synced_total || 0).toLocaleString()}</strong></div>
-            ${src.error_message ? `<div style="color: var(--danger-text);">⚠️ ${escapeHtml(src.error_message)}</div>` : ""}
+            ${src.error_message ? `<div style="color: var(--danger-text);">Lỗi: ${escapeHtml(src.error_message)}</div>` : ""}
           </div>
         `;
         grid.appendChild(card);
@@ -3039,35 +3610,39 @@
     }
 
     // --- Interactive Action Handlers (Real REST API Mutations Only) ---
-    async function updateTaskStatus(taskId, newStatus) {
-      if (!taskId) return;
+    const pendingStatusUpdates = new Set();
 
-      // 1. Optimistic in-memory update
-      let taskUpdated = null;
+    async function updateTaskStatus(taskId, newStatus) {
+      if (!taskId || pendingStatusUpdates.has(taskId)) return;
+      pendingStatusUpdates.add(taskId);
+
+      // 1. Optimistic in-memory update with rollback state capture
+      let oldStatus = null;
       if (Array.isArray(cachedTodayTasks)) {
         const t = cachedTodayTasks.find(x => (x.id === taskId || x.task_id === taskId));
-        if (t) {
-          t.status = newStatus;
-          taskUpdated = t;
-        }
+        if (t) oldStatus = t.status;
+      }
+      if (oldStatus === null && Array.isArray(cachedAllTasks)) {
+        const t = cachedAllTasks.find(x => (x.id === taskId || x.task_id === taskId));
+        if (t) oldStatus = t.status;
+      }
+
+      if (Array.isArray(cachedTodayTasks)) {
+        cachedTodayTasks.forEach(x => { if (x.id === taskId || x.task_id === taskId) x.status = newStatus; });
       }
       if (Array.isArray(cachedAllTasks)) {
-        const t = cachedAllTasks.find(x => (x.id === taskId || x.task_id === taskId));
-        if (t) {
-          t.status = newStatus;
-          if (!taskUpdated) taskUpdated = t;
-        }
+        cachedAllTasks.forEach(x => { if (x.id === taskId || x.task_id === taskId) x.status = newStatus; });
       }
 
       const statusLabels = {
         "IN_PROGRESS": "Đang làm (IN_PROGRESS)",
         "TODO": "Cần làm (TODO)",
         "BLOCKED": "Bị nghẽn (BLOCKED)",
-        "DONE": "Hoàn thành (DONE)"
+        "DONE": "Hoàn thành (DONE)",
+        "DISMISSED": "Đã hủy (DISMISSED)"
       };
-      showToast(`Đã chuyển trạng thái sang "${statusLabels[newStatus] || newStatus}"`, "success");
 
-      // 2. Immediate re-render so user sees it right away
+      // 2. Immediate re-render so user sees change instantly
       if (CONFIG.currentView === "today") {
         renderTodayList();
       } else if (CONFIG.currentView === "tasks") {
@@ -3078,24 +3653,51 @@
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/tasks/${encodeURIComponent(taskId)}/status`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify({ status: newStatus, actor: "USER" })
         });
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
+        showToast(`Đã chuyển trạng thái sang "${statusLabels[newStatus] || newStatus}"`, "success");
       } catch (err) {
+        // ROLLBACK on failure
+        if (oldStatus !== null) {
+          if (Array.isArray(cachedTodayTasks)) {
+            cachedTodayTasks.forEach(x => { if (x.id === taskId || x.task_id === taskId) x.status = oldStatus; });
+          }
+          if (Array.isArray(cachedAllTasks)) {
+            cachedAllTasks.forEach(x => { if (x.id === taskId || x.task_id === taskId) x.status = oldStatus; });
+          }
+          if (CONFIG.currentView === "today") {
+            renderTodayList();
+          } else if (CONFIG.currentView === "tasks") {
+            applyTaskFilters();
+          }
+        }
         showToast(`Lỗi đồng bộ trạng thái: ${err.message}`, "warning");
+      } finally {
+        pendingStatusUpdates.delete(taskId);
         renderCurrentView();
       }
     }
 
+    const pendingReviewActions = new Set();
+
     async function approveReviewItem(revId) {
+      if (!revId || pendingReviewActions.has(revId)) return;
+      pendingReviewActions.add(revId);
+
+      // Optimistic in-memory update with rollback snapshot
+      const prevQueue = Array.isArray(cachedReviewQueue) ? [...cachedReviewQueue] : [];
+      cachedReviewQueue = prevQueue.filter(x => (x.id !== revId && x.candidate_task?.id !== revId));
+      renderReviewQueueList();
+
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/review/${revId}/approve`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify({ actor: "USER" })
         });
         if (!res.ok) {
@@ -3103,17 +3705,30 @@
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
         showToast("Đã phê duyệt task candidate thành công!", "success");
-        renderCurrentView();
       } catch (err) {
+        // ROLLBACK
+        cachedReviewQueue = prevQueue;
+        renderReviewQueueList();
         showToast(`Lỗi phê duyệt task: ${err.message}`, "warning");
+      } finally {
+        pendingReviewActions.delete(revId);
+        renderCurrentView();
       }
     }
 
     async function dismissReviewItem(revId) {
+      if (!revId || pendingReviewActions.has(revId)) return;
+      pendingReviewActions.add(revId);
+
+      // Optimistic in-memory update with rollback snapshot
+      const prevQueue = Array.isArray(cachedReviewQueue) ? [...cachedReviewQueue] : [];
+      cachedReviewQueue = prevQueue.filter(x => (x.id !== revId && x.candidate_task?.id !== revId));
+      renderReviewQueueList();
+
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/review/${revId}/dismiss`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify({ actor: "USER" })
         });
         if (!res.ok) {
@@ -3121,9 +3736,14 @@
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
         showToast("Đã loại bỏ task candidate khỏi hàng đợi duyệt.", "info");
-        renderCurrentView();
       } catch (err) {
+        // ROLLBACK
+        cachedReviewQueue = prevQueue;
+        renderReviewQueueList();
         showToast(`Lỗi loại bỏ task: ${err.message}`, "warning");
+      } finally {
+        pendingReviewActions.delete(revId);
+        renderCurrentView();
       }
     }
 
@@ -3136,6 +3756,8 @@
       document.getElementById("createTaskOwner").value = "Tôi";
       document.getElementById("createTaskPriority").value = "70";
       document.getElementById("createTaskDueDate").value = "";
+      const sourceSelect = document.getElementById("createTaskSource");
+      if (sourceSelect) sourceSelect.value = "direct";
       document.getElementById("createTaskModal").classList.add("active");
       setTimeout(() => {
         const input = document.getElementById("createTaskTitle");
@@ -3147,10 +3769,16 @@
       document.getElementById("createTaskModal").classList.remove("active");
     }
 
+    let isSubmittingTask = false;
+
     async function submitCreateTask() {
+      if (isSubmittingTask) return;
+
       const title = (document.getElementById("createTaskTitle").value || "").trim();
       if (!title) {
         showToast("Vui lòng nhập tiêu đề công việc (*)", "warning");
+        const input = document.getElementById("createTaskTitle");
+        if (input) input.focus();
         return;
       }
       const description = (document.getElementById("createTaskDescription").value || "").trim();
@@ -3159,6 +3787,15 @@
       const ownerName = (document.getElementById("createTaskOwner").value || "Tôi").trim();
       const priorityScore = parseFloat(document.getElementById("createTaskPriority").value) || 50.0;
       const dueDateVal = document.getElementById("createTaskDueDate").value;
+      const sourceVal = (document.getElementById("createTaskSource") ? document.getElementById("createTaskSource").value : "direct") || "direct";
+
+      const channelName = sourceVal === "direct" ? "Manual Input" :
+                          sourceVal === "teams" ? "Microsoft Teams" :
+                          sourceVal === "outlook" ? "Microsoft Outlook" :
+                          sourceVal === "jira" ? "Jira Software" :
+                          sourceVal === "github" ? "GitHub" :
+                          sourceVal === "agent" ? "Coding Agent" :
+                          sourceVal === "slack" ? "Slack" : "Direct Input";
 
       const payload = {
         title,
@@ -3167,6 +3804,7 @@
         status: statusVal,
         owner_name: ownerName,
         requester_name: "Self",
+        channel_or_group: channelName,
         priority_score: priorityScore,
         actor: "USER"
       };
@@ -3174,10 +3812,18 @@
         payload.due_date = new Date(dueDateVal).toISOString();
       }
 
+      isSubmittingTask = true;
+      const btn = document.getElementById("btnSubmitCreateTask");
+      const prevBtnText = btn ? btn.innerText : "Tạo Công Việc";
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Đang tạo... ⏳";
+      }
+
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/tasks`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify(payload)
         });
         if (!res.ok) {
@@ -3186,10 +3832,16 @@
         }
         const created = await res.json();
         closeCreateTaskModal();
-        showToast(`Đã tạo thành công task: ${escapeHtml(created.title)}`, "success");
+        showToast(`Đã tạo thành công task: ${escapeHtml(created.title || title)}`, "success");
         renderCurrentView();
       } catch (err) {
         showToast(`Lỗi tạo task: ${err.message}`, "warning");
+      } finally {
+        isSubmittingTask = false;
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = prevBtnText;
+        }
       }
     }
 
@@ -3222,7 +3874,7 @@
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/ingest/message`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify({ message, sender, channel })
         });
         if (!res.ok) {
@@ -3240,7 +3892,7 @@
       } catch (err) {
         showToast(`Lỗi bóc tách tin nhắn: ${err.message}`, "warning");
       } finally {
-        if (btn) btn.innerText = "Bóc Tách & Lưu Vào Board ⚡";
+        if (btn) btn.innerText = "Bóc Tách & Lưu Vào Board";
       }
     }
 
@@ -3249,7 +3901,7 @@
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/ingest/layer1`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify({ limit: 10 })
         });
         if (!res.ok) {
@@ -3269,7 +3921,7 @@
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/ingest/teams`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify({ limit: 15 })
         });
         if (!res.ok) {
@@ -3284,18 +3936,250 @@
       }
     }
 
-    async function deleteTask(taskId) {
-      if (!confirm("Bạn có chắc chắn muốn xóa/hủy bỏ công việc này không?")) {
+    async function runOutlookScan() {
+      showToast("Đang quét Microsoft Outlook...", "info");
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/ingest/outlook`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ limit: 15 })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        showToast(`Quét Outlook: Bắt ${data.captured_outlook || 0} email, trích xuất ${data.processed_tasks || 0} tasks.`, "success");
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi quét Outlook: ${err.message}`, "warning");
+      }
+    }
+
+    // --- 1-Click Multi-Platform Auto Sync Handler ---
+    async function syncPlatforms(platform = "all") {
+      const btn = document.getElementById("btnSyncPlatforms");
+      const spinner = document.getElementById("syncSpinner");
+      const btnText = document.getElementById("syncBtnText");
+      const dropdown = document.getElementById("syncDropdownMenu");
+      if (dropdown) dropdown.style.display = "none";
+
+      if (spinner) spinner.style.display = "inline-block";
+      if (btnText) btnText.innerText = "Đang thu thập...";
+      if (btn) btn.disabled = true;
+
+      showToast(`Đang tự động thu thập từ nền tảng: ${platform.toUpperCase()}...`, "info");
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/ingest/sync`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ platform: platform, limit: 20 })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (data.notes && data.notes.some(n => String(n).includes("Chưa có phiên đăng nhập Teams"))) {
+          showToast("Chưa có phiên đăng nhập Teams. Đang mở cửa sổ đăng nhập...", "warning");
+          openCookieManagerModal();
+          triggerDirectLogin("teams");
+        } else {
+          showToast(`Thu thập hoàn tất: ${data.message || `Bắt ${data.total_ingested || 0} mục mới`}`, "success");
+        }
+        checkApiConnection();
+        renderCurrentView();
+      } catch (err) {
+        showToast(`Lỗi thu thập: ${err.message}`, "warning");
+      } finally {
+        if (spinner) spinner.style.display = "none";
+        if (btnText) btnText.innerText = "Thu Thập Nền Tảng";
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function toggleSyncDropdown(event) {
+      if (event) event.stopPropagation();
+      const menu = document.getElementById("syncDropdownMenu");
+      if (menu) {
+        menu.style.display = (menu.style.display === "none" || !menu.style.display) ? "block" : "none";
+      }
+    }
+
+    document.addEventListener("click", (e) => {
+      const menu = document.getElementById("syncDropdownMenu");
+      if (menu && menu.style.display === "block") {
+        if (!e.target.closest(".sync-control-group")) {
+          menu.style.display = "none";
+        }
+      }
+    });
+
+    // --- Cookie & Session Manager Controller ---
+    async function openCookieManagerModal() {
+      const dropdown = document.getElementById("syncDropdownMenu");
+      if (dropdown) dropdown.style.display = "none";
+
+      const modal = document.getElementById("cookieManagerModal");
+      if (modal) modal.classList.add("active");
+
+      try {
+        const res = await apiFetch("/api/auth/session-status");
+        const badge = document.getElementById("cookieStatusBadge");
+        const details = document.getElementById("cookieStatusDetails");
+        if (badge) {
+          badge.innerText = res.status;
+          badge.className = "tag tag-status " + (res.status === "HEALTHY" || res.status === "STARTING" ? "status-DONE" : "status-BLOCKED");
+        }
+        if (details) {
+          details.innerHTML = `
+            <div>Tệp lưu trữ: <code>${escapeHtml(res.storage_path)}</code></div>
+            <div>Số lượng cookie: <strong>${res.cookie_count}</strong> (${res.valid_cookies} còn hạn)</div>
+            <div>Tên miền: ${escapeHtml((res.domains || []).join(", ") || "Chưa có")}</div>
+            <div style="margin-top: 4px; font-weight: 500; color: ${res.status === 'HEALTHY' || res.status === 'STARTING' ? 'var(--success-text)' : 'var(--danger-text)'};">${escapeHtml(res.message)}</div>
+          `;
+        }
+      } catch (err) {
+        console.warn("Could not check cookie status:", err);
+      }
+    }
+
+    let loginPollingTimer = null;
+
+    async function triggerDirectLogin(service = "all") {
+      const progressArea = document.getElementById("loginProgressArea");
+      const progressText = document.getElementById("loginProgressText");
+      const progressSub = document.getElementById("loginProgressSub");
+      if (progressArea) {
+        progressArea.style.display = "block";
+        progressArea.style.borderColor = "var(--accent-primary)";
+      }
+      if (progressText) {
+        progressText.innerText = `Đang mở cửa sổ đăng nhập ${service.toUpperCase()} trên máy tính...`;
+        progressText.style.color = "var(--accent-primary)";
+      }
+      if (progressSub) progressSub.innerText = "Cửa sổ trình duyệt Chromium đã xuất hiện trên màn hình của bạn. Hãy đăng nhập tài khoản Microsoft trên cửa sổ đó. Hệ thống sẽ TỰ ĐỘNG bắt và lưu cookie ngay khi bạn hoàn tất!";
+
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/auth/start-login`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ service: service })
+        });
+        const data = await res.json();
+        if (data.status === "LAUNCHED") {
+          showToast(data.message, "info");
+        } else if (data.status === "MANUAL_REQUIRED") {
+          showToast(data.message, "info");
+        }
+
+        // Start polling session status
+        if (loginPollingTimer) clearInterval(loginPollingTimer);
+        let pollCount = 0;
+        loginPollingTimer = setInterval(async () => {
+          pollCount++;
+          try {
+            const st = await apiFetch("/api/auth/session-status");
+            if (st.status === "HEALTHY" || (st.status !== "LOGIN_REQUIRED" && (st.valid_cookies >= 1 || st.has_auth))) {
+              clearInterval(loginPollingTimer);
+              loginPollingTimer = null;
+              if (progressArea) {
+                progressArea.style.borderColor = "var(--success-border)";
+                progressText.innerHTML = "✓ Đã đăng nhập và lưu phiên thành công! Đang tự động kết nối & thu thập tin nhắn...";
+                progressText.style.color = "var(--success-text)";
+                progressSub.innerText = `Đã lưu ${st.cookie_count} cookies vào ${st.storage_path}. Hệ thống đang tự động bóc tách dữ liệu từ Microsoft Teams...`;
+              }
+              showToast("Đăng nhập thành công! Bắt đầu tự động thu thập tin nhắn Teams...", "success");
+              setTimeout(() => {
+                closeCookieManagerModal();
+                syncPlatforms(service === "outlook" ? "outlook" : "teams");
+              }, 1200);
+            } else if (pollCount > 150) {
+              clearInterval(loginPollingTimer);
+              loginPollingTimer = null;
+              if (progressText) progressText.innerText = "Quá thời gian chờ đăng nhập (5 phút).";
+            }
+          } catch (e) {
+            console.debug("Polling err:", e);
+          }
+        }, 2000);
+      } catch (err) {
+        showToast(`Lỗi kích hoạt đăng nhập: ${err.message}`, "warning");
+      }
+    }
+
+    function closeCookieManagerModal() {
+      const modal = document.getElementById("cookieManagerModal");
+      if (modal) modal.classList.remove("active");
+      if (loginPollingTimer) {
+        clearInterval(loginPollingTimer);
+        loginPollingTimer = null;
+      }
+    }
+
+    function copyLoginCmd() {
+      const cmd = document.getElementById("loginCliCmd")?.innerText || "uv run python -m ptb_acquisition.playwright.login";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd).then(() => {
+          showToast("Đã sao chép lệnh đăng nhập vào clipboard!", "success");
+        }).catch(() => {
+          prompt("Lệnh đăng nhập:", cmd);
+        });
+      } else {
+        prompt("Lệnh đăng nhập:", cmd);
+      }
+    }
+
+    async function submitSaveCookie() {
+      const input = document.getElementById("cookieJsonInput");
+      const val = input ? input.value.trim() : "";
+      if (!val) {
+        showToast("Vui lòng dán dữ liệu cookie JSON vào ô nhập", "warning");
         return;
       }
-      // 1. Optimistic removal
-      if (Array.isArray(cachedTodayTasks)) {
-        cachedTodayTasks = cachedTodayTasks.filter(t => (t.id !== taskId && t.task_id !== taskId));
+
+      const btn = document.getElementById("btnSaveCookie");
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/auth/save-cookie`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ cookie_data: val })
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        showToast("Đã lưu cookie thành công! Bắt đầu tự động thu thập tin nhắn Teams...", "success");
+        if (input) input.value = "";
+        setTimeout(() => {
+          closeCookieManagerModal();
+          syncPlatforms("teams");
+        }, 1200);
+      } catch (err) {
+        showToast(`Lỗi lưu cookie: ${err.message}`, "warning");
+      } finally {
+        if (btn) btn.disabled = false;
       }
-      if (Array.isArray(cachedAllTasks)) {
-        cachedAllTasks = cachedAllTasks.filter(t => (t.id !== taskId && t.task_id !== taskId));
+    }
+
+    const pendingDeletions = new Set();
+
+    async function deleteTask(taskId) {
+      if (!taskId || pendingDeletions.has(taskId)) return;
+      if (!confirm("Bạn có chắc chắn muốn xóa/hủy bỏ công việc này không?\nCông việc sẽ được chuyển sang trạng thái DISMISSED.")) {
+        return;
       }
-      showToast("Đã loại bỏ công việc thành công!", "info");
+
+      pendingDeletions.add(taskId);
+
+      // 1. Optimistic removal with Rollback snapshot
+      const prevToday = Array.isArray(cachedTodayTasks) ? [...cachedTodayTasks] : [];
+      const prevAll = Array.isArray(cachedAllTasks) ? [...cachedAllTasks] : [];
+
+      cachedTodayTasks = prevToday.filter(t => (t.id !== taskId && t.task_id !== taskId));
+      cachedAllTasks = prevAll.filter(t => (t.id !== taskId && t.task_id !== taskId));
 
       // 2. Immediate UI update
       if (CONFIG.currentView === "today") {
@@ -3308,14 +4192,25 @@
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/tasks/${encodeURIComponent(taskId)}/delete`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" }
+          headers: getApiHeaders()
         });
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
+        showToast("Đã loại bỏ công việc thành công!", "info");
       } catch (err) {
+        // ROLLBACK
+        cachedTodayTasks = prevToday;
+        cachedAllTasks = prevAll;
+        if (CONFIG.currentView === "today") {
+          renderTodayList();
+        } else if (CONFIG.currentView === "tasks") {
+          applyTaskFilters();
+        }
         showToast(`Lỗi xóa công việc trên máy chủ: ${err.message}`, "warning");
+      } finally {
+        pendingDeletions.delete(taskId);
         renderCurrentView();
       }
     }
@@ -3336,9 +4231,16 @@
       document.getElementById("editTaskTitle").value = cand ? (cand.title || "") : "";
       document.getElementById("editTaskDescription").value = cand ? (cand.description || "") : "";
       document.getElementById("editTaskProject").value = cand ? (cand.project_key || "GLOBAL") : "GLOBAL";
+      const statusSelect = document.getElementById("editTaskStatus");
+      if (statusSelect) statusSelect.value = (cand && cand.status) ? cand.status : "TODO";
       document.getElementById("editTaskPriority").value = cand ? (cand.priority_score ?? 50) : 50;
       document.getElementById("editTaskOwner").value = cand ? (cand.owner_name || "Tôi") : "Tôi";
       document.getElementById("editTaskDueDate").value = (cand && cand.due_date) ? String(cand.due_date).substring(0, 16) : "";
+      const sourceInput = document.getElementById("editTaskSource");
+      if (sourceInput) {
+        const sInfo = getSourceInfo(cand);
+        sourceInput.value = `${sInfo.name} (${(cand && cand.channel_or_group) || 'Review Queue'})`;
+      }
       document.getElementById("editTaskEvidence").value = (cand && (cand.evidences?.[0]?.snippet || cand.evidence_snippet)) || "";
 
       document.getElementById("editModal").classList.add("active");
@@ -3351,10 +4253,14 @@
                    (cachedAllTasks || []).find(x => (x.id === taskId || x.task_id === taskId));
 
       document.getElementById("editTaskId").value = taskId;
-      document.getElementById("editModalTitle").innerText = "✏️ Chỉnh Sửa Công Việc";
+      document.getElementById("editModalTitle").innerText = "Chỉnh Sửa Công Việc";
       document.getElementById("editTaskTitle").value = task ? (task.title || "") : "";
       document.getElementById("editTaskDescription").value = task ? (task.description || "") : "";
       document.getElementById("editTaskProject").value = task ? (task.project_key || "GLOBAL") : "GLOBAL";
+      const statusSelect = document.getElementById("editTaskStatus");
+      if (statusSelect && task) {
+        statusSelect.value = task.status || "TODO";
+      }
       document.getElementById("editTaskPriority").value = task ? (task.priority_score ?? (task.priority ? task.priority.total_score : 50)) : 50;
       document.getElementById("editTaskOwner").value = task ? (task.owner_name || "Tôi") : "Tôi";
 
@@ -3370,6 +4276,12 @@
         document.getElementById("editTaskDueDate").value = "";
       }
 
+      const sourceInput = document.getElementById("editTaskSource");
+      if (sourceInput && task) {
+        const sInfo = getSourceInfo(task);
+        sourceInput.value = `${sInfo.name} (${task.channel_or_group || 'Chính'})`;
+      }
+
       const snippet = (task && (task.evidences && task.evidences[0] ? task.evidences[0].snippet : task.primary_evidence_snippet)) || "";
       document.getElementById("editTaskEvidence").value = snippet;
 
@@ -3382,16 +4294,23 @@
       isEditingReviewQueueItem = false;
     }
 
+    let isSavingTask = false;
+
     async function saveEditTask() {
+      if (isSavingTask) return;
       const taskId = document.getElementById("editTaskId").value || currentEditingRevId;
       if (!taskId) return;
       const title = (document.getElementById("editTaskTitle").value || "").trim();
       if (!title) {
         showToast("Tiêu đề không được để trống (*)", "warning");
+        const input = document.getElementById("editTaskTitle");
+        if (input) input.focus();
         return;
       }
       const description = document.getElementById("editTaskDescription").value;
       const projectKey = document.getElementById("editTaskProject").value;
+      const statusSelect = document.getElementById("editTaskStatus");
+      const statusVal = statusSelect ? statusSelect.value : null;
       const ownerName = document.getElementById("editTaskOwner").value;
       const priorityScore = parseFloat(document.getElementById("editTaskPriority").value) || 50;
       const dueDateVal = document.getElementById("editTaskDueDate").value;
@@ -3404,14 +4323,52 @@
         priority_score: priorityScore,
         actor: "USER"
       };
+      if (statusVal) {
+        payload.status = statusVal;
+      }
       if (dueDateVal) {
         payload.due_date = new Date(dueDateVal).toISOString();
+      }
+
+      isSavingTask = true;
+      const btn = document.getElementById("btnSaveEditTask");
+      const prevBtnText = btn ? btn.innerText : "Lưu Thay Đổi (PATCH)";
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Đang lưu... ⏳";
+      }
+
+      // Optimistic in-memory update with Rollback snapshot
+      const prevToday = Array.isArray(cachedTodayTasks) ? JSON.parse(JSON.stringify(cachedTodayTasks)) : [];
+      const prevAll = Array.isArray(cachedAllTasks) ? JSON.parse(JSON.stringify(cachedAllTasks)) : [];
+
+      const applyLocalPatch = (list) => {
+        if (!Array.isArray(list)) return;
+        list.forEach(t => {
+          if (t.id === taskId || t.task_id === taskId) {
+            t.title = title;
+            t.description = description;
+            t.project_key = projectKey;
+            t.owner_name = ownerName;
+            t.priority_score = priorityScore;
+            if (payload.due_date) t.due_date = payload.due_date;
+            if (statusVal) t.status = statusVal;
+          }
+        });
+      };
+      applyLocalPatch(cachedTodayTasks);
+      applyLocalPatch(cachedAllTasks);
+
+      if (CONFIG.currentView === "today") {
+        renderTodayList();
+      } else if (CONFIG.currentView === "tasks") {
+        applyTaskFilters();
       }
 
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/tasks/${taskId}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: getApiHeaders(),
           body: JSON.stringify(payload)
         });
         if (!res.ok) {
@@ -3426,7 +4383,21 @@
           renderCurrentView();
         }
       } catch (err) {
+        // ROLLBACK
+        cachedTodayTasks = prevToday;
+        cachedAllTasks = prevAll;
+        if (CONFIG.currentView === "today") {
+          renderTodayList();
+        } else if (CONFIG.currentView === "tasks") {
+          applyTaskFilters();
+        }
         showToast(`Lỗi lưu task: ${err.message}`, "warning");
+      } finally {
+        isSavingTask = false;
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = prevBtnText;
+        }
       }
     }
 
@@ -3457,25 +4428,74 @@
     // --- Theme Controller ---
     function toggleTheme() {
       const html = document.documentElement;
-      const isDark = html.classList.toggle("dark");
-      document.getElementById("themeIcon").innerText = isDark ? "☀️" : "🌙";
-      localStorage.setItem("ptb_theme", isDark ? "dark" : "light");
+      const isLight = html.classList.toggle("light");
+      if (isLight) {
+        html.classList.remove("dark");
+      } else {
+        html.classList.add("dark");
+      }
+      const el = document.getElementById("themeText");
+      if (el) el.innerText = isLight ? "Dark" : "Light";
+      localStorage.setItem("ptb_theme", isLight ? "light" : "dark");
     }
 
     function initTheme() {
       const savedTheme = localStorage.getItem("ptb_theme");
-      if (savedTheme === "dark" || (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-        document.documentElement.classList.add("dark");
-        document.getElementById("themeIcon").innerText = "☀️";
+      const html = document.documentElement;
+      if (savedTheme === "light") {
+        html.classList.add("light");
+        html.classList.remove("dark");
+        const el = document.getElementById("themeText");
+        if (el) el.innerText = "Dark";
+      } else {
+        html.classList.add("dark");
+        html.classList.remove("light");
+        const el = document.getElementById("themeText");
+        if (el) el.innerText = "Light";
       }
     }
 
+    // --- Keyboard Accessibility ---
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeCreateTaskModal();
+        closeEditModal();
+        closeApiKeyModal();
+        closeCookieManagerModal();
+        closeIngestModal();
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        const activeEl = document.activeElement;
+        if (!activeEl) return;
+        if (activeEl.id === "createTaskTitle" || activeEl.id === "createTaskProject" || activeEl.id === "createTaskPriority") {
+          e.preventDefault();
+          submitCreateTask();
+        } else if (activeEl.id === "editTaskTitle" || activeEl.id === "editTaskProject" || activeEl.id === "editTaskPriority") {
+          e.preventDefault();
+          saveEditTask();
+        } else if (activeEl.id === "inputApiKey") {
+          e.preventDefault();
+          saveApiKey();
+        }
+      }
+    });
+
     // --- Bootstrap On Load ---
-    window.addEventListener("DOMContentLoaded", async () => {
+    let isBootstrapped = false;
+    async function bootstrap() {
+      if (isBootstrapped) return;
+      isBootstrapped = true;
       initTheme();
+      updateApiKeyIndicator();
       await checkApiConnection();
       renderCurrentView();
-    });
+    }
+
+    if (document.readyState === "loading") {
+      window.addEventListener("DOMContentLoaded", bootstrap);
+      window.addEventListener("load", bootstrap);
+    } else {
+      bootstrap();
+    }
   </script>
 </body>
 </html>

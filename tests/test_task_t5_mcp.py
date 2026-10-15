@@ -406,3 +406,47 @@ async def test_task5_cli_config_and_install():
     )
     code_inst = await cmd_mcp(args_inst)
     assert code_inst == 0
+
+
+@pytest.mark.asyncio
+async def test_task5_read_only_default_and_guard(mcp_setup):
+    """Xác nhận read-only mode mặc định chỉ có 10 query tools và từ chối mọi mutation tool."""
+    _, svc, _, _ = mcp_setup
+    server_ro = create_mcp_server(application_service=svc, read_only=True)
+
+    tools = await server_ro.list_tools()
+    assert len(tools) == 10
+
+    with pytest.raises(Exception):
+        await server_ro.call_tool("create_task", {"title": "Forbidden In Read Only"})
+
+
+@pytest.mark.asyncio
+async def test_task5_destructive_safeguard_and_actor_policy(mcp_setup):
+    """Xác nhận cơ chế xác nhận an toàn cho delete_task và ngăn chặn mạo danh actor."""
+    server, _, repo, _ = mcp_setup
+
+    # 1. confirm=False aborts
+    res_abort = await server.call_tool("delete_task", {"task_id": "task-init-1", "confirm": False})
+    c_abort = _extract(res_abort)
+    assert c_abort["success"] is False
+    assert "confirmation required" in c_abort["error"].lower()
+
+    # Task vẫn nguyên vẹn
+    t = await repo.get_task_by_id("task-init-1")
+    assert t.status == TaskStatus.TODO
+
+    # 2. Impersonation of ADMIN rejected without credentials
+    res_impersonate = await server.call_tool("delete_task", {"task_id": "task-init-1", "actor": "ADMIN"})
+    c_imp = _extract(res_impersonate)
+    assert c_imp["success"] is False
+    assert "Impersonation forbidden" in c_imp["error"]
+
+    # 3. Legitimate agent deletion with confirm=True
+    res_ok = await server.call_tool("delete_task", {"task_id": "task-init-1", "actor": "CODING_AGENT", "confirm": True})
+    c_ok = _extract(res_ok)
+    assert c_ok["success"] is True
+
+    t_dismissed = await repo.get_task_by_id("task-init-1")
+    assert t_dismissed.status == TaskStatus.DISMISSED
+

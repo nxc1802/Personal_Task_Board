@@ -147,6 +147,22 @@ class IdentityResolver:
         clean_aad_id = aad_object_id.strip() if aad_object_id else None
         clean_account_id = account_id.strip() if account_id else None
 
+        # 0. Kiểm tra EXACT MATCH trên Person ID trực tiếp
+        for candidate_id in (clean_account_id, norm_email, (display_name.strip() if display_name else None)):
+            if candidate_id:
+                cand_lower = candidate_id.lower()
+                for p in self._persons.values():
+                    if cand_lower == p.person_id.lower():
+                        return IdentityResolutionResult(
+                            person_id=p.person_id,
+                            canonical_name=p.canonical_name,
+                            primary_email=p.primary_email,
+                            is_exact_match=True,
+                            is_candidate_signal=False,
+                            resolution_method="person_id_exact",
+                            confidence=1.0,
+                        )
+
         # 1. Kiểm tra EXACT MATCH trên AAD Object ID
         if clean_aad_id:
             for p in self._persons.values():
@@ -188,16 +204,34 @@ class IdentityResolver:
                         resolution_method="email",
                         confidence=1.0,
                     )
+            # Email prefix check (e.g. lead.tran@company.com -> lead.tran)
+            if "@" in norm_email:
+                prefix = norm_email.split("@")[0].strip()
+                for p in self._persons.values():
+                    if prefix == p.person_id.lower():
+                        return IdentityResolutionResult(
+                            person_id=p.person_id,
+                            canonical_name=p.canonical_name,
+                            primary_email=p.primary_email,
+                            is_exact_match=True,
+                            is_candidate_signal=False,
+                            resolution_method="email_prefix",
+                            confidence=1.0,
+                        )
 
-        # 3b. Kiểm tra EXACT MATCH trên Canonical Name hoặc Aliases KHI KHÔNG CÓ external_id / email đối lập và cùng tenant
-        if clean_aad_id is None and clean_account_id is None and norm_email is None and display_name:
+        # 3b. Kiểm tra EXACT MATCH trên Canonical Name hoặc Aliases
+        if display_name:
             norm_disp = normalize_vietnamese_text(display_name)
             for p in self._persons.values():
                 if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
                     continue
+                # Quy tắc bất biến: Nếu có email nhưng email không khớp -> Không được exact match
+                if norm_email and p.primary_email and norm_email != p.primary_email:
+                    continue
                 p_norm = normalize_vietnamese_text(p.canonical_name)
                 alias_norms = {normalize_vietnamese_text(a) for a in p.aliases}
-                if norm_disp == p_norm or norm_disp in alias_norms:
+                id_norm = normalize_vietnamese_text(p.person_id)
+                if norm_disp == p_norm or norm_disp in alias_norms or norm_disp == id_norm:
                     return IdentityResolutionResult(
                         person_id=p.person_id,
                         canonical_name=p.canonical_name,

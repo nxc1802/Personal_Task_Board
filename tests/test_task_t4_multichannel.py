@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import pytest
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from ptb_contracts import (
@@ -513,3 +514,102 @@ async def test_application_service_multi_channel_coverage():
     assert "confluence" in tenant_source_types
     assert "github" in tenant_source_types
     assert "slack" in tenant_source_types
+
+
+@pytest.mark.asyncio
+async def test_api_ingest_message_multi_channel():
+    """Verify POST /api/ingest/message maps dynamic source channels (Jira, Outlook, Slack) to proper SourceTypes."""
+    from fastapi.testclient import TestClient
+    from ptb_application.api import create_app
+    from ptb_application.service import ApplicationService
+
+    task_repo = InMemoryTaskDomainRepository()
+    raw_repo = InMemoryRawEventRepository()
+    ckpt_repo = InMemoryCheckpointRepository()
+
+    app_service = ApplicationService(
+        task_repo=task_repo,
+        raw_event_repo=raw_repo,
+        checkpoint_repo=ckpt_repo,
+    )
+    fake_pipeline = ProcessingPipeline(task_repo=task_repo, llm_extractor=FakeDeterministicLLMExtractor())
+    app_service._processing_pipeline = fake_pipeline
+
+    app = create_app(application_service=app_service)
+    client = TestClient(app)
+
+    # 1. Jira Ingestion
+    resp_jira = client.post(
+        "/api/ingest/message",
+        json={"message": "[DEV-101] Fix high memory consumption in cache worker", "source": "jira", "sender": "Jira Service"},
+    )
+    assert resp_jira.status_code == 200
+
+    # 2. Outlook Email Ingestion
+    resp_outlook = client.post(
+        "/api/ingest/message",
+        json={"message": "Subject: Urgent review\n\nNhờ anh xem giúp spec release trước 16h", "source": "outlook", "sender": "manager@corp.com"},
+    )
+    assert resp_outlook.status_code == 200
+
+    # Verify raw events in repo have proper SourceTypes
+    events = list(raw_repo.events.values())
+    assert len(events) >= 2
+    sources = {e.source_type for e in events}
+    assert SourceType.JIRA in sources
+    assert SourceType.MS_OUTLOOK_WEB in sources
+
+
+def test_cookie_session_management_api(tmp_path, monkeypatch):
+    """Verify GET /api/auth/session-status and POST /api/auth/save-cookie."""
+    from fastapi.testclient import TestClient
+    from ptb_application.api import create_app
+    from ptb_application.service import ApplicationService
+
+    test_storage = tmp_path / "test_storage_state.json"
+    monkeypatch.setenv("PTB_STORAGE_STATE", str(test_storage))
+
+    task_repo = InMemoryTaskDomainRepository()
+    raw_repo = InMemoryRawEventRepository()
+    ckpt_repo = InMemoryCheckpointRepository()
+
+    app_service = ApplicationService(
+        task_repo=task_repo,
+        raw_event_repo=raw_repo,
+        checkpoint_repo=ckpt_repo,
+    )
+    app = create_app(application_service=app_service)
+    client = TestClient(app)
+
+    # 1. Check session status
+    resp_status = client.get("/api/auth/session-status")
+    assert resp_status.status_code == 200
+    st_data = resp_status.json()
+    assert "status" in st_data
+    assert "storage_path" in st_data
+
+    # 2. Save cookie JSON
+    sample_cookies = [
+        {"name": "AuthCookie", "value": "xyz123", "domain": ".microsoft.com", "expires": 2000000000}
+    ]
+    resp_save = client.post(
+        "/api/auth/save-cookie",
+        json={"cookie_data": sample_cookies}
+    )
+    assert resp_save.status_code == 200
+    assert resp_save.json()["status"] == "success"
+    assert resp_save.json()["cookie_count"] == 1
+
+    # 3. Test start-login trigger API
+    with patch("ptb_acquisition.playwright.login.run_interactive_login", new_callable=AsyncMock):
+        resp_login = client.post(
+            "/api/auth/start-login",
+            json={"service": "teams"}
+        )
+        assert resp_login.status_code == 200
+        login_data = resp_login.json()
+        assert login_data["service"] == "teams"
+        assert "status" in login_data
+        assert "command" in login_data
+
+

@@ -229,6 +229,8 @@ class JiraIssueParser:
         status_name = str(status_val.get("name") if isinstance(status_val, dict) else (status_val or "")).strip()
         priority_val = fields.get("priority") or (content.get("priority") if isinstance(content, dict) else None)
         priority_name = str(priority_val.get("name") if isinstance(priority_val, dict) else (priority_val or "")).strip()
+        duedate_val = fields.get("duedate") or (content.get("duedate") if isinstance(content, dict) else None)
+        duedate_str = str(duedate_val).strip() if duedate_val else ""
 
         assignee = fields.get("assignee") or (content.get("assignee") if isinstance(content, dict) else None)
         assignee_name = None
@@ -259,6 +261,8 @@ class JiraIssueParser:
             lines.append(f"Status: {status_name}")
         if priority_name:
             lines.append(f"Priority: {priority_name}")
+        if duedate_str:
+            lines.append(f"Due Date: {duedate_str}")
         if description:
             lines.append(f"\nDescription:\n{description}")
 
@@ -514,8 +518,8 @@ class GitHubParser:
 class SlackParser:
     """Parser chuyên biệt cho Slack messages, thread replies và mrkdwn."""
 
-    MRKDWN_USER = re.compile(r"<@([A-Z0-9]+)(?:\|([^>]+))?>")
-    MRKDWN_CHANNEL = re.compile(r"<#([A-Z0-9]+)(?:\|([^>]+))?>")
+    MRKDWN_USER = re.compile(r"<@([a-zA-Z0-9_\-\.]+)(?:\|([^>]+))?>")
+    MRKDWN_CHANNEL = re.compile(r"<#([a-zA-Z0-9_\-\.]+)(?:\|([^>]+))?>")
     MRKDWN_LINK = re.compile(r"<([^|>]+)(?:\|([^>]+))?>")
 
     def clean_mrkdwn(self, text: str) -> str:
@@ -539,6 +543,7 @@ class SlackParser:
         author = actual_author
         quoted_text = None
         is_thread_reply = False
+        parent_author = None
 
         if isinstance(content, dict):
             raw_text = str(content.get("text") or content.get("content") or content.get("body") or "").strip()
@@ -549,6 +554,7 @@ class SlackParser:
             if "parent_message" in content and isinstance(content["parent_message"], dict):
                 p_text = content["parent_message"].get("text", "")
                 p_user = content["parent_message"].get("user") or "Parent Author"
+                parent_author = p_user
                 quoted_text = f"{p_user}: {self.clean_mrkdwn(p_text)}"
         else:
             raw_text = str(content or "").strip()
@@ -557,7 +563,7 @@ class SlackParser:
 
         return ParsedMessageContent(
             is_quote_reply=is_thread_reply or bool(quoted_text),
-            quoted_author_raw=None,
+            quoted_author_raw=parent_author,
             quoted_content_text=quoted_text,
             actual_content_text=cleaned_text,
             actual_author_raw=author,

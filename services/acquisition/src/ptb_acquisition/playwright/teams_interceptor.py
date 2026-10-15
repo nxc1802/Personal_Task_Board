@@ -1,7 +1,11 @@
 """Teams Web Network Response Interceptor (Layer 1A).
 
 Hook vào sự kiện page.on('response') của Playwright để bắt gói tin JSON nội bộ
-của Microsoft Teams Web mà không cần Azure AD Admin Consent.
+của Microsoft Teams Web mà không cần Azure AD Admin Consent:
+- Hỗ trợ xử lý tin nhắn được chỉnh sửa (edited) và tin nhắn bị xóa (deleted)
+- Nhận diện lỗi xác thực (401/403/redirect) chuyển sang AUTH_EXPIRED và rate limit (429) chuyển DEGRADED
+- Bóc tách attachments metadata KHÔNG lưu content nhị phân
+- Đảm bảo Persist-First và Idempotency Key 64-char SHA-256
 """
 
 import asyncio
@@ -85,7 +89,7 @@ class TeamsNetworkInterceptor:
         url = response.url if hasattr(response, "url") else ""
         status = response.status if hasattr(response, "status") else 200
 
-        # Kiểm tra redirect hoặc lỗi xác thực 401/403
+        # 1. Kiểm tra redirect hoặc lỗi xác thực 401/403
         is_login_redirect = "login.microsoftonline.com" in url.lower() or "login.live.com" in url.lower()
         if hasattr(response, "headers") and isinstance(response.headers, dict):
             location = response.headers.get("location", "").lower()
@@ -104,6 +108,12 @@ class TeamsNetworkInterceptor:
                 tenant_id=self.tenant_id,
             )
             self.session_state = SessionHealthState.AUTH_EXPIRED
+            return []
+
+        # 2. Xử lý Rate Limiting (HTTP 429 Too Many Requests)
+        if status == 429:
+            logger.warning(f"Teams Web gặp phản hồi giới hạn tần suất (HTTP 429 Too Many Requests): {url}")
+            self.session_state = SessionHealthState.DEGRADED
             return []
 
         # Lọc các URL endpoint chứa dữ liệu tin nhắn chat
@@ -165,10 +175,8 @@ class TeamsNetworkInterceptor:
                     if persisted and self.queue is not None:
                         await self.queue.put(rec)
                 elif self.queue is not None:
-                    # Fallback backward-compatible khi chỉ truyền queue
                     persisted = await self.queue.put(rec)
                 else:
-                    # Chế độ standalone test không cắm kho lưu trữ
                     persisted = True
             except Exception as e:
                 logger.error(f"Lỗi khi persist trực tiếp raw event {rec.id}: {e}")
@@ -185,7 +193,6 @@ class TeamsNetworkInterceptor:
                 self.session_state = SessionHealthState.DEGRADED
                 persisted = False
 
-            # Chỉ coi event là captured sau khi đã được lưu trữ bền vững vào Neo4j (Durable Persist-First)
             if persisted:
                 self.captured_records.append(rec)
                 persisted_records.append(rec)
@@ -195,7 +202,7 @@ class TeamsNetworkInterceptor:
         return persisted_records
 
     def parse_payload(self, payload: Dict[str, Any], request_url: str = "") -> List[RawEventRecord]:
-        """Phân tích payload JSON nội bộ của Teams và chuẩn hóa thành RawEventRecord."""
+        """Phân tích payload JSON nội bộ của Teams và chuẩn hóa thành RawEventRecord v1."""
         records: List[RawEventRecord] = []
 
         # Teams có thể trả về danh sách messages trong trường 'messages' hoặc 'value' hoặc payload là 1 message
@@ -252,7 +259,24 @@ class TeamsNetworkInterceptor:
                 or act.get("sourceThreadId")
                 or "unknown_conversation"
             )
-            thread_topic = props.get("threadTopic") or act.get("sourceThreadTopic")
+
+            # Phát hiện tin nhắn bị xóa (deleted) và tin nhắn được chỉnh sửa (edited)
+            is_deleted = bool(
+                msg.get("isdeleted")
+                or msg.get("isDeleted")
+                or (isinstance(props, dict) and props.get("deletetime"))
+                or msg.get("messageType") in ("Control/Status", "MessageDeleted")
+                or msg.get("type") == "MessageDeleted"
+            )
+
+            is_edited = bool(
+                (isinstance(props, dict) and props.get("edittime"))
+                or (
+                    msg.get("version")
+                    and msg.get("sequenceId")
+                    and str(msg.get("version")) != str(msg.get("sequenceId"))
+                )
+            )
 
             # Nội dung
             body_info = msg.get("body") or msg.get("content") or {}
@@ -260,6 +284,9 @@ class TeamsNetworkInterceptor:
                 content_text = body_info.get("content", "")
             else:
                 content_text = str(body_info)
+
+            if is_deleted and not content_text.strip():
+                content_text = "[Message Deleted]"
 
             if not content_text.strip():
                 continue
@@ -280,7 +307,26 @@ class TeamsNetworkInterceptor:
             else:
                 event_ts = datetime.now(timezone.utc)
 
-            # Idempotency Key
+            # Attachments metadata trích xuất an toàn (không lưu contentBytes)
+            sanitized_msg = dict(msg)
+            if isinstance(props, dict) and "attachments" in props and isinstance(props["attachments"], list):
+                clean_atts = []
+                for att in props["attachments"]:
+                    if isinstance(att, dict):
+                        clean_atts.append({
+                            "id": str(att.get("id") or ""),
+                            "name": str(att.get("name") or "attachment"),
+                            "content_type": str(att.get("contentType") or "application/octet-stream"),
+                            "content_url": att.get("contentUrl"),
+                        })
+                    else:
+                        clean_atts.append(att)
+                sanitized_msg["attachments_metadata"] = clean_atts
+
+            sanitized_msg["is_edited"] = is_edited
+            sanitized_msg["is_deleted"] = is_deleted
+
+            # Idempotency Key deterministic v1
             full_content_hash = hashlib.sha256(content_text.strip().encode("utf-8")).hexdigest()
             idempotency_key = hashlib.sha256(
                 f"{self.tenant_id}:ms_teams_web:{msg_id}:{full_content_hash[:16]}".encode("utf-8")
@@ -300,8 +346,8 @@ class TeamsNetworkInterceptor:
                 author_display_name=author_name,
                 conversation_or_project_id=conv_id,
                 deep_link=f"https://teams.microsoft.com/l/message/{conv_id}/{msg_id}",
-                raw_payload=msg,
-                payload_json=json.dumps(msg, default=str),
+                raw_payload=sanitized_msg,
+                payload_json=json.dumps(sanitized_msg, default=str),
                 normalized_text=content_text.strip(),
                 content_hash=full_content_hash,
                 processing_status=ProcessingStatus.PENDING,

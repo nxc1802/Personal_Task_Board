@@ -78,6 +78,54 @@ class OpenWebUIInstaller:
         except Exception:
             return False
 
+    async def get_openwebui_version(self, url: Optional[str] = None) -> Optional[str]:
+        """Truy vấn thông tin version thực tế từ OpenWebUI endpoint (nếu online)."""
+        target_url = (url or self.base_url).rstrip("/")
+        for endpoint in ["/api/version", "/api/v1/version"]:
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    resp = await client.get(f"{target_url}{endpoint}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if isinstance(data, dict):
+                            ver = data.get("version") or data.get("openwebui_version")
+                            if ver:
+                                return str(ver)
+            except Exception as exc:
+                logger.debug("Failed to detect OpenWebUI version at %s: %s", endpoint, exc)
+        return None
+
+    @classmethod
+    def check_version_compatibility(
+        cls, detected_version: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Kiểm tra tính tương thích giữa version đang chạy và version đã ghim (PINNED_VERSION)."""
+        pinned = cls.PINNED_VERSION
+        if not detected_version:
+            return {
+                "compatible": True,
+                "pinned_version": pinned,
+                "detected_version": None,
+                "status": "unverified_offline",
+                "message": f"Server offline or unversioned; deploying against pinned {pinned}.",
+            }
+
+        norm_detected = detected_version.lstrip("v").strip()
+        norm_pinned = pinned.lstrip("v").strip()
+
+        is_exact = norm_detected == norm_pinned
+        return {
+            "compatible": True,
+            "pinned_version": pinned,
+            "detected_version": detected_version,
+            "status": "exact_match" if is_exact else "compatible_upgrade",
+            "message": (
+                f"OpenWebUI version {detected_version} matches pinned {pinned}."
+                if is_exact
+                else f"OpenWebUI version {detected_version} detected (pinned {pinned}); compatibility mode active."
+            ),
+        }
+
     @class_or_instance_method
     async def install_components(
         self,
@@ -92,6 +140,7 @@ class OpenWebUIInstaller:
             self.base_url = str(raw_url).rstrip("/")
 
         dest_dir = Path(raw_dir).expanduser() if raw_dir is not None else self.default_data_dir
+        is_upgrade = (dest_dir / "ptb_manifest.json").exists()
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         tools_src = OPENWEBUI_INTEGRATION_DIR / "tools" / "ptb_tools.py"
@@ -298,6 +347,12 @@ class OpenWebUIInstaller:
             raise_on_error=True,
         )
 
+        # 7. Version detection & compatibility assessment
+        detected_ver = None
+        if await self.check_connection(self.base_url):
+            detected_ver = await self.get_openwebui_version(self.base_url)
+        version_compat = self.check_version_compatibility(detected_ver)
+
         db_registered = db_reg.get("registered", False)
         plugins_registered = db_registered or api_reg_ok
         install_success = validation["validation_ok"] and plugins_registered
@@ -325,6 +380,9 @@ class OpenWebUIInstaller:
             "db_path": db_reg.get("db_path"),
             "validated_files": validation["validated_files"],
             "pinned_version": PINNED_OPENWEBUI_VERSION,
+            "detected_version": detected_ver,
+            "version_compatibility": version_compat,
+            "is_upgrade": is_upgrade,
             "target_dir": str(dest_dir),
             "manifest_path": str(deployed_manifest),
             "deployed_files": deployed_list,
@@ -605,11 +663,23 @@ class OpenWebUIInstaller:
                 now_ts = int(time.time())
                 specs_list = cls.generate_tools_specs(tools_code)
 
+                # Tìm target user_id để hiển thị trong Workspace của OpenWebUI
+                target_user_id = "system"
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user'")
+                if cursor.fetchone():
+                    try:
+                        cursor.execute("SELECT id FROM user ORDER BY created_at ASC LIMIT 1")
+                        u_row = cursor.fetchone()
+                        if u_row and u_row[0]:
+                            target_user_id = u_row[0]
+                    except Exception as e:
+                        logger.debug("Could not query primary user from sqlite: %s", e)
+
                 # Dynamically construct INSERT statement for tool based on present columns
                 tool_insert_cols = ["id", "user_id", "name", "content", "specs", "meta"]
                 tool_insert_vals = [
                     "ptb_tools",
-                    "system",
+                    target_user_id,
                     tools_meta.get("title", "Personal Task Board Tools"),
                     tools_code,
                     json.dumps(specs_list, ensure_ascii=False),
@@ -646,7 +716,7 @@ class OpenWebUIInstaller:
                 func_insert_cols = ["id", "user_id", "name", "type", "content", "meta"]
                 func_insert_vals = [
                     "ptb_board_action",
-                    "system",
+                    target_user_id,
                     actions_meta.get("title", "PTB Board Action & Assistant"),
                     "action",
                     actions_code,
@@ -675,6 +745,86 @@ class OpenWebUIInstaller:
                     ON CONFLICT(id) DO UPDATE SET
                         {func_update_sql}
                 """, func_insert_vals)
+
+                # Đăng ký Model Agent chuẩn OpenWebUI Workspace nếu bảng model tồn tại
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='model'")
+                if cursor.fetchone():
+                    try:
+                        cursor.execute("PRAGMA table_info(model)")
+                        m_cols = {row[1] for row in cursor.fetchall()}
+                        if {"id", "user_id", "base_model_id", "name"}.issubset(m_cols):
+                            cursor.execute("SELECT base_model_id FROM model WHERE id = 'personal-task-board'")
+                            existing_model = cursor.fetchone()
+                            model_meta = {
+                                "description": "Personal Task Board Assistant - Quản lý công việc cá nhân thông minh, tích hợp Kanban Board và CRUD 2 chiều với PTB Backend",
+                                "profile_image_url": "/favicon/favicon-96x96.png",
+                                "capabilities": {"tools": True, "vision": True},
+                                "suggestion_prompts": [
+                                    {"title": ["Xem Task Board", "Mở giao diện Kanban Board tương tác"], "content": "/board"},
+                                    {"title": ["Kế hoạch hôm nay", "Top việc cần làm trong ngày"], "content": "Kế hoạch công việc hôm nay của tôi có những gì?"},
+                                    {"title": ["Task đang làm", "Danh sách việc IN_PROGRESS"], "content": "Liệt kê các task đang ở trạng thái IN PROGRESS"},
+                                    {"title": ["Việc đang chờ", "Waiting on others"], "content": "Kiểm tra danh sách các việc tôi đang chờ người khác"},
+                                ],
+                            }
+                            model_params = {
+                                "system": "Bạn là AI Agent của Personal Task Board (PTB). Bạn có nhiệm vụ hỗ trợ người dùng quản lý công việc cá nhân, lập kế hoạch hôm nay, theo dõi công việc đang chờ (waiting on others), và tương tác với bảng Kanban. Bạn sử dụng bộ công cụ ptb_tools để thực hiện các thao tác CRUD và truy vấn dữ liệu từ Backend PTB.",
+                                "tools": ["ptb_tools"],
+                            }
+                            cursor.execute("""
+                                INSERT INTO model (id, user_id, base_model_id, name, meta, params, is_active, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                                ON CONFLICT(id) DO UPDATE SET
+                                    name=excluded.name,
+                                    meta=excluded.meta,
+                                    params=excluded.params,
+                                    is_active=1,
+                                    updated_at=excluded.updated_at
+                            """, (
+                                "personal-task-board",
+                                target_user_id,
+                                "models/gemma-4-26b-a4b-it",
+                                "Personal Task Board",
+                                json.dumps(model_meta, ensure_ascii=False),
+                                json.dumps(model_params, ensure_ascii=False),
+                                now_ts,
+                                now_ts,
+                            ))
+                    except Exception as e_model:
+                        logger.debug("Model workspace registration optional step: %s", e_model)
+
+                # Đăng ký Prompts chuẩn OpenWebUI Workspace nếu bảng prompt tồn tại
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='prompt'")
+                if cursor.fetchone():
+                    try:
+                        prompts_data = [
+                            ("/board", "Personal Task Board", "Hãy hiển thị bảng Personal Task Board và tóm tắt các công việc hôm nay của tôi."),
+                            ("/today", "PTB: Kế hoạch hôm nay", "Lấy kế hoạch công việc hôm nay của tôi (Today Board), tổng hợp các task ưu tiên hàng đầu, các mục waiting và forgotten."),
+                            ("/tasks", "PTB: Danh sách công việc", "Hiển thị danh sách toàn bộ các task hiện tại, phân loại theo trạng thái IN_PROGRESS, TODO, PENDING, DONE."),
+                            ("/waiting", "PTB: Đang chờ người khác", "Kiểm tra danh sách các đầu việc tôi đang chờ phản hồi từ người khác (Waiting on others)."),
+                            ("/forgotten", "PTB: Cam kết tồn đọng", "Liệt kê các cam kết hoặc task tồn đọng lâu ngày chưa được giải quyết (Forgotten commitments)."),
+                        ]
+                        for p_cmd, p_title, p_content in prompts_data:
+                            cursor.execute("SELECT command FROM prompt WHERE command = ?", (p_cmd,))
+                            if not cursor.fetchone():
+                                cursor.execute("""
+                                    INSERT INTO prompt (command, user_id, title, content, timestamp, access_control)
+                                    VALUES (?, ?, ?, ?, ?, 'null')
+                                """, (p_cmd, target_user_id, p_title, p_content, now_ts))
+                    except Exception as e_prompt:
+                        logger.debug("Prompt workspace registration optional step: %s", e_prompt)
+
+                # Cập nhật default_models trong config nếu có
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='config'")
+                if cursor.fetchone():
+                    try:
+                        cursor.execute("SELECT id, data FROM config WHERE id = 1")
+                        cfg_row = cursor.fetchone()
+                        if cfg_row and cfg_row[1]:
+                            cfg_data = json.loads(cfg_row[1])
+                            cfg_data["default_models"] = "personal-task-board"
+                            cursor.execute("UPDATE config SET data = ? WHERE id = 1", (json.dumps(cfg_data),))
+                    except Exception as e_cfg:
+                        logger.debug("Config default model optional step: %s", e_cfg)
 
                 conn.commit()
                 cursor.execute("SELECT id, specs FROM tool WHERE id = 'ptb_tools'")
@@ -777,6 +927,8 @@ class OpenWebUIInstaller:
             "=" * 70,
             f"Trạng thái      : {res.get('status', '').upper()}",
             f"Pinned Version  : {res.get('pinned_version', PINNED_OPENWEBUI_VERSION)}",
+            f"Server Version  : {res.get('detected_version') or 'Not connected / offline'}",
+            f"Thao tác        : {'Cập nhật / Nâng cấp (Upgrade / Idempotent)' if res.get('is_upgrade') else 'Cài đặt mới (Fresh Install)'}",
             f"Thư mục đích    : {res.get('target_dir')}",
             f"Validation      : {validation_label}",
             "Thành phần đã cài:",

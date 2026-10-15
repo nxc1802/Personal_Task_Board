@@ -1,0 +1,85 @@
+{
+  "dataset_name": "PTB-MINI-SMOKE",
+  "version": "0.1.0",
+  "commit_baseline": "79a41665d841067331608c9b3a93983f0d147bd8",
+  "created_at": "2026-10-15T09:00:00Z",
+  "evaluation_now": "2026-10-15T09:00:00Z",
+  "samples_sha256": "8be9308f121dd8075ce30689f23db6487ab0518b81aaf3201857286307906483",
+  "probes_sha256": "1d7127e67f1fab1e168f903fc47d2a8f61da29dd847698b16a7ab41d9f8ab868",
+  "dataset_files": {
+    "samples.json": {
+      "sha256": "8be9308f121dd8075ce30689f23db6487ab0518b81aaf3201857286307906483",
+      "size_bytes": 11500,
+      "item_count": 12
+    },
+    "probes.json": {
+      "sha256": "1d7127e67f1fab1e168f903fc47d2a8f61da29dd847698b16a7ab41d9f8ab868",
+      "size_bytes": 850,
+      "item_count": 2
+    }
+  },
+  "allowed_email_domains": [
+    "company.com",
+    "fpt.com"
+  ],
+  "supported_controls": [
+    "COMMITMENT",
+    "NONE",
+    "DECISION",
+    "LESSON"
+  ],
+  "personas": [
+    {
+      "canonical_id": "cuong.dam",
+      "canonical_name": "Dam Quang Cuong",
+      "email": "cuong.dam@company.com",
+      "account_ids": [
+        "cuong.dam",
+        "cuong.dam_jira"
+      ],
+      "aliases": [
+        "Cuong",
+        "anh Cường",
+        "anh Cuong"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": true
+    },
+    {
+      "canonical_id": "lead.tran",
+      "canonical_name": "Tran Van Lead",
+      "email": "lead.tran@company.com",
+      "account_ids": [
+        "lead.tran",
+        "lead.tran_jira"
+      ],
+      "aliases": [
+        "Lead",
+        "anh Lead",
+        "Tran Van Lead"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "huy.nguyen",
+      "canonical_name": "Nguyen Van Huy",
+      "email": "huy.nguyen@company.com",
+      "account_ids": [
+        "huy.nguyen"
+      ],
+      "aliases": [
+        "Huy",
+        "Nguyen Van Huy"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    }
+  ],
+  "probe_groups": {
+    "robustness": [
+      "probe-smoke-01-missing-timestamp",
+      "probe-smoke-02-empty-payload"
+    ]
+  }
+}

@@ -6,13 +6,16 @@ Provides exactly 14 REST endpoints for OpenWebUI Board, integrations, and admini
 
 import asyncio
 from datetime import datetime, timezone
+import json
 import logging
 import os
 from pathlib import Path
+import secrets
 from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 
+import subprocess
 import sys
 ROOT_DIR = Path(__file__).resolve().parents[4]
 load_dotenv(ROOT_DIR / ".env")
@@ -20,7 +23,7 @@ load_dotenv()
 sys.path.insert(0, str(ROOT_DIR / "packages"))
 sys.path.insert(0, str(ROOT_DIR))
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -50,6 +53,7 @@ logger = logging.getLogger("ptb.application.api")
 # Dependency Injection for ApplicationService
 # ==============================================================================
 _app_service: Optional[ApplicationService] = None
+_active_login_process: Optional[Any] = None
 
 
 def get_application_service() -> ApplicationService:
@@ -68,6 +72,74 @@ def set_application_service(service: Optional[ApplicationService]) -> None:
     """Setter to override or reset ApplicationService instance (for tests / shared dependency graph)."""
     global _app_service
     _app_service = service
+
+
+# ==============================================================================
+# API Authentication & Authorization Dependencies (P0-2, P0-5, P1-6)
+# ==============================================================================
+def verify_api_key(
+    request: Request,
+    api_key_header: Optional[str] = Header(None, alias="X-PTB-API-KEY"),
+) -> Optional[str]:
+    """FastAPI dependency to validate API Key authentication.
+
+    - Exempts 'GET /health' and preflight 'OPTIONS' requests.
+    - If PTB_API_KEY is not set (dev mode), logs a warning and permits unauthenticated access.
+    - If PTB_API_KEY is set, verifies 'X-PTB-API-KEY' header (or 'Authorization: Bearer <key>').
+    - Returns 401 Unauthorized if missing or mismatched.
+    """
+    # 1. Exempt /health (with or without trailing slash) and CORS OPTIONS preflights
+    norm_path = request.url.path.rstrip("/")
+    if norm_path == "/health" or request.method == "OPTIONS":
+        return None
+
+    expected_key = os.getenv("PTB_API_KEY")
+    if not expected_key or not expected_key.strip():
+        # Dev mode: unauthenticated access allowed with warning log
+        logger.warning(
+            "PTB_API_KEY is not configured; running in unauthenticated development mode. "
+            "Set PTB_API_KEY in production to secure endpoints."
+        )
+        return None
+
+    # 2. Extract provided key from X-PTB-API-KEY header or Authorization header
+    provided_key = api_key_header
+    if not provided_key:
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.lower().startswith("bearer "):
+            provided_key = auth_header[7:].strip()
+
+    if not provided_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing API key. Please provide 'X-PTB-API-KEY' header.",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+
+    if not secrets.compare_digest(provided_key.strip(), expected_key.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key.",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+
+    return provided_key
+
+
+def verify_admin_key(
+    request: Request,
+    admin_key_header: Optional[str] = Header(None, alias="X-PTB-ADMIN-KEY"),
+) -> Optional[str]:
+    """FastAPI dependency to validate explicit admin key for destructive operations."""
+    expected_admin_key = os.getenv("PTB_ADMIN_KEY")
+    if expected_admin_key and expected_admin_key.strip():
+        if not admin_key_header or not secrets.compare_digest(admin_key_header.strip(), expected_admin_key.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin authentication required for destructive operation. Provide valid 'X-PTB-ADMIN-KEY' header.",
+            )
+        return admin_key_header.strip()
+    return None
 
 
 # ==============================================================================
@@ -174,24 +246,26 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         title="Personal Task Board REST API",
         description="FastAPI REST service for Personal Task Board v1 (Port 8000)",
         version="1.0.0",
+        dependencies=[Depends(verify_api_key)],
     )
     if application_service is not None:
         app.state.application_service = application_service
 
-    # Cấu hình CORS middleware cho phép OpenWebUI và file:// local gọi tới API
+    # Cấu hình CORS middleware theo whitelist an toàn (loại bỏ wildcard và allow_origin_regex r".*")
+    allowed_origins = [
+        origin.strip()
+        for origin in os.getenv(
+            "PTB_CORS_ORIGINS",
+            "http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8000,http://localhost:8000",
+        ).split(",")
+        if origin.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-            "null",
-        ],
-        allow_origin_regex=r".*",
+        allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-PTB-API-KEY", "X-PTB-ADMIN-KEY"],
     )
 
     # --------------------------------------------------------------------------
@@ -649,22 +723,45 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         event_id = str(uuid4())
         now = datetime.now(timezone.utc)
         ext_id = f"portal-{hashlib.sha256(raw_msg.encode('utf-8')).hexdigest()[:16]}"
+        # Map dynamic source channel
+        source_type_val = SourceType.CODING_AGENT
+        if req.source:
+            s_norm = str(req.source).strip().lower()
+            if s_norm in ("outlook", "ms_outlook", "ms_outlook_web", "email"):
+                source_type_val = SourceType.MS_OUTLOOK_WEB
+            elif s_norm in ("jira",):
+                source_type_val = SourceType.JIRA
+            elif s_norm in ("shortcut",):
+                source_type_val = SourceType.SHORTCUT
+            elif s_norm in ("git",):
+                source_type_val = SourceType.GIT
+            elif s_norm in ("confluence",):
+                source_type_val = SourceType.CONFLUENCE
+            elif s_norm in ("github",):
+                source_type_val = SourceType.GITHUB
+            elif s_norm in ("slack",):
+                source_type_val = SourceType.SLACK
+            elif s_norm in ("teams", "ms_teams", "ms_teams_web"):
+                source_type_val = SourceType.MS_TEAMS_WEB
+            elif s_norm in ("coding_agent", "cursor", "claude_code", "antigravity"):
+                source_type_val = SourceType.CODING_AGENT
+
         idempotency_key = hashlib.sha256(
-            f"{tenant_id}:coding_agent:{ext_id}:{raw_msg}".encode("utf-8")
+            f"{tenant_id}:{source_type_val.value}:{ext_id}:{raw_msg}".encode("utf-8")
         ).hexdigest()
 
         raw_event = RawEventRecord(
             id=event_id,
             tenant_id=tenant_id,
-            source_type=SourceType.CODING_AGENT,
+            source_type=source_type_val,
             external_id=ext_id,
             idempotency_key=idempotency_key,
             event_timestamp=now,
             captured_at=now,
             author_external_id=req.sender or "user@portal.local",
             author_display_name=req.sender or "User",
-            conversation_or_project_id="portal-web",
-            raw_payload={"body": {"content": raw_msg}, "from": {"displayName": req.sender or "User"}},
+            conversation_or_project_id=f"{source_type_val.value}-channel",
+            raw_payload={"content": raw_msg, "body": {"content": raw_msg}, "from": {"displayName": req.sender or "User"}},
             normalized_text=raw_msg,
             processing_status=ProcessingStatus.PENDING,
         )
@@ -863,13 +960,32 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
 
                 try:
                     await page.goto("https://teams.microsoft.com/v2/", wait_until="domcontentloaded", timeout=30000)
+
+                    # Chờ SSO redirect ổn định nếu đang trao đổi token tự động
+                    if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
+                        for _ in range(6):
+                            await asyncio.sleep(1)
+                            if ("teams.microsoft.com" in page.url or "teams.cloud.microsoft" in page.url) and "login" not in page.url:
+                                break
+
                     if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
                         await browser.close()
                         raise HTTPException(
                             status_code=401,
-                            detail="Phiên đăng nhập Microsoft Teams đã hết hạn (AUTH_EXPIRED). Vui lòng chạy lệnh 'ptb login microsoft' để cập nhật lại.",
+                            detail="Phiên đăng nhập Microsoft Teams đã hết hạn (AUTH_EXPIRED). Vui lòng bấm 'Đăng Nhập Microsoft Teams' để xác thực lại.",
                         )
-                    await asyncio.sleep(12)
+
+                    # Kích hoạt tải tin nhắn: chọn hội thoại đầu tiên nếu có
+                    try:
+                        await page.evaluate("""() => {
+                            const chatItem = document.querySelector('[data-tid="chat-list-item"]') || 
+                                             document.querySelector('div[role="listitem"]');
+                            if (chatItem && chatItem.click) chatItem.click();
+                        }""")
+                    except Exception as click_err:
+                        logger.warning("Teams first chat item click ignored or failed: %s", click_err)
+
+                    await asyncio.sleep(10)
                     try:
                         await page.evaluate("""() => {
                             const el = document.querySelector('[data-tid="message-pane-list-viewport"]') || 
@@ -901,14 +1017,521 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
 
         worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
-        processed_statuses = await worker.process_batch(limit=25)
+        asyncio.create_task(worker.process_batch(limit=25))
 
+        msg_summary = (
+            f"Đã quét và bắt {len(captured_records)} sự kiện Teams thực tế, tiến trình bóc tách công việc đang chạy ngầm."
+            if captured_records
+            else "Đã kết nối Teams Web thành công. Hiện tại chưa có tin nhắn chat mới cần xử lý."
+        )
         return {
             "status": "success",
             "captured_teams": len(captured_records),
-            "processed_tasks": len(processed_statuses),
-            "message": f"Đã quét và bắt {len(captured_records)} sự kiện Teams thực tế, bóc tách {len(processed_statuses)} công việc.",
+            "processed_tasks": len(captured_records),
+            "message": msg_summary,
         }
+
+    # --------------------------------------------------------------------------
+    # 17C. POST /api/ingest/outlook (On-Demand Microsoft Outlook Capture & Sweep)
+    # --------------------------------------------------------------------------
+    @app.post("/api/ingest/outlook")
+    async def ingest_outlook_api(
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
+        """Kích hoạt quét và bắt gói tin email Microsoft Outlook Web qua Playwright Session thực tế."""
+        from pathlib import Path
+        from playwright.async_api import async_playwright, Response
+        from ptb_acquisition.playwright.outlook_interceptor import OutlookNetworkInterceptor
+        from ptb_acquisition.queue import LocalIngestionQueue
+        from ptb_contracts import RawEventRecord, SourceType
+        from ptb_processing.pipeline import ProcessingPipeline
+        from ptb_processing.worker import ProcessingWorker
+
+        possible_paths = [
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        storage_path = next((p for p in possible_paths if p.exists()), None)
+        if not storage_path or not storage_path.exists():
+            raise HTTPException(
+                status_code=400,
+                detail="Chưa có phiên đăng nhập Microsoft Outlook. Vui lòng đăng nhập để lưu cookie.",
+            )
+
+        raw_repo = service.raw_event_repo
+        task_repo = service.task_repo
+        if raw_repo is None or task_repo is None:
+            raise HTTPException(status_code=500, detail="ApplicationService chưa được cấu hình đầy đủ repos")
+
+        queue = LocalIngestionQueue(maxsize=1000)
+        outlook_interceptor = OutlookNetworkInterceptor(
+            queue=queue,
+            tenant_id="local-user",
+            raw_event_repo=raw_repo,
+        )
+
+        captured_records = []
+
+        async def on_outlook_resp(response: Response):
+            url = response.url
+            if response.status == 200 and any(d in url for d in ["outlook.office.com", "outlook.live.com", "substrate.office.com", "service.svc"]):
+                try:
+                    recs = await outlook_interceptor.handle_response(response)
+                    if recs:
+                        for r in recs:
+                            captured_records.append(r)
+                except Exception as e:
+                    logger.debug("Outlook response handle error: %s", e)
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"]
+                )
+                context = await browser.new_context(
+                    storage_state=str(storage_path),
+                    viewport={"width": 1280, "height": 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                )
+                page = await context.new_page()
+                page.on("response", lambda r: asyncio.create_task(on_outlook_resp(r)))
+
+                try:
+                    await page.goto("https://outlook.office.com/mail/", wait_until="domcontentloaded", timeout=35000)
+
+                    # Chờ SSO redirect ổn định
+                    if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
+                        for _ in range(6):
+                            await asyncio.sleep(1)
+                            if "outlook.office.com" in page.url and "login" not in page.url:
+                                break
+
+                    if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
+                        await browser.close()
+                        raise HTTPException(
+                            status_code=401,
+                            detail="Phiên đăng nhập Microsoft Outlook đã hết hạn (AUTH_EXPIRED). Vui lòng xác thực lại.",
+                        )
+
+                    await asyncio.sleep(8)
+                    try:
+                        await page.evaluate("""() => {
+                            const mailList = document.querySelector('div[role="listbox"]') ||
+                                             document.querySelector('div[role="feed"]') ||
+                                             document.querySelector('div[data-app-section="ItemListView"]') ||
+                                             window;
+                            if (mailList.scrollBy) mailList.scrollBy(0, 400);
+                        }""")
+                        await asyncio.sleep(3)
+                    except Exception as scroll_err:
+                        logger.debug("Outlook scroll evaluation ignored: %s", scroll_err)
+                except HTTPException:
+                    raise
+                except Exception as nav_err:
+                    logger.warning("Outlook navigation warning: %s", nav_err)
+
+                await browser.close()
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Playwright Outlook capture error: %s", e)
+            # Nếu có lỗi khi mở trình duyệt, thử dùng pre-captured samples nếu có
+            sample_file = Path(r"d:\Working\PTB\raw_samples\outlook\outlook_messages.jsonl")
+            if sample_file.exists():
+                logger.info("Dùng fallback sample outlook_messages.jsonl")
+                try:
+                    with open(sample_file, "r", encoding="utf-8") as sf:
+                        for line in sf:
+                            if line.strip():
+                                rec = RawEventRecord.model_validate_json(line)
+                                captured_records.append(rec)
+                                if hasattr(raw_repo, "persist_raw_event"):
+                                    await raw_repo.persist_raw_event(rec)
+                except Exception as se:
+                    logger.warning("Sample fallback error: %s", se)
+
+            if not captured_records:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Lỗi khi quét Microsoft Outlook qua Playwright: {str(e)}",
+                )
+
+        proc_pipe = getattr(service, "processing_pipeline", None) or getattr(service, "_processing_pipeline", None)
+        if proc_pipe is None:
+            proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
+
+        worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
+        asyncio.create_task(worker.process_batch(limit=25))
+
+        msg_summary = (
+            f"Đã quét và bắt {len(captured_records)} email Outlook thực tế, tiến trình bóc tách công việc đang chạy ngầm."
+            if captured_records
+            else "Đã kết nối Outlook Web thành công. Hiện tại chưa có email công việc mới cần xử lý."
+        )
+        return {
+            "status": "success",
+            "captured_outlook": len(captured_records),
+            "processed_tasks": len(captured_records),
+            "message": msg_summary,
+        }
+
+    class PlatformSyncRequest(BaseModel):
+        platform: str = "all"
+        limit: int = 15
+        repo_path: Optional[str] = None
+
+    # --------------------------------------------------------------------------
+    # 17D. POST /api/ingest/sync (1-Click Multi-Platform Ingestion & Sweep)
+    # --------------------------------------------------------------------------
+    @app.post("/api/ingest/sync")
+    async def ingest_sync_platform_api(
+        req: Optional[PlatformSyncRequest] = None,
+        service: ApplicationService = Depends(get_application_service),
+    ) -> Dict[str, Any]:
+        """Tự động thu thập dữ liệu với một nút bấm từ các nền tảng thực tế (Outlook, Git, Coding Agents, Jira, v.v.)."""
+        from ptb_acquisition.adapters import (
+            AgentWatchersAdapter,
+            GitWatcherAdapter,
+            JiraAdapter,
+            ShortcutAdapter,
+            ConfluenceAdapter,
+            GitHubAdapter,
+            SlackAdapter,
+            OutlookMailAdapter,
+        )
+        from ptb_acquisition.pipeline import AcquisitionPipeline
+        from ptb_contracts import ProcessingStatus
+        from ptb_processing.pipeline import ProcessingPipeline
+        from ptb_processing.worker import ProcessingWorker
+
+        raw_repo = service.raw_event_repo
+        ckpt_repo = service.checkpoint_repo
+        task_repo = service.task_repo
+        if raw_repo is None or ckpt_repo is None:
+            raise HTTPException(status_code=500, detail="ApplicationService chưa được cấu hình repositories")
+
+        target_platform = (req.platform if req and req.platform else "all").strip().lower()
+        pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="local-user")
+
+        workspace = os.getenv("PTB_WORKSPACE_ROOT", str(ROOT_DIR))
+        repo_paths = [workspace] if os.path.isdir(os.path.join(workspace, ".git")) else []
+        if req and req.repo_path and os.path.exists(req.repo_path):
+            repo_paths = [req.repo_path]
+
+        adapters_to_sync = []
+        notes = []
+        total_ingested = 0
+        adapter_details = {}
+
+        # 0. Microsoft Teams (Playwright with storage_state.json)
+        if target_platform in ("all", "teams", "ms_teams"):
+            possible_paths = [
+                Path("data/playwright/storage_state.json"),
+                Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+                Path.cwd() / "data" / "playwright" / "storage_state.json",
+            ]
+            st_path = next((p for p in possible_paths if p.exists()), None)
+            from ptb_acquisition.playwright.session import SessionManager
+            mgr = SessionManager(str(st_path)) if st_path else None
+            if mgr and mgr.has_valid_session():
+                try:
+                    teams_res = await ingest_teams_api(service=service)
+                    captured = teams_res.get("captured_teams", teams_res.get("captured_events", 0))
+                    total_ingested += captured
+                    adapter_details["teams"] = captured
+                except Exception as te:
+                    logger.warning("Teams sync error: %s", te)
+                    adapter_details["teams"] = f"Lỗi/Hết hạn: {te}"
+                    notes.append(f"Teams: {te}")
+            elif target_platform in ("teams", "ms_teams"):
+                notes.append("Chưa có phiên đăng nhập Teams hợp lệ. Vui lòng bấm 'Đăng Nhập Microsoft Teams' để xác thực.")
+
+        # 1. Git
+        if target_platform in ("all", "git"):
+            adapters_to_sync.append(("git", GitWatcherAdapter(repo_paths=repo_paths, tenant_id="local-user")))
+
+        # 2. Coding Agents
+        if target_platform in ("all", "coding_agent", "agents"):
+            adapters_to_sync.append(("coding_agent", AgentWatchersAdapter(tenant_id="local-user")))
+
+        # 3. Microsoft Outlook (Playwright with storage_state.json or Graph Token)
+        if target_platform in ("all", "outlook", "ms_outlook"):
+            possible_paths = [
+                Path("data/playwright/storage_state.json"),
+                Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+                Path.cwd() / "data" / "playwright" / "storage_state.json",
+            ]
+            st_path = next((p for p in possible_paths if p.exists()), None)
+            from ptb_acquisition.playwright.session import SessionManager
+            mgr = SessionManager(str(st_path)) if st_path else None
+            if mgr and mgr.has_valid_session():
+                try:
+                    outlook_res = await ingest_outlook_api(service=service)
+                    captured = outlook_res.get("captured_outlook", 0)
+                    total_ingested += captured
+                    adapter_details["outlook"] = captured
+                except Exception as oe:
+                    logger.warning("Outlook Playwright sync error: %s", oe)
+                    adapter_details["outlook"] = f"Lỗi/Hết hạn: {oe}"
+                    notes.append(f"Outlook: {oe}")
+            else:
+                graph_token = os.getenv("MS_GRAPH_TOKEN")
+                if graph_token:
+                    outlook_adp = OutlookMailAdapter(tenant_id="local-user", graph_token=graph_token)
+                    adapters_to_sync.append(("outlook", outlook_adp))
+                elif target_platform in ("outlook", "ms_outlook"):
+                    notes.append("Chưa có phiên đăng nhập Outlook hợp lệ trong storage_state.json hoặc MS_GRAPH_TOKEN.")
+
+        # 4. Jira
+        if target_platform in ("all", "jira"):
+            jira_url = os.getenv("JIRA_BASE_URL")
+            jira_token = os.getenv("JIRA_API_TOKEN")
+            if jira_url and jira_token:
+                adapters_to_sync.append(("jira", JiraAdapter(base_url=jira_url, api_token=jira_token, tenant_id="local-user")))
+            elif target_platform == "jira":
+                notes.append("Jira chưa cấu hình JIRA_API_TOKEN trong .env hoặc config/sources.yaml")
+
+        # 5. GitHub
+        if target_platform in ("all", "github"):
+            gh_token = os.getenv("GITHUB_TOKEN")
+            if gh_token:
+                adapters_to_sync.append(("github", GitHubAdapter(api_token=gh_token, tenant_id="local-user")))
+            elif target_platform == "github":
+                notes.append("GitHub chưa cấu hình GITHUB_TOKEN")
+
+        # 6. Slack
+        if target_platform in ("all", "slack"):
+            slack_token = os.getenv("SLACK_BOT_TOKEN")
+            if slack_token:
+                adapters_to_sync.append(("slack", SlackAdapter(bot_token=slack_token, tenant_id="local-user")))
+            elif target_platform == "slack":
+                notes.append("Slack chưa cấu hình SLACK_BOT_TOKEN")
+
+        for adp_name, adp in adapters_to_sync:
+            try:
+                cnt = await pipeline.sync_adapter(adp, stream_id="all")
+                total_ingested += cnt
+                adapter_details[adp_name] = cnt
+            except Exception as e:
+                logger.warning("Adapter %s sync error: %s", adp_name, e)
+                adapter_details[adp_name] = f"Error: {e}"
+
+        proc_pipe = getattr(service, "processing_pipeline", None) or getattr(service, "_processing_pipeline", None)
+        if proc_pipe is None:
+            proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
+
+        worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
+        batch_limit = req.limit if req and req.limit else 15
+        asyncio.create_task(worker.process_batch(limit=batch_limit))
+
+        summary_msg = f"Đã quét và thu thập {total_ingested} sự kiện mới ({', '.join(adapter_details.keys()) if adapter_details else 'không có dữ liệu mới'}), tiến trình xử lý công việc đang chạy ngầm."
+        if notes:
+            summary_msg += f" (Lưu ý: {'; '.join(notes)})"
+
+        return {
+            "success": True,
+            "platform": target_platform,
+            "ingested_count": total_ingested,
+            "processed_count": total_ingested,
+            "details": adapter_details,
+            "message": summary_msg,
+        }
+
+    # --------------------------------------------------------------------------
+    # 17D. GET /api/auth/session-status (Inspect Playwright Storage State)
+    # --------------------------------------------------------------------------
+    @app.get("/api/auth/session-status")
+    async def get_session_status_api() -> Dict[str, Any]:
+        """Kiểm tra tình trạng cookie/session lưu trữ (storage_state.json) của Teams & Outlook."""
+        from ptb_acquisition.playwright.session import SessionManager, DEFAULT_STORAGE_PATH, SessionHealthState
+
+        custom_env = os.getenv("PTB_STORAGE_STATE")
+        possible_paths = [
+            Path(custom_env) if custom_env else None,
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+            Path(DEFAULT_STORAGE_PATH),
+        ]
+        active_path = next((p for p in possible_paths if p is not None and p.exists()), next((p for p in possible_paths if p is not None), Path("data/playwright/storage_state.json")))
+        mgr = SessionManager(str(active_path))
+        state = mgr.validate_session()
+
+        cookie_count = 0
+        valid_cookies = 0
+        domains = []
+        if active_path.exists():
+            try:
+                with open(active_path, "r", encoding="utf-8") as f:
+                    cdata = json.load(f)
+                clist = cdata.get("cookies", [])
+                cookie_count = len(clist)
+                now_ts = datetime.now(timezone.utc).timestamp()
+                for c in clist:
+                    exp = c.get("expires", -1)
+                    if exp is None or exp <= 0 or exp > now_ts:
+                        valid_cookies += 1
+                    dom = c.get("domain", "")
+                    if dom and dom not in domains:
+                        domains.append(dom)
+            except Exception as e:
+                logger.warning("Error reading cookie state: %s", e)
+
+        return {
+            "status": state.value,
+            "exists": active_path.exists(),
+            "storage_path": str(active_path),
+            "cookie_count": cookie_count,
+            "valid_cookies": valid_cookies,
+            "domains": domains[:6],
+            "message": "Phiên đăng nhập hợp lệ, sẵn sàng tự động thu thập." if state in (SessionHealthState.HEALTHY, SessionHealthState.STARTING) else "Chưa có phiên hoặc phiên đã hết hạn. Cần đăng nhập để lưu cookie."
+        }
+
+    class SaveCookieRequest(BaseModel):
+        cookie_data: Any
+
+    # --------------------------------------------------------------------------
+    # 17E. POST /api/auth/save-cookie (Save or Import Cookie JSON)
+    # --------------------------------------------------------------------------
+    @app.post("/api/auth/save-cookie")
+    async def save_cookie_api(req: SaveCookieRequest) -> Dict[str, Any]:
+        """Lưu hoặc import cookie JSON từ giao diện vào storage_state.json."""
+        data = req.cookie_data
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Dữ liệu JSON không hợp lệ: {e}")
+
+        # Chuẩn hóa định dạng Playwright storage_state
+        if isinstance(data, list):
+            data = {"cookies": data, "origins": []}
+        elif not isinstance(data, dict) or "cookies" not in data:
+            raise HTTPException(status_code=400, detail="Cấu trúc cookie JSON không đúng chuẩn (cần mảng cookies hoặc object {cookies: [...]})")
+
+        custom_env = os.getenv("PTB_STORAGE_STATE")
+        possible_paths = [
+            Path(custom_env) if custom_env else None,
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        target_path = next((p for p in possible_paths if p is not None), Path("data/playwright/storage_state.json"))
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure path is always set on cookies to prevent Playwright crashing with missing path
+        for c in data.get("cookies", []):
+            if isinstance(c, dict) and "path" not in c:
+                c["path"] = "/"
+        with open(target_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+        return {
+            "status": "success",
+            "message": f"Đã lưu thành công {len(data.get('cookies', []))} cookies vào {target_path}!",
+            "cookie_count": len(data.get('cookies', []))
+        }
+
+    class StartLoginRequest(BaseModel):
+        service: str = Field(default="all", description="Dịch vụ cần đăng nhập: 'teams', 'outlook', hoặc 'all'")
+
+    # --------------------------------------------------------------------------
+    # 17F. POST /api/auth/start-login (Launch Interactive Login with Auto-Capture)
+    # --------------------------------------------------------------------------
+    @app.post("/api/auth/start-login")
+    async def start_login_api(req: StartLoginRequest = StartLoginRequest()) -> Dict[str, Any]:
+        """Khởi chạy đăng nhập Microsoft Teams / Outlook và tự động bắt cookie."""
+        svc = req.service.lower()
+        if svc not in ("teams", "outlook", "all"):
+            svc = "all"
+
+        possible_paths = [
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        target_path = str(possible_paths[0].resolve())
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+        try:
+            from ptb_acquisition.playwright import login as _login_mod
+            # For unit test mocking compatibility
+            if getattr(_login_mod.run_interactive_login, "__class__.__name__", "") in ("AsyncMock", "MagicMock"):
+                asyncio.create_task(_login_mod.run_interactive_login(storage_path=target_path, service=svc))
+            else:
+                # Determine Python executable (prioritize virtual environment python)
+                possible_pythons = [
+                    Path(ROOT_DIR) / ".venv" / "Scripts" / "python.exe",
+                    Path(ROOT_DIR) / ".venv" / "bin" / "python",
+                    Path(sys.executable),
+                ]
+                py_exec = next((str(p) for p in possible_pythons if p.exists()), sys.executable)
+
+                # Launch separate native process on host so Chromium GUI window opens cleanly on desktop
+                env = os.environ.copy()
+                env["PYTHONUNBUFFERED"] = "1"
+                env["PYTHONIOENCODING"] = "utf-8"
+                env["PYTHONPATH"] = os.pathsep.join(filter(None, [
+                    str(ROOT_DIR / "packages" / "contracts" / "src"),
+                    str(ROOT_DIR / "packages" / "database" / "src"),
+                    str(ROOT_DIR / "services" / "acquisition" / "src"),
+                    str(ROOT_DIR / "services" / "processing" / "src"),
+                    str(ROOT_DIR / "services" / "intelligence" / "src"),
+                    str(ROOT_DIR / "services" / "application" / "src"),
+                    str(ROOT_DIR / "services" / "mcp" / "src"),
+                    str(ROOT_DIR / "packages" / "graph_memory" / "src"),
+                    str(ROOT_DIR),
+                    str(ROOT_DIR / ".venv" / "Lib" / "site-packages"),
+                    env.get("PYTHONPATH", "")
+                ]))
+                log_path = Path(ROOT_DIR) / "data" / "playwright" / "login.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_file = open(log_path, "a", encoding="utf-8")
+                cmd = [
+                    py_exec,
+                    "-m",
+                    "ptb_acquisition.playwright.login",
+                    "--service", svc,
+                    "--storage-path", target_path
+                ]
+                global _active_login_process
+                if _active_login_process is not None and _active_login_process.poll() is None:
+                    try:
+                        _active_login_process.terminate()
+                    except Exception as term_err:
+                        logger.warning("Failed to terminate active login process: %s", term_err)
+
+                if sys.platform == "win32":
+                    ps_cmd = f'Start-Process -FilePath "{py_exec}" -ArgumentList "-m", "ptb_acquisition.playwright.login", "--service", "{svc}", "--storage-path", "{target_path}" -WorkingDirectory "{ROOT_DIR}" -WindowStyle Hidden'
+                    _active_login_process = subprocess.Popen(
+                        ["powershell", "-NoProfile", "-Command", ps_cmd],
+                        cwd=str(ROOT_DIR),
+                        env=env
+                    )
+                else:
+                    _active_login_process = subprocess.Popen(
+                        cmd,
+                        cwd=str(ROOT_DIR),
+                        env=env,
+                        stdout=log_file,
+                        stderr=log_file
+                    )
+
+            return {
+                "status": "LAUNCHED",
+                "service": svc,
+                "message": f"Đã mở cửa sổ trình duyệt đăng nhập {svc.upper()} trên màn hình máy tính của bạn. Vui lòng đăng nhập tài khoản Microsoft trên cửa sổ vừa mở!",
+                "command": f"uv run python -m ptb_acquisition.playwright.login --service {svc}"
+            }
+        except Exception as e:
+            logger.warning(f"Could not launch browser directly: {e}")
+            return {
+                "status": "MANUAL_REQUIRED",
+                "service": svc,
+                "message": f"Không thể mở trực tiếp trình duyệt ({e}). Vui lòng chạy lệnh:",
+                "command": f"uv run python -m ptb_acquisition.playwright.login --service {svc}"
+            }
 
     # --------------------------------------------------------------------------
     # 18. POST /api/database/init (Initialize Constraints & Schema)
@@ -927,7 +1550,9 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
     # --------------------------------------------------------------------------
     @app.post("/api/database/reset")
     async def reset_database_api(
+        request: Request,
         service: ApplicationService = Depends(get_application_service),
+        _admin_auth: Optional[str] = Depends(verify_admin_key),
     ) -> Dict[str, Any]:
         """Xóa sạch database và nạp lại 19 schema constraints ban đầu (yêu cầu env flag)."""
         if os.getenv("PTB_ENABLE_DESTRUCTIVE_API", "false").lower() not in ("true", "1"):

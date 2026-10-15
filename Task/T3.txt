@@ -1,4 +1,13 @@
-Tích hợp UI hiện tại vào WebOpenUI để:
-- Chỉ sử dụng 1 UI thôi, không cần 2 nơi
-- Tạo riêng 1 Tab để hiện thị các thông tin dạng Task Component
-- Tab mới này phải có khả năng tương tác với CRUD với BE thay vì Read-only
+Tích hợp vào Workspace của WebOpenUI (http://localhost:3000) theo chuẩn OpenWebUI:
+- Phân biệt rõ ràng:
+  + Cổng http://localhost:8000/ (hoặc /board, /portal) chỉ là UI nội bộ dựng tạm trên Backend để DEV tự kiểm tra nhanh, KHÔNG PHẢI là WebOpenUI.
+  + WebOpenUI chính thức chạy ở cổng http://localhost:3000 và được tích hợp trực tiếp vào phân hệ Workspace (Models, Tools, Prompts, Task Board).
+- Mục tiêu yêu cầu:
+  + Gom về 1 giao diện duy nhất trên WebOpenUI (http://localhost:3000), người dùng cuối không cần mở giao diện test ở http://localhost:8000/.
+  + Tích hợp đầy đủ vào Workspace theo đúng chuẩn OpenWebUI:
+    1. Workspace -> Models: Tạo Model/Agent "Personal Task Board" chuẩn OpenWebUI (có System Prompt chuyên biệt, gợi ý câu lệnh Quick Starters, gắn trực tiếp Tools PTB).
+    2. Workspace -> Tools: Đăng ký bộ công cụ `ptb_tools` chuẩn OpenWebUI (đầy đủ Valves, Specs Function Calling 2 chiều với Backend).
+    3. Workspace -> Prompts: Đăng ký các Slash Commands chuẩn (`/board`, `/today`, `/tasks`, `/waiting`, `/forgotten`).
+    4. Workspace -> Task Board: Tích hợp trực tiếp Tab "Task Board" (`/workspace/board`) vào thanh điều hướng Workspace (cùng cấp với Models, Knowledge, Prompts, Tools) và Sidebar, nhúng toàn bộ bảng điều khiển tương tác (CRUD 2 chiều, Kéo thả, Lọc 8 view, Đồng bộ backend).
+    5. Chat /board Command: Trả về thẻ tóm tắt tiến độ công việc kèm các nút bấm mở nhanh Task Board trong Workspace và toàn màn hình (Cổng 3000), không làm tràn mã HTML thô vào màn hình chat.
+- Trạng thái: HOÀN THÀNH (Đã tích hợp đầy đủ Models, Tools, Prompts, Task Board Tab trong Workspace và Chat Command chuẩn OpenWebUI trên cổng 3000).

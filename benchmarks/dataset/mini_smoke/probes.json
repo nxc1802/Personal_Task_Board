@@ -1,0 +1,22 @@
+[
+  {
+    "probe_id": "probe-smoke-01-missing-timestamp",
+    "probe_group": "robustness",
+    "name": "Missing timestamp fallback",
+    "target_module": "L1.Acquisition",
+    "fault_injection": "Set raw_event.event_timestamp to None",
+    "expected_behavior": "Pipeline assigns captured_at as fallback without raising uncaught exception",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "mini_smoke://probes/01"
+  },
+  {
+    "probe_id": "probe-smoke-02-empty-payload",
+    "probe_group": "robustness",
+    "name": "Empty payload rejection",
+    "target_module": "L2.HeuristicFilter",
+    "fault_injection": "Set raw_event.raw_payload to empty string",
+    "expected_behavior": "Filter rejects empty event gracefully with should_extract=False",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "mini_smoke://probes/02"
+  }
+]

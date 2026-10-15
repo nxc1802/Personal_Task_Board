@@ -160,7 +160,7 @@ async def verify_authenticated_session(
                 return SessionHealthState.DEGRADED
 
         # 3. Xác nhận URL thuộc domain authenticated
-        if any(d in final_url for d in ("teams.microsoft.com", "outlook.office.com", "outlook.live.com")):
+        if any(d in final_url for d in ("teams.microsoft.com", "teams.cloud.microsoft", "outlook.office.com", "outlook.live.com")):
             return SessionHealthState.HEALTHY
 
         return SessionHealthState.HEALTHY
@@ -238,6 +238,37 @@ class SessionManager:
             if valid_cookies == 0 and expired_cookies > 0:
                 logger.warning(f"Tất cả ({expired_cookies}) cookies trong session state đã hết hạn!")
                 self.health_state = SessionHealthState.AUTH_EXPIRED
+                return self.health_state
+
+            # Xác thực xem có ít nhất 1 cookie xác thực thực sự (ESTSAUTH/SignInState/Token/SSO/MSPOK/WLSSC/skypetoken) hoặc MSAL token trong origins
+            auth_cookie_exact = {
+                "estsauth", "estsauthpersistent", "signinstatecookie", "ssocookiep",
+                "ssocookie", "authtoken", "mspok", "wlssc", "ppauth", "rpsauth",
+                "skypetoken_asm", "skypetoken"
+            }
+            has_auth = any(
+                c.get("name", "").lower() in auth_cookie_exact
+                for c in cookies if isinstance(c, dict)
+            )
+
+            # Kiểm tra thêm MSAL tokens trong origins (LocalStorage)
+            origins = data.get("origins", [])
+            has_origin_token = False
+            if isinstance(origins, list):
+                for org in origins:
+                    if not isinstance(org, dict):
+                        continue
+                    for item in org.get("localStorage", []):
+                        if isinstance(item, dict):
+                            k = item.get("name", "").lower()
+                            if any(term in k for term in ("accesstoken", "idtoken", "msal.account")):
+                                has_origin_token = True
+                                break
+                    if has_origin_token:
+                        break
+
+            if not has_auth and not has_origin_token:
+                self.health_state = SessionHealthState.LOGIN_REQUIRED
                 return self.health_state
 
             self.health_state = SessionHealthState.STARTING

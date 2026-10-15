@@ -59,6 +59,8 @@ services:
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
       - TENANT_ID=${TENANT_ID:-local-user}
       - PTB_ENABLE_DESTRUCTIVE_API=false
+      - PTB_API_KEY=${PTB_API_KEY:-}
+      - PTB_CORS_ORIGINS=${PTB_CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000}
     volumes:
       - ./data:/app/data
       - ./config:/app/config:ro
@@ -84,7 +86,7 @@ services:
     volumes:
       - ./data/openwebui:/app/backend/data
     environment:
-      - WEBUI_AUTH=False
+      - WEBUI_AUTH=True
       - ENABLE_OLLAMA_API=False
       - OPENAI_API_BASE_URLS=${LLM_BASE_URL:-https://api.openai.com/v1}
       - OPENAI_API_KEYS=${LLM_API_KEY:-}

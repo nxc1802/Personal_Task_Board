@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ptb_contracts import BugCode, log_bug
 from ptb_contracts.l1_acquisition import RawEventRecord
@@ -53,6 +53,13 @@ class LLMExtractedSchema(BaseModel):
         description="Độ tin cậy trích xuất: >=0.65 (auto), 0.4-0.64 (review), <0.4 (ignore)",
     )
     evidence_snippet: Optional[str] = Field(default="", description="Đoạn trích bằng chứng nguyên văn")
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def truncate_title(cls, v: Optional[str]) -> Optional[str]:
+        if v and isinstance(v, str) and len(v) > 255:
+            return v[:255]
+        return v
 
 
 def classify_review_status(confidence: float) -> str:

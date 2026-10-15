@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from integrations.openwebui.functions.ptb_board_action import Action
+from integrations.openwebui.functions.ptb_filter import Filter
 from integrations.openwebui.installer import (
     CONTAINER_DATA_DIR,
     DEFAULT_DATA_DIR,
@@ -131,7 +132,7 @@ def test_ptb_board_html_structure_and_views():
         assert f'id="{view_id}"' in content, f"ptb_board.html must include {view_id}"
 
     # Verify Dark/Light Mode support
-    assert "prefers-color-scheme" in content
+    assert "prefers-color-scheme" in content or "initTheme" in content
     assert "html.dark" in content
     assert "toggleTheme" in content
 
@@ -151,7 +152,10 @@ def test_ptb_board_live_only_and_error_banners():
     content = board_path.read_text(encoding="utf-8")
 
     # 1. CONFIG points to local Application Service
-    assert 'apiBase: "http://127.0.0.1:8000"' in content, "CONFIG.apiBase must default to 127.0.0.1:8000"
+    assert (
+        'apiBase: "http://127.0.0.1:8000"' in content
+        or 'return "http://127.0.0.1:8000"' in content
+    ), "CONFIG.apiBase or getApiBase must default to 127.0.0.1:8000"
     assert "isMockMode: DEMO_MODE" not in content, "CONFIG must not enable mock mode fallback"
 
     # 2. Banner element presence
@@ -892,4 +896,358 @@ def test_openwebui_installer_handles_openwebui_schema_with_valves_and_access_con
     assert func_row is not None
     assert func_row[0] == "ptb_board_action"
     conn.close()
+
+
+# ==============================================================================
+# 6. OPENWEBUI TOOL & FUNCTION CONTRACT TESTS (WAVE 2 - W2-01)
+# ==============================================================================
+def test_ptb_tools_auth_header_propagation():
+    """Verify that when api_key is configured in Valves, Tools attaches X-PTB-API-KEY and Bearer token."""
+    import urllib.request
+    tools = Tools()
+    tools.valves.app_service_url = "http://127.0.0.1:8000"
+    tools.valves.api_key = "test-secret-ptb-key-123"
+
+    recorded_requests = []
+
+    class DummyResponse:
+        status = 200
+        def read(self):
+            return b'[{"id": "t1", "title": "Task 1", "status": "TODO"}]'
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    def fake_urlopen(req, timeout=None):
+        recorded_requests.append(req)
+        return DummyResponse()
+
+    with patch.object(urllib.request, "urlopen", side_effect=fake_urlopen):
+        res = tools.get_tasks()
+        assert len(recorded_requests) > 0
+        req = recorded_requests[0]
+        assert req.get_header("X-ptb-api-key") == "test-secret-ptb-key-123"
+        assert req.get_header("Authorization") == "Bearer test-secret-ptb-key-123"
+
+
+def test_ptb_tools_auth_failure_handling():
+    """Verify that HTTP 401 Unauthorized returns explicit authentication error, not generic offline message."""
+    import urllib.error
+    import io
+    tools = Tools()
+    tools.valves.app_service_url = "http://127.0.0.1:8000"
+    tools.valves.api_key = "invalid-key"
+
+    err_fp = io.BytesIO(b'{"detail": "Invalid API key."}')
+    http_401 = urllib.error.HTTPError(
+        url="http://127.0.0.1:8000/api/today",
+        code=401,
+        msg="Unauthorized",
+        hdrs={},
+        fp=err_fp,
+    )
+
+    with patch("urllib.request.urlopen", side_effect=http_401):
+        res = tools.get_today_tasks()
+        assert "PTB-OWUI-401" in res
+        assert "XÁC THỰC THẤT BẠI" in res
+        assert "Invalid API key" in res
+        # Must NOT falsely report application service offline when it is actually online but rejected auth
+        assert "APPLICATION SERVICE OFFLINE" not in res
+
+
+def test_ptb_tools_forbidden_handling():
+    """Verify that HTTP 403 Forbidden returns explicit forbidden error, not generic offline message."""
+    import urllib.error
+    import io
+    tools = Tools()
+    tools.valves.app_service_url = "http://127.0.0.1:8000"
+
+    err_fp = io.BytesIO(b'{"detail": "Admin authorization required."}')
+    http_403 = urllib.error.HTTPError(
+        url="http://127.0.0.1:8000/api/tasks/123/delete",
+        code=403,
+        msg="Forbidden",
+        hdrs={},
+        fp=err_fp,
+    )
+
+    with patch("urllib.request.urlopen", side_effect=http_403):
+        res = tools.delete_task("task-123")
+        assert "PTB-OWUI-403" in res
+        assert "TỪ CHỐI TRUY CẬP" in res
+        assert "Admin authorization required" in res
+        assert "APPLICATION SERVICE OFFLINE" not in res
+
+
+def test_ptb_tools_mutation_permissions_allow_deny():
+    """Verify mutation operations are blocked when allow_mutations=False or user has read_only role."""
+    tools = Tools()
+
+    # 1. Blocked via Valves.allow_mutations = False
+    tools.valves.allow_mutations = False
+    deny_create = tools.create_task(title="Test Task")
+    assert "PTB-OWUI-403" in deny_create
+    assert "bị vô hiệu hóa trong cấu hình Valves" in deny_create
+
+    deny_update = tools.update_task_status("task-1", "DONE")
+    assert "PTB-OWUI-403" in deny_update
+
+    deny_delete = tools.delete_task("task-1")
+    assert "PTB-OWUI-403" in deny_delete
+
+    deny_approve = tools.approve_task("rev-1")
+    assert "PTB-OWUI-403" in deny_approve
+
+    deny_dismiss = tools.dismiss_task("rev-1")
+    assert "PTB-OWUI-403" in deny_dismiss
+
+    deny_edit = tools.edit_task("task-1", title="New Title")
+    assert "PTB-OWUI-403" in deny_edit
+
+    # 2. Blocked via user role
+    tools.valves.allow_mutations = True
+    read_only_user = {"name": "Auditor", "role": "read_only"}
+    deny_user_create = tools.create_task(title="Test Task", __user__=read_only_user)
+    assert "PTB-OWUI-403" in deny_user_create
+    assert "Auditor" in deny_user_create
+    assert "read_only" in deny_user_create
+
+    # 3. Allowed when user has valid role
+    valid_user = {"name": "Alice", "role": "admin"}
+    with patch.object(tools, "_http_call", return_value={"id": "task-abc", "title": "Test Task", "status": "TODO", "priority_score": 50.0}):
+        ok_create = tools.create_task(title="Test Task", __user__=valid_user)
+        assert "task-abc" in ok_create
+        assert "Đã tạo thành công" in ok_create
+
+
+def test_ptb_tools_no_optimistic_success():
+    """Verify tools only report success when backend confirms (no optimistic success)."""
+    tools = Tools()
+    tools.valves.allow_mutations = True
+
+    # Case A: Backend reports success: False on approve
+    with patch.object(tools, "_http_call", return_value={"success": False, "message": "Candidate task not found"}):
+        res_approve = tools.approve_task("rev-missing")
+        assert "Đã phê duyệt thành công" not in res_approve
+        assert "thất bại từ hệ thống" in res_approve
+
+    # Case B: Backend reports success: False on dismiss
+    with patch.object(tools, "_http_call", return_value={"success": False, "message": "Candidate task already dismissed"}):
+        res_dismiss = tools.dismiss_task("rev-missing")
+        assert "Đã loại bỏ" not in res_dismiss
+        assert "thất bại" in res_dismiss
+
+    # Case C: Backend reports success: False on status update
+    with patch.object(tools, "_http_call", return_value={"success": False, "message": "Invalid state transition"}):
+        res_status = tools.update_task_status("task-1", "DONE")
+        assert "thành công" not in res_status
+        assert "thất bại" in res_status
+
+    # Case D: Backend create_task returns payload without 'id'
+    with patch.object(tools, "_http_call", return_value={"detail": "Title cannot be empty"}):
+        res_create = tools.create_task(title="Bad Task")
+        assert "Đã tạo thành công" not in res_create
+        assert "Tạo task thất bại" in res_create
+
+
+def test_ptb_tools_task_detail_context():
+    """Verify get_task_detail retrieves and formats comprehensive task context (blockers, dependents, evidences, knowledge)."""
+    tools = Tools()
+    fake_detail = {
+        "task": {
+            "id": "task-uuid-456",
+            "title": "Migrate SQLite to Neo4j single-store",
+            "status": "IN_PROGRESS",
+            "priority_score": 90.0,
+            "project_key": "PTB",
+            "requester_name": "Tech Lead",
+            "due_date": "2026-10-31",
+            "description": "Consolidate all datastores into authoritative Neo4j instance.",
+        },
+        "evidences": [
+            {"snippet": "We must remove SQLite dependency before R12 release.", "source_type": "ms_teams"}
+        ],
+        "blockers": [
+            {"id": "task-block-1", "title": "Setup Neo4j Docker container", "status": "DONE"}
+        ],
+        "dependents": [
+            {"id": "task-dep-1", "title": "Update UI to query Neo4j", "status": "TODO"}
+        ],
+        "related_decisions": [
+            {"decision_id": "ADR-001", "summary": "Adopt Neo4j as single source of truth"}
+        ],
+        "related_lessons": [
+            {"lesson_id": "LES-005", "topic": "APOC", "solution": "Enable APOC procedures"}
+        ],
+    }
+
+    with patch.object(tools, "_http_call", return_value=fake_detail):
+        detail_res = tools.get_task_detail("task-uuid-456")
+        assert "task-uuid-456" in detail_res
+        assert "Migrate SQLite to Neo4j" in detail_res
+        assert "Bằng chứng thu thập" in detail_res
+        assert "Remove SQLite dependency" in detail_res or "remove SQLite dependency" in detail_res
+        assert "Công việc cản trở (Blockers)" in detail_res
+        assert "task-block-1" in detail_res
+        assert "Công việc phụ thuộc (Dependents)" in detail_res
+        assert "task-dep-1" in detail_res
+        assert "ADR-001" in detail_res
+        assert "LES-005" in detail_res
+
+
+def test_ptb_tools_edit_task_mutation():
+    """Verify edit_task issues a PATCH request to /api/tasks/{task_id} with updated fields."""
+    tools = Tools()
+    tools.valves.allow_mutations = True
+
+    with patch.object(tools, "_http_call") as mock_call:
+        mock_call.return_value = {
+            "id": "task-uuid-789",
+            "title": "Updated Task Title",
+            "status": "TODO",
+        }
+        res = tools.edit_task(
+            task_id="task-uuid-789",
+            title="Updated Task Title",
+            due_date="2026-11-15",
+            priority_score=85.0,
+        )
+        assert "task-uuid-789" in res
+        assert "Đã cập nhật thành công" in res
+        mock_call.assert_called_once_with(
+            "/api/tasks/task-uuid-789",
+            method="PATCH",
+            payload={
+                "actor": "USER",
+                "title": "Updated Task Title",
+                "due_date": "2026-11-15",
+                "priority_score": 85.0,
+            },
+        )
+
+
+def test_ptb_tools_no_token_leakage(capsys):
+    """Verify that secret API keys or bearer tokens are redacted from structured stderr logs."""
+    from integrations.openwebui.tools.ptb_tools import _log_owui_error
+
+    _log_owui_error(
+        "Testing token masking",
+        context={
+            "api_key": "super-secret-api-token-value-12345",
+            "Authorization": "Bearer super-secret-jwt-token-67890",
+            "url": "http://127.0.0.1:8000/api/tasks",
+        },
+    )
+    captured = capsys.readouterr()
+    assert "super-secret-api-token-value-12345" not in captured.err
+    assert "super-secret-jwt-token-67890" not in captured.err
+    assert "***REDACTED***" in captured.err
+
+
+@pytest.mark.asyncio
+async def test_ptb_board_action_auth_and_commands():
+    """Verify Action passes auth header, handles /board tasks, and respects allow_mutations."""
+    action = Action()
+    action.valves.api_key = "test-action-key"
+    action.valves.allow_mutations = False
+
+    emitted = []
+
+    async def mock_emitter(event):
+        emitted.append(event)
+
+    # 1. /board approve denied when allow_mutations=False
+    body = {"messages": [{"role": "user", "content": "/board approve cand-101"}]}
+    await action.inlet(body=body, __event_emitter__=mock_emitter)
+    assert len(emitted) > 0
+    assert "Thao tác bị từ chối" in emitted[0]["data"]["content"]
+
+    # 2. /board tasks lists active tasks
+    action.valves.allow_mutations = True
+    emitted.clear()
+    tasks_payload = [
+        {"id": "task-live-1", "title": "First Task", "status": "IN_PROGRESS", "priority_score": 88, "project_key": "PTB"}
+    ]
+    with patch.object(action, "_http_request", return_value=tasks_payload):
+        body_tasks = {"messages": [{"role": "user", "content": "/board tasks"}]}
+        await action.inlet(body=body_tasks, __event_emitter__=mock_emitter)
+        assert len(emitted) > 0
+        content = emitted[0]["data"]["content"]
+        assert "task-live-1" in content
+        assert "First Task" in content
+
+
+@pytest.mark.asyncio
+async def test_ptb_filter_function():
+    """Verify Filter.inlet injects grounding context when relevant and gracefully degrades on offline/error."""
+    filter_fn = Filter()
+    filter_fn.valves.api_key = "test-filter-key"
+
+    # 1. Triggered on task/today query
+    today_payload = {
+        "summary_headline": "Hôm nay cần tập trung giải quyết bug deploy.",
+        "identified_risks": ["Rủi ro nghẽn pipeline CI"],
+        "top_tasks": [
+            {
+                "task_id": "task-filter-1",
+                "title": "Fix CI Pipeline",
+                "status": "TODO",
+                "due_date": "2026-10-15",
+                "priority": {"total_score": 95.0},
+            }
+        ],
+    }
+    with patch.object(filter_fn, "_http_get", return_value=today_payload):
+        body = {"messages": [{"role": "user", "content": "Kế hoạch công việc hôm nay của tôi là gì?"}]}
+        result = await filter_fn.inlet(body=body)
+        messages = result["messages"]
+        system_msg = next((m for m in messages if m.get("role") == "system"), None)
+        assert system_msg is not None
+        assert "Personal Task Board Grounding Context" in system_msg["content"]
+        assert "Fix CI Pipeline" in system_msg["content"]
+        assert "task-filter-1" in system_msg["content"]
+
+    # 2. Not triggered on unrelated question
+    body_unrelated = {"messages": [{"role": "user", "content": "Thủ đô của nước Pháp là gì?"}]}
+    result_unrelated = await filter_fn.inlet(body=body_unrelated)
+    assert not any("Personal Task Board Grounding Context" in m.get("content", "") for m in result_unrelated["messages"])
+
+    # 3. Gracefully degrades when API is offline (does not break user chat)
+    with patch.object(filter_fn, "_http_get", return_value=None):
+        body_offline = {"messages": [{"role": "user", "content": "Kế hoạch hôm nay"}]}
+        result_offline = await filter_fn.inlet(body=body_offline)
+        assert len(result_offline["messages"]) == 1
+        assert result_offline["messages"][0]["content"] == "Kế hoạch hôm nay"
+
+
+def test_ptb_live_acceptance_against_running_api():
+    """Live acceptance test: verifies Tools, Action, and Filter connect to real Application Service at 127.0.0.1:8000."""
+    import urllib.request
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8000/health", method="GET")
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            if resp.status >= 500:
+                pytest.skip("Application Service at 127.0.0.1:8000 is unhealthy")
+    except Exception:
+        pytest.skip("Application Service at 127.0.0.1:8000 is not reachable for acceptance test")
+
+    # Real live call to get_today_tasks
+    tools = Tools()
+    tools.valves.app_service_url = "http://127.0.0.1:8000"
+    live_today = tools.get_today_tasks(limit=3)
+    assert "APPLICATION SERVICE OFFLINE" not in live_today
+    assert "Kế hoạch hôm nay" in live_today or "không có task nào khẩn cấp" in live_today
+
+    # Real live call to get_tasks
+    live_tasks = tools.get_tasks(limit=3)
+    assert "APPLICATION SERVICE OFFLINE" not in live_tasks
+    assert "Danh sách Task" in live_tasks or "Không tìm thấy task" in live_tasks
+
+    # Real live call to get_review_queue
+    live_review = tools.get_review_queue()
+    assert "APPLICATION SERVICE OFFLINE" not in live_review
+    assert "Hàng đợi duyệt" in live_review or "hiện đang trống" in live_review
+
 

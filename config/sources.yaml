@@ -1,77 +1,36 @@
 # ==============================================================================
 # PERSONAL TASK BOARD (PTB) - SOURCES CONFIGURATION
 # ==============================================================================
-# Cấu hình các nguồn dữ liệu thu thập (Layer 1 Acquisition)
-# Hỗ trợ: Microsoft Teams, Microsoft Outlook, Jira, Shortcut, Coding Agents, Git.
+# Multi-Source Acquisition Configuration (Layer 1 Acquisition)
+# Supports 9 source channels:
+# 1. coding_agents (Local Coding Agents: Cursor, Claude Code, Antigravity, etc.)
+# 2. git (Local Git Repositories)
+# 3. ms_teams (Microsoft Teams Web Interceptor)
+# 4. ms_outlook (Microsoft Outlook REST / Graph API)
+# 5. jira (Jira Cloud & Server REST API)
+# 6. shortcut (Shortcut Stories REST API)
+# 7. confluence (Confluence Docs & Action Items REST API)
+# 8. github (GitHub Issues & Pull Requests REST API)
+# 9. slack (Slack Conversations & Threads Web API)
 
 tenant_id: "local-user"
 
 sources:
   # ----------------------------------------------------------------------------
-  # 1. Microsoft Teams (Playwright Web Network Interceptor)
-  # ----------------------------------------------------------------------------
-  ms_teams:
-    enabled: true
-    source_type: "ms_teams_web"
-    url: "https://teams.microsoft.com"
-    headless: true
-    storage_state_path: "${PTB_STORAGE_STATE:-data/playwright/storage_state.json}"
-    poll_interval_seconds: 60
-    filters:
-      chat_types:
-        - "chat"
-        - "channel"
-      exclude_system_messages: true
-
-  # ----------------------------------------------------------------------------
-  # 2. Microsoft Outlook (Playwright Web Network Interceptor)
-  # ----------------------------------------------------------------------------
-  ms_outlook:
-    enabled: true
-    source_type: "ms_outlook_web"
-    url: "https://outlook.office.com"
-    headless: true
-    storage_state_path: "${PTB_STORAGE_STATE:-data/playwright/storage_state.json}"
-    poll_interval_seconds: 120
-    filters:
-      folders:
-        - "Inbox"
-      ignore_promotions: true
-
-  # ----------------------------------------------------------------------------
-  # 3. Jira Cloud / Server (REST API v2/v3)
-  # ----------------------------------------------------------------------------
-  jira:
-    enabled: false
-    source_type: "jira"
-    base_url: "${JIRA_BASE_URL:-https://your-domain.atlassian.net}"
-    email: "${JIRA_EMAIL:-user@example.com}"
-    api_token: "${JIRA_API_TOKEN:-}"
-    default_jql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
-    project_keys:
-      - "PROJ"
-      - "DEV"
-    poll_interval_seconds: 60
-
-  # ----------------------------------------------------------------------------
-  # 4. Shortcut (formerly Clubhouse - REST API v3)
-  # ----------------------------------------------------------------------------
-  shortcut:
-    enabled: false
-    source_type: "shortcut"
-    base_url: "${SHORTCUT_BASE_URL:-https://api.app.shortcut.com/api/v3}"
-    api_token: "${SHORTCUT_API_TOKEN:-}"
-    project_ids: []
-    default_query: "!is:archived is:story owner:currentUser"
-    poll_interval_seconds: 60
-
-  # ----------------------------------------------------------------------------
-  # 5. Local Coding Agents (Session Log Watchers)
+  # 1. Local Coding Agents (Session Log Watchers)
   # ----------------------------------------------------------------------------
   coding_agents:
     enabled: true
     source_type: "coding_agent"
+    tenant_id: "local-user"
     poll_interval_seconds: 30
+    rate_limit:
+      max_requests_per_minute: 120
+      burst_limit: 30
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true
     agents:
       cursor:
         enabled: true
@@ -126,12 +85,20 @@ sources:
           - "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev"
 
   # ----------------------------------------------------------------------------
-  # 6. Local Git Repositories (Commit & Branch Watcher)
+  # 2. Local Git Repositories (Commit & Branch Watcher)
   # ----------------------------------------------------------------------------
   git:
     enabled: true
     source_type: "git"
+    tenant_id: "local-user"
     poll_interval_seconds: 60
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "commit_hash_and_timestamp"
+      auto_resume: true
     repo_paths:
       - "."
     scan_branches:
@@ -140,11 +107,103 @@ sources:
       - "develop"
 
   # ----------------------------------------------------------------------------
+  # 3. Microsoft Teams (Playwright Web Network Interceptor)
+  # ----------------------------------------------------------------------------
+  ms_teams:
+    enabled: true
+    source_type: "ms_teams_web"
+    tenant_id: "local-user"
+    url: "https://teams.microsoft.com"
+    headless: true
+    storage_state_path: "${PTB_STORAGE_STATE:-data/playwright/storage_state.json}"
+    poll_interval_seconds: 60
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true
+    filters:
+      chat_types:
+        - "chat"
+        - "channel"
+      exclude_system_messages: true
+
+  # ----------------------------------------------------------------------------
+  # 4. Microsoft Outlook (Direct REST / Graph API & Web Interceptor)
+  # ----------------------------------------------------------------------------
+  ms_outlook:
+    enabled: true
+    source_type: "ms_outlook"
+    tenant_id: "local-user"
+    graph_token: "${MS_GRAPH_TOKEN:-}"
+    base_url: "${MS_GRAPH_BASE_URL:-https://graph.microsoft.com/v1.0}"
+    mailbox: "${MS_OUTLOOK_MAILBOX:-me}"
+    storage_state_path: "${PTB_STORAGE_STATE:-data/playwright/storage_state.json}"
+    poll_interval_seconds: 120
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true
+    folders:
+      - "Inbox"
+    filters:
+      ignore_promotions: true
+
+  # ----------------------------------------------------------------------------
+  # 5. Jira Cloud / Server (REST API v2/v3)
+  # ----------------------------------------------------------------------------
+  jira:
+    enabled: false
+    source_type: "jira"
+    tenant_id: "local-user"
+    base_url: "${JIRA_BASE_URL:-https://your-domain.atlassian.net}"
+    email: "${JIRA_EMAIL:-user@example.com}"
+    api_token: "${JIRA_API_TOKEN:-}"
+    default_jql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
+    project_keys:
+      - "PROJ"
+      - "DEV"
+    poll_interval_seconds: 60
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true
+
+  # ----------------------------------------------------------------------------
+  # 6. Shortcut (formerly Clubhouse - REST API v3)
+  # ----------------------------------------------------------------------------
+  shortcut:
+    enabled: false
+    source_type: "shortcut"
+    tenant_id: "local-user"
+    base_url: "${SHORTCUT_BASE_URL:-https://api.app.shortcut.com/api/v3}"
+    api_token: "${SHORTCUT_API_TOKEN:-}"
+    project_ids: []
+    default_query: "!is:archived is:story owner:currentUser"
+    poll_interval_seconds: 60
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true
+
+  # ----------------------------------------------------------------------------
   # 7. Confluence Knowledge & Meeting Notes (REST API)
   # ----------------------------------------------------------------------------
   confluence:
     enabled: false
     source_type: "confluence"
+    tenant_id: "local-user"
     base_url: "${CONFLUENCE_BASE_URL:-https://your-domain.atlassian.net/wiki}"
     email: "${CONFLUENCE_EMAIL:-user@example.com}"
     api_token: "${CONFLUENCE_API_TOKEN:-}"
@@ -152,6 +211,13 @@ sources:
       - "ENG"
       - "OPS"
     poll_interval_seconds: 120
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true
 
   # ----------------------------------------------------------------------------
   # 8. GitHub Issues & Pull Requests (REST API v3)
@@ -159,10 +225,18 @@ sources:
   github:
     enabled: false
     source_type: "github"
+    tenant_id: "local-user"
     api_token: "${GITHUB_TOKEN:-}"
     repositories:
       - "owner/repo"
     poll_interval_seconds: 60
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true
 
   # ----------------------------------------------------------------------------
   # 9. Slack Conversations & Threads (Web API)
@@ -170,8 +244,16 @@ sources:
   slack:
     enabled: false
     source_type: "slack"
+    tenant_id: "local-user"
     bot_token: "${SLACK_BOT_TOKEN:-}"
     channels:
       - "general"
       - "devops"
     poll_interval_seconds: 60
+    rate_limit:
+      max_requests_per_minute: 60
+      burst_limit: 10
+      retry_after_default_seconds: 5.0
+    checkpoint:
+      cursor_strategy: "timestamp_and_id"
+      auto_resume: true

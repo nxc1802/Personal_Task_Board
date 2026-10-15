@@ -1,0 +1,22 @@
+{
+  "dataset_name": "PTB-BENCH-500",
+  "version": "1.0.0",
+  "total_samples": 475,
+  "splits": {
+    "dev": {
+      "count": 235,
+      "file": "dev_samples.json",
+      "description": "Development and prompt tuning split (safe for iterative training/tuning)"
+    },
+    "calibration": {
+      "count": 95,
+      "file": "calibration_samples.json",
+      "description": "Confidence threshold and temperature calibration split"
+    },
+    "test": {
+      "count": 145,
+      "file": "test_samples.json",
+      "description": "LOCKED final evaluation split (STRICTLY FORBIDDEN from tuning/training)"
+    }
+  }
+}

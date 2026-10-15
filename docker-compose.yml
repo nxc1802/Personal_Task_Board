@@ -33,11 +33,13 @@ services:
     volumes:
       - ./data/openwebui:/app/backend/data
     environment:
+      # Local dev mode: authentication disabled for seamless local development. For production, see docker-compose.prod.yml (WEBUI_AUTH=True).
       - WEBUI_AUTH=False
       - ENABLE_OLLAMA_API=False
       - OPENAI_API_BASE_URLS=${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
       - OPENAI_API_KEYS=${LLM_API_KEY:-}
       - WEBUI_NAME=Personal Task Board
+    command: bash -c "python3 /app/backend/data/patch_openwebui_board.py 2>/dev/null || true; exec bash start.sh"
     depends_on:
       - neo4j
     networks:

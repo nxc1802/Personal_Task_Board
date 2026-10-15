@@ -9,24 +9,24 @@ PORTAL_HTML = r"""<!DOCTYPE html>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #090d16;
-      --surface: #111827;
-      --surface-elevated: #1e293b;
-      --surface-hover: #26354a;
-      --border: #334155;
-      --border-subtle: #1f2937;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
+      --bg: #171717;
+      --surface: #212121;
+      --surface-elevated: #282828;
+      --surface-hover: #2e2e2e;
+      --border: #303030;
+      --border-subtle: #262626;
+      --text: #ececec;
+      --text-muted: #b4b4b4;
+      --text-dim: #737373;
       --accent: #3b82f6;
       --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%);
       --accent-hover: #2563eb;
       --success: #10b981;
-      --success-bg: rgba(16, 185, 129, 0.12);
+      --success-bg: rgba(16, 185, 129, 0.15);
       --warning: #f59e0b;
-      --warning-bg: rgba(245, 158, 11, 0.12);
+      --warning-bg: rgba(245, 158, 11, 0.15);
       --danger: #ef4444;
-      --danger-bg: rgba(239, 68, 68, 0.12);
+      --danger-bg: rgba(239, 68, 68, 0.15);
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
@@ -48,7 +48,7 @@ PORTAL_HTML = r"""<!DOCTYPE html>
 
     /* Header */
     header {
-      background: rgba(17, 24, 39, 0.85);
+      background: rgba(23, 23, 23, 0.85);
       backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
       position: sticky;
@@ -661,11 +661,15 @@ PORTAL_HTML = r"""<!DOCTYPE html>
           return;
         }
 
-        tbody.innerHTML = tasks.map(t => `
-          <tr>
+        tbody.innerHTML = tasks.map((t, idx) => `
+          <tr style="cursor: pointer;" onclick="togglePortalTaskRow(${idx})">
             <td>
-              <div style="font-weight: 700; color: #fff;">${escapeHtml(t.title)}</div>
-              <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">${escapeHtml(t.description || '')}</div>
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                <div style="font-weight: 700; color: #fff;">${escapeHtml(t.title)}</div>
+                <button type="button" class="badge" id="portal-btn-${idx}" style="background: var(--surface-elevated); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; padding: 2px 8px; font-size: 11px;">
+                  ▾ Chi tiết
+                </button>
+              </div>
             </td>
             <td><span style="font-weight: 700; color: #f59e0b;">${escapeHtml(t.requester_name || 'Hệ thống / -')}</span></td>
             <td><span class="badge" style="background: rgba(99, 102, 241, 0.16); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 11px;">${escapeHtml(t.channel_or_group || 'Chung')}</span></td>
@@ -680,10 +684,37 @@ PORTAL_HTML = r"""<!DOCTYPE html>
               <span class="badge badge-primary">${escapeHtml(t.status || 'TODO')}</span>
             </td>
           </tr>
+          <tr id="portal-detail-${idx}" style="display: none; background: rgba(0,0,0,0.25);">
+            <td colspan="7" style="padding: 12px 18px; border-bottom: 1px solid var(--border);">
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase;">Chi tiết nhiệm vụ & Bằng chứng:</div>
+                <div style="font-size: 13px; color: var(--text); line-height: 1.5; background: var(--surface); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+                  ${escapeHtml(t.description || t.title)}
+                </div>
+                ${t.primary_evidence_snippet ? `
+                  <div style="font-size: 12px; font-style: italic; color: #a5b4fc; border-left: 3px solid #6366f1; padding-left: 10px; margin-top: 4px;">
+                    “${escapeHtml(t.primary_evidence_snippet)}”
+                  </div>
+                ` : ""}
+                <div style="font-size: 11px; color: var(--text-dim); font-family: var(--mono); margin-top: 4px;">
+                  Task ID: ${escapeHtml(t.id || t.task_id || 'N/A')} • Project: ${escapeHtml(t.project_key || 'GLOBAL')}
+                </div>
+              </div>
+            </td>
+          </tr>
         `).join("");
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color: #f87171;">Lỗi tải dữ liệu: ${err.message}</td></tr>`;
       }
+    }
+
+    function togglePortalTaskRow(idx) {
+      const row = document.getElementById(`portal-detail-${idx}`);
+      const btn = document.getElementById(`portal-btn-${idx}`);
+      if (!row) return;
+      const isHidden = row.style.display === "none";
+      row.style.display = isHidden ? "table-row" : "none";
+      if (btn) btn.innerText = isHidden ? "▴ Thu gọn" : "▾ Chi tiết";
     }
 
     function askQuickPrompt(promptText) {

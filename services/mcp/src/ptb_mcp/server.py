@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from typing import Any, Dict, List, Optional
 from unittest.mock import NonCallableMock
 from uuid import uuid4
@@ -30,6 +31,9 @@ except ImportError:
         from mcp.server.fastmcp import FastMCP
     except ImportError:
         from mcp.server import MCPServer as FastMCP
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from ptb_application.service import ApplicationService
 from ptb_contracts.l2_processing import TaskStatus
@@ -44,6 +48,108 @@ DEFAULT_MCP_HOST = "127.0.0.1"
 DEFAULT_MCP_PORT = 8001
 
 _ORIG_VERIFY_CONNECTIVITY = getattr(Neo4jClient, "verify_connectivity", None)
+
+CANONICAL_TASK_STATUSES = (
+    TaskStatus.TODO.value,
+    TaskStatus.IN_PROGRESS.value,
+    TaskStatus.BLOCKED.value,
+    TaskStatus.DONE.value,
+    TaskStatus.DISMISSED.value,
+)
+
+RESERVED_PRIVILEGED_ACTORS = {"ADMIN", "SYSTEM", "ROOT", "SUPERUSER"}
+DEFAULT_MCP_ACTOR = "CODING_AGENT"
+
+
+def enforce_actor_policy(
+    actor: Optional[str],
+    admin_key: Optional[str] = None,
+    default_actor: str = DEFAULT_MCP_ACTOR,
+) -> str:
+    """Xác thực và ngăn chặn impersonation qua tham số actor (P1-5).
+
+    Nếu yêu cầu actor mang quyền đặc quyền (ADMIN, SYSTEM), yêu cầu phải xác thực
+    chính xác PTB_ADMIN_KEY. Ngược lại, từ chối hành vi giả mạo và raise PermissionError.
+    """
+    if not actor or not str(actor).strip():
+        return default_actor
+
+    norm = str(actor).strip()
+    if norm.upper() in RESERVED_PRIVILEGED_ACTORS:
+        expected_admin = os.getenv("PTB_ADMIN_KEY")
+        if expected_admin and admin_key and secrets.compare_digest(admin_key.strip(), expected_admin.strip()):
+            return norm.upper()
+        raise PermissionError(
+            f"Impersonation forbidden: actor '{actor}' is reserved for administrative operations. "
+            f"Coding agents must authenticate with valid admin credentials or use agent identity (e.g. '{default_actor}')."
+        )
+    return norm
+
+
+def validate_canonical_status(status_val: str) -> str:
+    """Kiểm tra hợp lệ trạng thái công việc canonical."""
+    if not status_val or not str(status_val).strip():
+        raise ValueError(f"Status cannot be empty. Must be one of {sorted(CANONICAL_TASK_STATUSES)}")
+    norm = str(status_val).strip().upper()
+    if norm not in CANONICAL_TASK_STATUSES:
+        raise ValueError(f"Invalid status '{status_val}'. Must be one of {sorted(CANONICAL_TASK_STATUSES)}")
+    return norm
+
+
+class MCPSecurityMiddleware(BaseHTTPMiddleware):
+    """Bảo mật lớp HTTP / SSE cho FastMCP Server (P0-2, W1-02).
+
+    Quy tắc:
+    - /health (kèm hoặc không kèm dấu /) và preflight OPTIONS luôn được miễn trừ xác thực.
+    - Nếu PTB_API_KEY chưa được cấu hình: chạy ở chế độ dev unauthenticated (ghi log warning).
+    - Nếu PTB_API_KEY được cấu hình:
+      Bắt buộc cung cấp API key hợp lệ qua:
+      1. Header 'X-PTB-API-KEY'
+      2. Header 'Authorization: Bearer <key>'
+      3. Query parameter '?api_key=<key>' hoặc '?token=<key>' (hỗ trợ client EventSource SSE chuẩn)
+      Nếu thiếu hoặc sai, trả về HTTP 401 Unauthorized.
+    """
+
+    async def dispatch(self, request: Any, call_next: Any) -> Any:
+        path = request.url.path.rstrip("/")
+        if path == "/health" or request.method == "OPTIONS":
+            return await call_next(request)
+
+        expected_key = os.getenv("PTB_API_KEY")
+        if not expected_key or not expected_key.strip():
+            logger.warning(
+                "PTB_API_KEY is not configured; running MCP server in unauthenticated development mode. "
+                "Set PTB_API_KEY in production to secure remote endpoints."
+            )
+            return await call_next(request)
+
+        provided_key = request.headers.get("x-ptb-api-key")
+        if not provided_key:
+            auth_hdr = request.headers.get("authorization", "")
+            if auth_hdr.lower().startswith("bearer "):
+                provided_key = auth_hdr[7:].strip()
+        if not provided_key:
+            provided_key = request.query_params.get("api_key") or request.query_params.get("token")
+
+        if not provided_key:
+            return JSONResponse(
+                {
+                    "detail": "Missing API key. Please provide 'X-PTB-API-KEY' header or '?api_key=' parameter.",
+                },
+                status_code=401,
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+
+        if not secrets.compare_digest(provided_key.strip(), expected_key.strip()):
+            return JSONResponse(
+                {
+                    "detail": "Invalid API key.",
+                },
+                status_code=401,
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+
+        return await call_next(request)
 
 # ==============================================================================
 # Dependency Injection for ApplicationService & State Tracking
@@ -294,7 +400,7 @@ async def query_ptb_agent_knowledge(
     model = os.getenv("PTB_EXTRACTION_MODEL") or os.getenv("LLM_MODEL", "gemma-4-26b-a4b-it")
 
     # Nếu có API key hợp lệ thì gọi LLM để tổng hợp
-    if api_key and not api_key.startswith("AQ.Ab8RN6J_9KlMg8fqmX0-veOqjJF9YtqgwO7Kk0vMreLgk-zgtg-mock"):
+    if api_key and not api_key.startswith("mock-") and not api_key.startswith("test-"):
         try:
             import urllib.request
             system_prompt = (
@@ -499,17 +605,36 @@ def create_mcp_server(
             due_date: Optional[str] = None,
             priority_score: float = 50.0,
             owner_name: Optional[str] = None,
+            actor: str = DEFAULT_MCP_ACTOR,
+            admin_key: Optional[str] = None,
         ) -> dict:
             """Tạo mới một công việc trong Personal Task Board dành cho Coding Agent."""
+            clean_title = (title or "").strip()
+            if not clean_title:
+                return {"success": False, "error": "Field 'title' cannot be empty"}
+
+            try:
+                safe_actor = enforce_actor_policy(actor, admin_key=admin_key)
+            except PermissionError as pe:
+                return {"success": False, "error": str(pe)}
+
             service = _get_service()
+            clamped_priority = max(0.0, min(100.0, float(priority_score)))
+
+            logger.info(
+                "AUDIT [MCP] actor=%s action=CREATE_TASK title='%s' project=%s",
+                safe_actor,
+                clean_title[:50],
+                project_key,
+            )
             task = await service.create_task(
-                title=title,
-                description=description,
-                project_key=project_key,
+                title=clean_title,
+                description=description or "",
+                project_key=project_key or "GLOBAL",
                 due_date=due_date,
-                priority_score=priority_score,
+                priority_score=clamped_priority,
                 owner_name=owner_name,
-                actor="CODING_AGENT",
+                actor=safe_actor,
             )
             return task.model_dump(mode="json")
 
@@ -520,15 +645,36 @@ def create_mcp_server(
         async def update_task_status(
             task_id: str,
             new_status: str,
-            actor: str = "CODING_AGENT",
+            actor: str = DEFAULT_MCP_ACTOR,
+            admin_key: Optional[str] = None,
         ) -> dict:
             """Cập nhật trạng thái công việc (TODO, IN_PROGRESS, BLOCKED, DONE, DISMISSED) kèm audit log."""
+            clean_task_id = (task_id or "").strip()
+            if not clean_task_id:
+                return {"success": False, "error": "Field 'task_id' cannot be empty"}
+
+            try:
+                canonical_status = validate_canonical_status(new_status)
+            except ValueError as ve:
+                return {"success": False, "error": str(ve)}
+
+            try:
+                safe_actor = enforce_actor_policy(actor, admin_key=admin_key)
+            except PermissionError as pe:
+                return {"success": False, "error": str(pe)}
+
+            logger.info(
+                "AUDIT [MCP] actor=%s action=UPDATE_STATUS task_id=%s new_status=%s",
+                safe_actor,
+                clean_task_id,
+                canonical_status,
+            )
             service = _get_service()
             res = await service.execute_task_action(
-                task_id=task_id,
+                task_id=clean_task_id,
                 action="UPDATE_STATUS",
-                new_status=new_status,
-                actor=actor,
+                new_status=canonical_status,
+                actor=safe_actor,
             )
             return res.model_dump(mode="json")
 
@@ -542,35 +688,87 @@ def create_mcp_server(
             description: Optional[str] = None,
             priority_score: Optional[float] = None,
             due_date: Optional[str] = None,
+            actor: str = DEFAULT_MCP_ACTOR,
+            admin_key: Optional[str] = None,
         ) -> dict:
             """Chỉnh sửa thông tin chi tiết của task (tiêu đề, mô tả, điểm ưu tiên, hạn chót)."""
+            clean_task_id = (task_id or "").strip()
+            if not clean_task_id:
+                return {"success": False, "error": "Field 'task_id' cannot be empty"}
+
+            try:
+                safe_actor = enforce_actor_policy(actor, admin_key=admin_key)
+            except PermissionError as pe:
+                return {"success": False, "error": str(pe)}
+
             service = _get_service()
             updates: Dict[str, Any] = {}
             if title is not None:
-                updates["title"] = title
+                updates["title"] = str(title).strip()
             if description is not None:
-                updates["description"] = description
+                updates["description"] = str(description)
             if priority_score is not None:
-                updates["priority_score"] = priority_score
+                updates["priority_score"] = max(0.0, min(100.0, float(priority_score)))
             if due_date is not None:
                 updates["due_date"] = due_date
-            task = await service.update_task(task_id=task_id, actor="CODING_AGENT", **updates)
+
+            logger.info(
+                "AUDIT [MCP] actor=%s action=UPDATE_TASK task_id=%s fields=%s",
+                safe_actor,
+                clean_task_id,
+                list(updates.keys()),
+            )
+            task = await service.update_task(task_id=clean_task_id, actor=safe_actor, **updates)
             if not task:
-                return {"success": False, "error": f"Task '{task_id}' not found"}
+                return {"success": False, "error": f"Task '{clean_task_id}' not found"}
             return {"success": True, "task": task.model_dump(mode="json")}
 
         # ---------------------------------------------------------------------
-        # TOOL 14: delete_task (CRUD Mutation)
+        # TOOL 14: delete_task (CRUD Mutation with Confirmation Safeguard)
         # ---------------------------------------------------------------------
         @server.tool()
         async def delete_task(
             task_id: str,
-            actor: str = "CODING_AGENT",
+            actor: str = DEFAULT_MCP_ACTOR,
+            confirm: bool = True,
+            admin_key: Optional[str] = None,
         ) -> dict:
-            """Xóa hoặc hủy bỏ (DISMISSED) một task khỏi Task Board."""
+            """Xóa hoặc hủy bỏ (DISMISSED) một task khỏi Task Board với cơ chế xác nhận an toàn."""
+            clean_task_id = (task_id or "").strip()
+            if not clean_task_id:
+                return {"success": False, "task_id": clean_task_id, "error": "Field 'task_id' cannot be empty"}
+
+            if not confirm:
+                logger.warning(
+                    "AUDIT [MCP] delete_task rejected: confirmation required for task_id=%s",
+                    clean_task_id,
+                )
+                return {
+                    "success": False,
+                    "task_id": clean_task_id,
+                    "error": "Destructive action aborted: confirmation required (set confirm=True to execute deletion)",
+                }
+
+            try:
+                safe_actor = enforce_actor_policy(actor, admin_key=admin_key)
+            except PermissionError as pe:
+                return {"success": False, "task_id": clean_task_id, "error": str(pe)}
+
+            logger.info(
+                "AUDIT [MCP] actor=%s action=DELETE_TASK task_id=%s confirmed=%s",
+                safe_actor,
+                clean_task_id,
+                confirm,
+            )
             service = _get_service()
-            ok = await service.delete_task(task_id=task_id, actor=actor)
-            return {"success": ok, "task_id": task_id}
+            ok = await service.delete_task(task_id=clean_task_id, actor=safe_actor)
+            if not ok:
+                return {
+                    "success": False,
+                    "task_id": clean_task_id,
+                    "error": f"Task '{clean_task_id}' not found or could not be dismissed",
+                }
+            return {"success": True, "task_id": clean_task_id}
 
         # ---------------------------------------------------------------------
         # TOOL 15: approve_task (Review Action)
@@ -579,15 +777,36 @@ def create_mcp_server(
         async def approve_task(
             review_id: str,
             new_status: str = "TODO",
-            actor: str = "CODING_AGENT",
+            actor: str = DEFAULT_MCP_ACTOR,
+            admin_key: Optional[str] = None,
         ) -> dict:
             """Phê duyệt candidate task từ review queue đưa vào bảng công việc chính thức."""
+            clean_review_id = (review_id or "").strip()
+            if not clean_review_id:
+                return {"success": False, "error": "Field 'review_id' cannot be empty"}
+
+            try:
+                canonical_status = validate_canonical_status(new_status)
+            except ValueError as ve:
+                return {"success": False, "error": str(ve)}
+
+            try:
+                safe_actor = enforce_actor_policy(actor, admin_key=admin_key)
+            except PermissionError as pe:
+                return {"success": False, "error": str(pe)}
+
+            logger.info(
+                "AUDIT [MCP] actor=%s action=APPROVE_TASK review_id=%s new_status=%s",
+                safe_actor,
+                clean_review_id,
+                canonical_status,
+            )
             service = _get_service()
             res = await service.execute_task_action(
-                task_id=review_id,
+                task_id=clean_review_id,
                 action="APPROVE",
-                new_status=new_status,
-                actor=actor,
+                new_status=canonical_status,
+                actor=safe_actor,
             )
             return res.model_dump(mode="json")
 
@@ -597,14 +816,29 @@ def create_mcp_server(
         @server.tool()
         async def dismiss_task(
             review_id: str,
-            actor: str = "CODING_AGENT",
+            actor: str = DEFAULT_MCP_ACTOR,
+            admin_key: Optional[str] = None,
         ) -> dict:
             """Từ chối hoặc loại bỏ candidate task khỏi review queue."""
+            clean_review_id = (review_id or "").strip()
+            if not clean_review_id:
+                return {"success": False, "error": "Field 'review_id' cannot be empty"}
+
+            try:
+                safe_actor = enforce_actor_policy(actor, admin_key=admin_key)
+            except PermissionError as pe:
+                return {"success": False, "error": str(pe)}
+
+            logger.info(
+                "AUDIT [MCP] actor=%s action=DISMISS_TASK review_id=%s",
+                safe_actor,
+                clean_review_id,
+            )
             service = _get_service()
             res = await service.execute_task_action(
-                task_id=review_id,
+                task_id=clean_review_id,
                 action="DISMISS",
-                actor=actor,
+                actor=safe_actor,
             )
             return res.model_dump(mode="json")
 
@@ -617,8 +851,13 @@ def create_mcp_server(
             history: Optional[list] = None,
         ) -> dict:
             """Hỏi đáp trực tiếp với AI Agent của Personal Task Board tổng hợp tri thức thực tế (Tasks, Teams, Git, Coding Agents) từ Neo4j."""
+            clean_prompt = (prompt or "").strip()
+            if not clean_prompt:
+                return {"reply": "Prompt không được để trống.", "context_grounded": False}
+
+            logger.info("AUDIT [MCP] action=ASK_PTB_AGENT prompt_len=%d", len(clean_prompt))
             service = _get_service()
-            return await query_ptb_agent_knowledge(service=service, prompt=prompt, history=history)
+            return await query_ptb_agent_knowledge(service=service, prompt=clean_prompt, history=history)
 
         # ---------------------------------------------------------------------
         # TOOL 18: record_decision (Knowledge Recording)
@@ -628,18 +867,35 @@ def create_mcp_server(
             summary: str,
             rationale: str,
             project_key: str = "GLOBAL",
-            decided_by: str = "CODING_AGENT",
+            decided_by: str = DEFAULT_MCP_ACTOR,
+            admin_key: Optional[str] = None,
         ) -> dict:
             """Lưu trữ quyết định kiến trúc hoặc kỹ thuật (ADR) vào bộ nhớ tri thức Graphiti."""
+            clean_summary = (summary or "").strip()
+            clean_rationale = (rationale or "").strip()
+            if not clean_summary or not clean_rationale:
+                return {"success": False, "error": "Fields 'summary' and 'rationale' cannot be empty"}
+
+            try:
+                safe_decided_by = enforce_actor_policy(decided_by, admin_key=admin_key)
+            except PermissionError as pe:
+                return {"success": False, "error": str(pe)}
+
+            logger.info(
+                "AUDIT [MCP] actor=%s action=RECORD_DECISION project=%s summary='%s'",
+                safe_decided_by,
+                project_key,
+                clean_summary[:50],
+            )
             service = _get_service()
             from datetime import datetime, timezone
 
             rec = DecisionNodeRecord(
                 decision_id=str(uuid4()),
-                summary=summary,
-                rationale=rationale,
-                topic=project_key,
-                decided_by=decided_by,
+                summary=clean_summary,
+                rationale=clean_rationale,
+                topic=(project_key or "GLOBAL").strip().upper(),
+                decided_by=safe_decided_by,
                 decided_at=datetime.now(timezone.utc),
             )
             gm = getattr(service, "graph_memory", None)
@@ -657,14 +913,20 @@ def create_mcp_server(
             error_context: Optional[str] = None,
         ) -> dict:
             """Ghi nhận bài học kinh nghiệm hoặc giải pháp sửa lỗi kỹ thuật vào bộ nhớ Graphiti."""
+            clean_topic = (topic or "").strip()
+            clean_solution = (solution or "").strip()
+            if not clean_topic or not clean_solution:
+                return {"success": False, "error": "Fields 'topic' and 'solution' cannot be empty"}
+
+            logger.info("AUDIT [MCP] action=RECORD_LESSON topic='%s'", clean_topic[:50])
             service = _get_service()
             from datetime import datetime, timezone
 
             rec = LessonNodeRecord(
                 lesson_id=str(uuid4()),
-                topic=topic,
-                description=error_context or topic,
-                solution=solution,
+                topic=clean_topic,
+                description=error_context or clean_topic,
+                solution=clean_solution,
                 recorded_at=datetime.now(timezone.utc),
             )
             gm = getattr(service, "graph_memory", None)
@@ -672,48 +934,80 @@ def create_mcp_server(
                 await gm.add_lesson_episode(rec)
             return {"success": True, "lesson": rec.model_dump(mode="json")}
 
-        # ---------------------------------------------------------------------
-        # MCP RESOURCES
-        # ---------------------------------------------------------------------
-        @server.resource("ptb://today-plan")
-        async def resource_today_plan() -> str:
-            """Kế hoạch hôm nay và danh sách công việc ưu tiên dạng JSON."""
-            srv = _get_service()
-            plan = await srv.get_today_plan()
-            return plan.model_dump_json()
+    # -------------------------------------------------------------------------
+    # MCP RESOURCES (Standardized across Read-Only and Full Modes)
+    # -------------------------------------------------------------------------
+    @server.resource("ptb://today-plan")
+    async def resource_today_plan() -> str:
+        """Kế hoạch hôm nay và danh sách công việc ưu tiên dạng JSON."""
+        srv = _get_service()
+        plan = await srv.get_today_plan()
+        return plan.model_dump_json()
 
-        @server.resource("ptb://tasks")
-        async def resource_tasks() -> str:
-            """Toàn bộ danh sách công việc dạng JSON."""
-            srv = _get_service()
-            tasks = await srv.list_tasks()
-            return json.dumps([t.model_dump(mode="json") for t in tasks], ensure_ascii=False)
+    @server.resource("ptb://tasks")
+    async def resource_tasks() -> str:
+        """Toàn bộ danh sách công việc dạng JSON."""
+        srv = _get_service()
+        tasks = await srv.list_tasks()
+        return json.dumps([t.model_dump(mode="json") for t in tasks], ensure_ascii=False)
 
-        @server.resource("ptb://system-health")
-        async def resource_system_health() -> str:
-            """Tình trạng sức khỏe hệ thống và MCP server dạng JSON."""
-            srv = _get_service()
-            health = await get_mcp_health(srv, read_only=read_only)
-            return json.dumps(health, ensure_ascii=False)
+    @server.resource("ptb://system-health")
+    async def resource_system_health() -> str:
+        """Tình trạng sức khỏe hệ thống và MCP server dạng JSON."""
+        srv = _get_service()
+        health = await get_mcp_health(srv, read_only=read_only)
+        return json.dumps(health, ensure_ascii=False)
 
-        # ---------------------------------------------------------------------
-        # MCP PROMPTS
-        # ---------------------------------------------------------------------
-        @server.prompt("morning_briefing")
-        def prompt_morning_briefing() -> str:
-            """Prompt mẫu hỗ trợ Coding Agent tóm tắt công việc đầu ngày."""
-            return (
-                "Hãy đọc resource ptb://today-plan hoặc gọi tool get_today_tasks để tóm tắt các công việc ưu tiên hôm nay, "
-                "sau đó phân tích các rủi ro tiến độ và đề xuất thứ tự giải quyết phù hợp nhất cho lập trình viên."
+    # -------------------------------------------------------------------------
+    # MCP PROMPTS (Standardized across Read-Only and Full Modes)
+    # -------------------------------------------------------------------------
+    @server.prompt("morning_briefing")
+    def prompt_morning_briefing() -> str:
+        """Prompt mẫu hỗ trợ Coding Agent tóm tắt công việc đầu ngày."""
+        return (
+            "Hãy đọc resource ptb://today-plan hoặc gọi tool get_today_tasks để tóm tắt các công việc ưu tiên hôm nay, "
+            "sau đó phân tích các rủi ro tiến độ và đề xuất thứ tự giải quyết phù hợp nhất cho lập trình viên."
+        )
+
+    @server.prompt("task_execution_context")
+    def prompt_task_execution_context(task_id: str) -> str:
+        """Prompt mẫu giúp Coding Agent thu thập đầy đủ ngữ cảnh để giải quyết một task cụ thể."""
+        return (
+            f"Hãy gọi tool get_task_context với task_id='{task_id}', đồng thời gọi search_decisions và search_lessons_learned "
+            f"để hiểu rõ ngữ cảnh, các cam kết, rủi ro và các bài học kinh nghiệm trước khi bắt đầu viết code giải quyết task này."
+        )
+
+    # -------------------------------------------------------------------------
+    # SECURED ASGI TRANSPORT APPLICATION (HTTP / SSE with MCPSecurityMiddleware)
+    # -------------------------------------------------------------------------
+    orig_sse_app = server.sse_app
+
+    def secured_sse_app(*args: Any, **kwargs: Any) -> Any:
+        app = orig_sse_app(*args, **kwargs)
+        has_sec = any(
+            getattr(m, "cls", None) is MCPSecurityMiddleware
+            for m in getattr(app, "user_middleware", [])
+        )
+        if not has_sec:
+            app.add_middleware(MCPSecurityMiddleware)
+        return app
+
+    server.sse_app = secured_sse_app
+
+    if hasattr(server, "streamable_http_app"):
+        orig_http_app = server.streamable_http_app
+
+        def secured_http_app(*args: Any, **kwargs: Any) -> Any:
+            app = orig_http_app(*args, **kwargs)
+            has_sec = any(
+                getattr(m, "cls", None) is MCPSecurityMiddleware
+                for m in getattr(app, "user_middleware", [])
             )
+            if not has_sec:
+                app.add_middleware(MCPSecurityMiddleware)
+            return app
 
-        @server.prompt("task_execution_context")
-        def prompt_task_execution_context(task_id: str) -> str:
-            """Prompt mẫu giúp Coding Agent thu thập đầy đủ ngữ cảnh để giải quyết một task cụ thể."""
-            return (
-                f"Hãy gọi tool get_task_context với task_id='{task_id}', đồng thời gọi search_decisions và search_lessons_learned "
-                f"để hiểu rõ ngữ cảnh, các cam kết, rủi ro và các bài học kinh nghiệm trước khi bắt đầu viết code giải quyết task này."
-            )
+        server.streamable_http_app = secured_http_app
 
     return server
 

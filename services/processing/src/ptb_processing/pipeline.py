@@ -11,6 +11,7 @@ Tích hợp tuần tự các bước xử lý RawEvent theo kiến trúc L2 (doc
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import logging
 import re
 from typing import Any, List, Optional
@@ -215,13 +216,48 @@ class ProcessingPipeline:
                 candidate, parsed
             )
 
+            # 4a. Preserve channel/conversation domain context in description
+            if raw_event.conversation_or_project_id:
+                clean_ctx = raw_event.conversation_or_project_id.replace("conv-teams-", "").replace("conv-slack-", "").replace("_", " ")
+                if validated_candidate.description:
+                    if clean_ctx not in validated_candidate.description:
+                        validated_candidate.description = f"{validated_candidate.description} [Context: {clean_ctx}]"
+                else:
+                    validated_candidate.description = f"[Context: {clean_ctx}]"
+
+            # 4b. Explicit deadline parsing from payload if missing from candidate
+            if not validated_candidate.due_date and isinstance(raw_event.raw_payload, dict):
+                raw_due = None
+                fields = raw_event.raw_payload.get("fields")
+                if isinstance(fields, dict):
+                    raw_due = fields.get("duedate")
+                if not raw_due:
+                    raw_due = raw_event.raw_payload.get("duedate") or raw_event.raw_payload.get("due_date")
+                if raw_due:
+                    try:
+                        parsed_due = datetime.fromisoformat(str(raw_due).replace("Z", "+00:00"))
+                        validated_candidate.due_date = parsed_due.astimezone(timezone.utc)
+                        validated_candidate.explicit_deadline = True
+                    except Exception:
+                        pass
+
             # 5. IdentityResolver: Chuẩn hóa Person ID tuân thủ quy tắc bất biến
             # 5a. Chuẩn hóa Owner
-            if validated_candidate.owner_name:
-                owner_ext_id = None
+            owner_name = validated_candidate.owner_name
+            owner_ext_id = None
+            if not owner_name and isinstance(raw_event.raw_payload, dict):
+                fields = raw_event.raw_payload.get("fields", {})
+                assignee = fields.get("assignee") if isinstance(fields, dict) else None
+                if isinstance(assignee, dict):
+                    owner_name = assignee.get("displayName") or assignee.get("name")
+                    owner_ext_id = assignee.get("accountId")
+                elif isinstance(raw_event.raw_payload.get("owner_ids"), list) and raw_event.raw_payload.get("owner_ids"):
+                    owner_ext_id = raw_event.raw_payload.get("owner_ids")[0]
+                    owner_name = owner_ext_id
+            elif owner_name:
                 if (
-                    (parsed.actual_author_raw and validated_candidate.owner_name == parsed.actual_author_raw)
-                    or (raw_event.author_display_name and validated_candidate.owner_name == raw_event.author_display_name)
+                    (parsed.actual_author_raw and owner_name == parsed.actual_author_raw)
+                    or (raw_event.author_display_name and owner_name == raw_event.author_display_name)
                 ):
                     owner_ext_id = raw_event.author_external_id
                 elif isinstance(raw_event.raw_payload, dict):
@@ -232,24 +268,35 @@ class ProcessingPipeline:
                     elif isinstance(raw_event.raw_payload.get("owner_ids"), list) and raw_event.raw_payload.get("owner_ids"):
                         owner_ext_id = raw_event.raw_payload.get("owner_ids")[0]
 
+            if owner_name or owner_ext_id:
                 owner_res = await self._resolve_identity(
-                    name=validated_candidate.owner_name,
+                    name=owner_name,
                     external_id=owner_ext_id,
                     tenant_id=raw_event.tenant_id,
                     source_type=source_type_str,
                 )
                 if owner_res.is_exact_match:
                     validated_candidate.owner_canonical_id = owner_res.person_id
+                    if not validated_candidate.owner_name:
+                        validated_candidate.owner_name = owner_res.canonical_name or owner_name
                 else:
                     # Quy tắc bất biến: Không tự động merge Person ID nếu chỉ fuzzy name/alias
                     validated_candidate.owner_canonical_id = None
 
             # 5b. Chuẩn hóa Requester
-            if validated_candidate.requester_name:
-                req_ext_id = None
+            req_name = validated_candidate.requester_name or parsed.quoted_author_raw or parsed.actual_author_raw or raw_event.author_display_name
+            req_ext_id = None
+            if isinstance(raw_event.raw_payload, dict):
+                fields = raw_event.raw_payload.get("fields", {})
+                reporter = fields.get("reporter") if isinstance(fields, dict) else None
+                if isinstance(reporter, dict) and reporter.get("accountId"):
+                    req_ext_id = reporter.get("accountId")
+                    if not req_name:
+                        req_name = reporter.get("displayName") or reporter.get("name")
+            if not req_ext_id:
                 if (
-                    (parsed.actual_author_raw and validated_candidate.requester_name == parsed.actual_author_raw)
-                    or (raw_event.author_display_name and validated_candidate.requester_name == raw_event.author_display_name)
+                    (parsed.actual_author_raw and req_name == parsed.actual_author_raw)
+                    or (raw_event.author_display_name and req_name == raw_event.author_display_name)
                 ):
                     req_ext_id = raw_event.author_external_id
                 elif parsed.is_quote_reply:
@@ -257,20 +304,18 @@ class ProcessingPipeline:
                     mention_match = re.search(r'class=["\']mention["\'][^>]*itemid=["\']([^"\']+)["\']', payload_str)
                     if mention_match:
                         req_ext_id = mention_match.group(1)
-                elif isinstance(raw_event.raw_payload, dict):
-                    fields = raw_event.raw_payload.get("fields", {})
-                    reporter = fields.get("reporter") if isinstance(fields, dict) else None
-                    if isinstance(reporter, dict) and reporter.get("accountId"):
-                        req_ext_id = reporter.get("accountId")
 
+            if req_name or req_ext_id:
                 req_res = await self._resolve_identity(
-                    name=validated_candidate.requester_name,
+                    name=req_name,
                     external_id=req_ext_id,
                     tenant_id=raw_event.tenant_id,
                     source_type=source_type_str,
                 )
                 if req_res.is_exact_match:
                     validated_candidate.requester_canonical_id = req_res.person_id
+                    if not validated_candidate.requester_name:
+                        validated_candidate.requester_name = req_res.canonical_name or req_name
                 else:
                     validated_candidate.requester_canonical_id = None
 

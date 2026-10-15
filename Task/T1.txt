@@ -1,1 +1,30 @@
-Ưu tiên Tasks đang "In progress" ở trên cùng, các Task "To do" hoặc "Pending" còn lại sắp xếp theo độ ưu tiên
+Yêu cầu Task 1:
+Ưu tiên Tasks đang "In progress" ở trên cùng, các Task "To do" hoặc "Pending" còn lại sắp xếp theo độ ưu tiên.
+
+Trạng thái: HOÀN THÀNH
+
+Chi tiết triển khai kỹ thuật:
+1. Quy tắc phân loại và sắp xếp:
+   - Các Task có trạng thái IN_PROGRESS (đang thực hiện) luôn được ưu tiên xếp ở vị trí đầu tiên (rank 1), bất kể Task TODO hoặc PENDING có điểm priority_score cao hơn.
+   - Giữa các Task IN_PROGRESS: Sắp xếp theo thứ tự priority_score giảm dần (tie-break theo due_date tăng dần và updated_at mới nhất).
+   - Các Task trạng thái TODO hoặc PENDING: Đặt ở nhóm tiếp theo (rank 2), sắp xếp theo priority_score giảm dần.
+   - Các Task trạng thái BLOCKED, DONE, DISMISSED: Được phân tầng tương ứng ở các thứ hạng kế tiếp.
+
+2. Các thành phần đã triển khai và đồng bộ:
+   - packages/contracts/src/ptb_contracts/l2_processing.py:
+     + Bổ sung alias chuẩn hóa trạng thái trong TaskStatus._missing_: "OPEN", "PENDING", "TO DO", "TO_DO" tự động ánh xạ về TaskStatus.TODO; "IN PROGRESS", "IN-PROGRESS" ánh xạ về TaskStatus.IN_PROGRESS.
+   - packages/database/src/ptb_database/repositories/task_repo.py:
+     + Cập nhật Cypher query và hàm _task_sort_key: Bổ sung PENDING vào nhóm rank 2 cùng với TODO ngay sau IN_PROGRESS (rank 1), sắp xếp giảm dần theo priority_score.
+   - tests/support/test_doubles.py:
+     + Đồng bộ InMemoryTaskDomainRepository._task_sort_key và get_active_tasks đảm bảo cơ chế phân hạng và sắp xếp nhất quán 100% với Database Repository.
+   - services/intelligence/src/ptb_intelligence/planner.py:
+     + Hàm plan_today() trong TodayBoardPlanner áp dụng sắp xếp IN_PROGRESS lên đầu danh sách top_tasks, sau đó là TODO/PENDING theo priority.total_score giảm dần.
+   - integrations/openwebui/board/ptb_board.html & data/openwebui/board/ptb_board.html:
+     + Hàm sortTasksWithInProgressFirst() chuẩn hóa status và đưa IN_PROGRESS lên đầu bảng; hỗ trợ hiển thị các task PENDING/OPEN trong cột TODO của Kanban board.
+   - tests/test_tasks_t1_t2_t3.py:
+     + Thêm unit tests tự động:
+       * test_task1_in_progress_ranks_before_higher_priority_todo
+       * test_task1_pending_and_todo_ranked_by_priority_below_in_progress
+       * test_task1_today_board_planner_in_progress_first
+       * test_task1_api_today_endpoint_ranks_in_progress_first
+     + Toàn bộ 58/58 tests đều pass 100%.

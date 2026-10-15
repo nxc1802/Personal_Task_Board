@@ -1,0 +1,494 @@
+[
+  {
+    "sample_id": "smoke-01-teams-clear-deadline",
+    "case_category": "direct_task",
+    "origin_reference": "mini_smoke://teams/01",
+    "raw_event": {
+      "id": "raw-smoke-01",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-teams-01",
+      "conversation_or_project_id": "conv-teams-general",
+      "event_timestamp": "2026-10-15T08:00:00Z",
+      "captured_at": "2026-10-15T08:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "body": {
+          "content": "Tran Van Lead: Nhờ Cuong review pull request PR-102 trước 17:00 ngày 2026-10-20 nhé.\nDam Quang Cuong: Vâng anh, để em review PR-102 trước 17:00."
+        }
+      },
+      "normalized_text": "Vâng anh, để em review PR-102 trước 17:00 ngày 2026-10-20.",
+      "idempotency_key": "idemp-smoke-01"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["review", "PR-102"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "lead.tran",
+      "expected_requester_name": "Tran Van Lead",
+      "expected_due_date": "2026-10-20T17:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": ["PR-102"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-01",
+        "expected_snippet_substrings": ["review PR-102"]
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-02-outlook-bug-report",
+    "case_category": "direct_task",
+    "origin_reference": "mini_smoke://outlook/02",
+    "raw_event": {
+      "id": "raw-smoke-02",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-outlook-02",
+      "conversation_or_project_id": "conv-mail-thread-02",
+      "event_timestamp": "2026-10-15T08:15:00Z",
+      "captured_at": "2026-10-15T08:15:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "subject": "Fix crash on payment module",
+        "body": {
+          "content": "Nhờ anh Cuong fix gấp lỗi crash trên payment module trước 12:00 ngày 2026-10-21."
+        }
+      },
+      "normalized_text": "Nhờ anh Cuong fix gấp lỗi crash trên payment module trước 12:00 ngày 2026-10-21.",
+      "idempotency_key": "idemp-smoke-02"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["crash", "payment"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "huy.nguyen",
+      "expected_requester_name": "Nguyen Van Huy",
+      "expected_due_date": "2026-10-21T12:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": ["payment"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-02",
+        "expected_snippet_substrings": ["fix gấp lỗi crash"]
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-03-teams-quote-reply",
+    "case_category": "quote_reply",
+    "origin_reference": "mini_smoke://teams/03",
+    "raw_event": {
+      "id": "raw-smoke-03",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-teams-03",
+      "conversation_or_project_id": "conv-teams-general",
+      "event_timestamp": "2026-10-15T08:30:00Z",
+      "captured_at": "2026-10-15T08:30:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "body": {
+          "contentType": "html",
+          "content": "<blockquote><strong itemprop=\"author\">Tran Van Lead</strong>: Kiểm tra trạng thái deploy PTB-101 nhé.</blockquote><p>Vâng em đang xử lý task PTB-101 này rồi ạ.</p>"
+        }
+      },
+      "normalized_text": "Vâng em đang xử lý task PTB-101 này rồi ạ.",
+      "idempotency_key": "idemp-smoke-03"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["PTB-101"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "lead.tran",
+      "expected_requester_name": "Tran Van Lead",
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": "IN_PROGRESS",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": ["PTB-101"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-03",
+        "expected_snippet_substrings": ["đang xử lý task PTB-101"]
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-04-jira-issue",
+    "case_category": "issue_tracking",
+    "origin_reference": "mini_smoke://jira/04",
+    "raw_event": {
+      "id": "raw-smoke-04",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "jira",
+      "external_id": "PROJ-123",
+      "conversation_or_project_id": "PROJ",
+      "event_timestamp": "2026-10-15T09:00:00Z",
+      "captured_at": "2026-10-15T09:00:05Z",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
+      "raw_payload": {
+        "key": "PROJ-123",
+        "fields": {
+          "summary": "PROJ-123: Update authentication middleware",
+          "assignee": {"accountId": "cuong.dam_jira", "displayName": "Dam Quang Cuong"},
+          "reporter": {"accountId": "lead.tran_jira", "displayName": "Tran Van Lead"},
+          "duedate": "2026-10-22T18:00:00Z"
+        }
+      },
+      "normalized_text": "PROJ-123: Update authentication middleware for security compliance.",
+      "idempotency_key": "idemp-smoke-04"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["authentication", "middleware"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "lead.tran",
+      "expected_requester_name": "Tran Van Lead",
+      "expected_due_date": "2026-10-22T18:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": ["PROJ-123"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-04",
+        "expected_snippet_substrings": ["Update authentication middleware"]
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-05-shortcut-story",
+    "case_category": "issue_tracking",
+    "origin_reference": "mini_smoke://shortcut/05",
+    "raw_event": {
+      "id": "raw-smoke-05",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "shortcut",
+      "external_id": "SC-456",
+      "conversation_or_project_id": "SC-PROJECT-1",
+      "event_timestamp": "2026-10-15T09:15:00Z",
+      "captured_at": "2026-10-15T09:15:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "id": 456,
+        "name": "SC-456: Implement web search tool",
+        "owner_ids": ["cuong.dam"]
+      },
+      "normalized_text": "SC-456: Implement web search tool in PTB agent.",
+      "idempotency_key": "idemp-smoke-05"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["search", "tool"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": "TODO",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": ["SC-456"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-05",
+        "expected_snippet_substrings": ["Implement web search tool"]
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-06-git-commit",
+    "case_category": "code_vcs",
+    "origin_reference": "mini_smoke://git/06",
+    "raw_event": {
+      "id": "raw-smoke-06",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "git",
+      "external_id": "c0ffee1",
+      "conversation_or_project_id": "repo-ptb",
+      "event_timestamp": "2026-10-15T09:30:00Z",
+      "captured_at": "2026-10-15T09:30:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "commit_hash": "c0ffee1",
+        "message": "feat(auth): add JWT validation middleware completed"
+      },
+      "normalized_text": "feat(auth): add JWT validation middleware completed",
+      "idempotency_key": "idemp-smoke-06"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["JWT", "validation"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": "DONE",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": ["auth"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-06",
+        "expected_snippet_substrings": ["JWT validation"]
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-07-noise-chitchat",
+    "case_category": "noise",
+    "origin_reference": "mini_smoke://teams/07",
+    "raw_event": {
+      "id": "raw-smoke-07",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-teams-07",
+      "conversation_or_project_id": "conv-teams-random",
+      "event_timestamp": "2026-10-15T10:00:00Z",
+      "captured_at": "2026-10-15T10:00:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "body": {"content": "Trưa nay ăn cơm gà hay bún chả mọi người ơi?"}
+      },
+      "normalized_text": "Trưa nay ăn cơm gà hay bún chả mọi người ơi?",
+      "idempotency_key": "idemp-smoke-07"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "correlation": {
+        "expected_merge": false
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-08-noise-general-greeting",
+    "case_category": "noise",
+    "origin_reference": "mini_smoke://outlook/08",
+    "raw_event": {
+      "id": "raw-smoke-08",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-outlook-08",
+      "conversation_or_project_id": "conv-mail-thread-08",
+      "event_timestamp": "2026-10-15T10:15:00Z",
+      "captured_at": "2026-10-15T10:15:05Z",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
+      "raw_payload": {
+        "subject": "Happy weekend all!",
+        "body": {"content": "Chúc cả team cuối tuần vui vẻ và tràn đầy năng lượng nhé."}
+      },
+      "normalized_text": "Chúc cả team cuối tuần vui vẻ và tràn đầy năng lượng nhé.",
+      "idempotency_key": "idemp-smoke-08"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "correlation": {
+        "expected_merge": false
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-09-noise-negation",
+    "case_category": "negation",
+    "origin_reference": "mini_smoke://teams/09",
+    "raw_event": {
+      "id": "raw-smoke-09",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-teams-09",
+      "conversation_or_project_id": "conv-teams-general",
+      "event_timestamp": "2026-10-15T10:30:00Z",
+      "captured_at": "2026-10-15T10:30:05Z",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
+      "raw_payload": {
+        "body": {"content": "Không cần làm task backup database nữa nhé Cuong, anh đã hoàn thành xong rồi."}
+      },
+      "normalized_text": "Không cần làm task backup database nữa nhé Cuong, anh đã hoàn thành xong rồi.",
+      "idempotency_key": "idemp-smoke-09"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "correlation": {
+        "expected_merge": false
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-10-ambiguous-chat",
+    "case_category": "ambiguous",
+    "origin_reference": "mini_smoke://teams/10",
+    "raw_event": {
+      "id": "raw-smoke-10",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-teams-10",
+      "conversation_or_project_id": "conv-teams-general",
+      "event_timestamp": "2026-10-15T10:45:00Z",
+      "captured_at": "2026-10-15T10:45:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "body": {"content": "Có thể sau này mình sẽ cân nhắc đổi qua kiến trúc microservices xem sao."}
+      },
+      "normalized_text": "Có thể sau này mình sẽ cân nhắc đổi qua kiến trúc microservices xem sao.",
+      "idempotency_key": "idemp-smoke-10"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "AMBIGUOUS",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "correlation": {
+        "expected_merge": false
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-11-merge-anchor-base",
+    "case_category": "correlation_base",
+    "origin_reference": "mini_smoke://teams/11",
+    "raw_event": {
+      "id": "raw-smoke-11",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-teams-11",
+      "conversation_or_project_id": "conv-teams-general",
+      "event_timestamp": "2026-10-15T11:00:00Z",
+      "captured_at": "2026-10-15T11:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "body": {"content": "Tạo task triển khai tính năng SC-888 thanh toán online."}
+      },
+      "normalized_text": "Tạo task triển khai tính năng SC-888 thanh toán online.",
+      "idempotency_key": "idemp-smoke-11"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["thanh toán", "SC-888"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": "TODO",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": ["SC-888"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-11",
+        "expected_snippet_substrings": ["SC-888"]
+      }
+    }
+  },
+  {
+    "sample_id": "smoke-12-merge-anchor-update",
+    "case_category": "correlation_update",
+    "origin_reference": "mini_smoke://git/12",
+    "raw_event": {
+      "id": "raw-smoke-12",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "git",
+      "external_id": "c0ffee2",
+      "conversation_or_project_id": "repo-ptb",
+      "event_timestamp": "2026-10-15T11:15:00Z",
+      "captured_at": "2026-10-15T11:15:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "commit_hash": "c0ffee2",
+        "message": "fix(checkout): SC-888 fix checkout flow bug"
+      },
+      "normalized_text": "fix(checkout): SC-888 fix checkout flow bug",
+      "idempotency_key": "idemp-smoke-12"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": ["checkout", "SC-888"],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": "IN_PROGRESS",
+      "correlation": {
+        "expected_merge": true,
+        "expected_anchors": ["SC-888"]
+      },
+      "evidence": {
+        "source_event_id": "raw-smoke-12",
+        "expected_snippet_substrings": ["SC-888"]
+      }
+    }
+  }
+]

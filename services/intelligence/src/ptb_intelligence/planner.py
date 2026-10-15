@@ -27,6 +27,76 @@ from ptb_intelligence.priority import DeterministicPriorityEngine
 logger = logging.getLogger("ptb.intelligence.planner")
 
 
+def _safe_timestamp(val: Any, default_ts: float) -> float:
+    """Safely convert datetime, date, int/float, or ISO string to UTC timestamp float."""
+    if val is None:
+        return default_ts
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, datetime):
+        dt = val if val.tzinfo is not None else val.replace(tzinfo=timezone.utc)
+        return float(dt.timestamp())
+    from datetime import date
+    if isinstance(val, date):
+        dt = datetime(val.year, val.month, val.day, tzinfo=timezone.utc)
+        return float(dt.timestamp())
+    if isinstance(val, str) and val.strip():
+        try:
+            cleaned = val.strip().replace("Z", "+00:00")
+            dt = datetime.fromisoformat(cleaned)
+            dt = dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+            return float(dt.timestamp())
+        except Exception:
+            return default_ts
+    return default_ts
+
+
+def _today_sort_key(
+    item: Any,
+    tasks_map: Optional[Dict[str, Any]] = None,
+) -> tuple[int, float, float, float]:
+    """Sort key conforming to the Frozen Canonical Sort Contract:
+    Primary:   status_rank ASC (IN_PROGRESS=1, TODO=2, BLOCKED=3, DONE=4, DISMISSED=5)
+    Secondary: priority_score DESC
+    Tertiary:  due_date ASC (nulls last)
+    Quaternary: updated_at DESC
+
+    Returns a 4-tuple configured for reverse=True sorting:
+        (-rank, score, -due_ts, updated_ts)
+    """
+    STATUS_RANK = {
+        "IN_PROGRESS": 1,
+        "TODO": 2,
+        "PENDING": 2,
+        "BLOCKED": 3,
+        "DONE": 4,
+        "DISMISSED": 5,
+    }
+    st = str(item.status.value if hasattr(item.status, "value") else getattr(item, "status", "")).strip().upper()
+    rank = STATUS_RANK.get(st, 6)
+
+    if hasattr(item, "priority") and item.priority:
+        score = float(getattr(item.priority, "total_score", 0.0) or 0.0)
+    elif getattr(item, "priority_override", None) is not None:
+        score = float(item.priority_override)
+    elif hasattr(item, "priority_score") and item.priority_score is not None:
+        score = float(item.priority_score or 0.0)
+    else:
+        score = 0.0
+
+    due_val = getattr(item, "due_date", None)
+    due_ts = _safe_timestamp(due_val, default_ts=9999999999.0)
+
+    updated_val = getattr(item, "updated_at", None)
+    if updated_val is None and tasks_map is not None:
+        t_id = getattr(item, "task_id", getattr(item, "id", None))
+        if t_id and t_id in tasks_map:
+            updated_val = getattr(tasks_map[t_id], "updated_at", None)
+    updated_ts = _safe_timestamp(updated_val, default_ts=-62135596800.0)
+
+    return (-rank, score, -due_ts, updated_ts)
+
+
 class TodayBoardPlanner:
     """Plans and synthesizes the daily focus board for the user."""
 
@@ -151,8 +221,15 @@ class TodayBoardPlanner:
                 )
             )
 
-        # Sort tasks by priority total_score descending
-        today_task_items.sort(key=lambda x: x.priority.total_score, reverse=True)
+        # Sort tasks according to Frozen Canonical Sort Contract (reverse=True)
+        # Primary:   status_rank ASC (IN_PROGRESS=1, TODO=2, BLOCKED=3, DONE=4, DISMISSED=5)
+        # Secondary: priority_score DESC
+        # Tertiary:  due_date ASC (nulls last)
+        # Quaternary: updated_at DESC
+        def _today_sort_key_inner(item: TodayTaskItem):
+            return _today_sort_key(item, tasks_map=tasks_map)
+
+        today_task_items.sort(key=_today_sort_key_inner, reverse=True)
         top_tasks = today_task_items[: self.max_top_tasks]
 
         # 3. Detect waiting items
@@ -213,3 +290,5 @@ class TodayBoardPlanner:
             parts.append(f"{forgotten_count} cam kết cần cập nhật")
 
         return "Hôm nay: " + ", ".join(parts) + "."
+    
+    _today_sort_key = staticmethod(_today_sort_key)

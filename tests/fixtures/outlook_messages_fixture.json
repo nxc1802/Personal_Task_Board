@@ -1,7 +1,7 @@
 {
   "value": [
     {
-      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA3",
+      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA1",
       "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD1",
       "subject": "[URGENT] Review kiến trúc Personal Task Board v1.0",
       "receivedDateTime": "2026-09-29T07:15:00Z",
@@ -32,11 +32,99 @@
         "contentType": "html",
         "content": "<html><body><p>Chào anh Cường,</p><p>Nhờ anh Cường review giúp em phần contract và kiến trúc Personal Task Board trước 17:00 ngày 30/09/2026 để kịp nộp báo cáo cho khách hàng.</p><p>Trân trọng,<br>Huy</p></body></html>"
       },
+      "attachments": [
+        {
+          "id": "att-arch-spec-001",
+          "name": "PTB_Architecture_Specification_v1.0.pdf",
+          "contentType": "application/pdf",
+          "size": 154200,
+          "isInline": false,
+          "lastModifiedDateTime": "2026-09-29T07:14:00Z"
+        }
+      ],
+      "importance": "high"
+    },
+    {
+      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA2",
+      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD1",
+      "subject": "Re: [URGENT] Review kiến trúc Personal Task Board v1.0",
+      "receivedDateTime": "2026-09-29T08:00:00Z",
+      "createdDateTime": "2026-09-29T07:59:50Z",
+      "hasAttachments": false,
+      "from": {
+        "emailAddress": {
+          "name": "Dam Quang Cuong",
+          "address": "cuong.dam@company.com"
+        }
+      },
+      "sender": {
+        "emailAddress": {
+          "name": "Dam Quang Cuong",
+          "address": "cuong.dam@company.com"
+        }
+      },
+      "toRecipients": [
+        {
+          "emailAddress": {
+            "name": "PM Huy Nguyen",
+            "address": "huy.nguyen@partner.com"
+          }
+        }
+      ],
+      "bodyPreview": "Đã nhận tài liệu nhé Huy. Anh sẽ hoàn thành review và gửi phản hồi trước 15:00 hôm nay.",
+      "body": {
+        "contentType": "html",
+        "content": "<html><body><p>Đã nhận tài liệu nhé Huy. Anh sẽ hoàn thành review và gửi phản hồi trước 15:00 hôm nay.</p><div id=\"appendonsend\"></div><hr style=\"display:inline-block;width:98%\"><div id=\"divRplyFwdMsg\" dir=\"ltr\"><font face=\"Calibri, sans-serif\" color=\"#000000\" size=\"2\"><b>From:</b> PM Huy Nguyen &lt;huy.nguyen@partner.com&gt;<br><b>Sent:</b> Tuesday, September 29, 2026 7:15 AM<br><b>To:</b> Dam Quang Cuong &lt;cuong.dam@company.com&gt;<br><b>Subject:</b> [URGENT] Review kiến trúc Personal Task Board v1.0</font><div>&nbsp;</div></div><blockquote><p>Chào anh Cường,</p><p>Nhờ anh Cường review giúp em phần contract và kiến trúc Personal Task Board trước 17:00 ngày 30/09/2026 để kịp nộp báo cáo cho khách hàng.</p></blockquote></body></html>"
+      },
+      "importance": "normal"
+    },
+    {
+      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA3",
+      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD3",
+      "subject": "Fwd: Bàn giao tài liệu thiết kế UI và API Gateway",
+      "receivedDateTime": "2026-09-29T08:45:00Z",
+      "createdDateTime": "2026-09-29T08:44:30Z",
+      "hasAttachments": true,
+      "from": {
+        "emailAddress": {
+          "name": "Tech Lead Linh Tran",
+          "address": "linh.tran@partner.com"
+        }
+      },
+      "toRecipients": [
+        {
+          "emailAddress": {
+            "name": "Dam Quang Cuong",
+            "address": "cuong.dam@company.com"
+          }
+        }
+      ],
+      "bodyPreview": "Gửi Cuong tài liệu thiết kế UI/UX và spec API Gateway đính kèm. Nhờ Cuong kiểm tra tích hợp với Neo4j.",
+      "body": {
+        "contentType": "text",
+        "content": "Gửi Cuong tài liệu thiết kế UI/UX và spec API Gateway đính kèm. Nhờ Cuong kiểm tra tích hợp với Neo4j.\n\n-----Forwarded Message-----\nFrom: design-team@partner.com\nSent: Monday, September 28, 2026 5:00 PM\nSubject: UI/UX deliverables\nDesign deliverables approved by customer."
+      },
+      "attachments": [
+        {
+          "id": "att-ui-spec-002",
+          "name": "PTB_UI_Wireframes.png",
+          "contentType": "image/png",
+          "size": 892300,
+          "isInline": true
+        },
+        {
+          "id": "att-api-spec-003",
+          "name": "API_Gateway_v1.yaml",
+          "contentType": "application/x-yaml",
+          "size": 34100,
+          "isInline": false
+        }
+      ],
       "importance": "high"
     },
     {
       "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA4",
-      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD2",
+      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD4",
       "subject": "Newsletter: Cập nhật công nghệ tuần 39/2026",
       "receivedDateTime": "2026-09-29T06:00:00Z",
       "createdDateTime": "2026-09-29T06:00:00Z",
@@ -51,6 +139,56 @@
       "body": {
         "contentType": "text",
         "content": "Tổng hợp các tin tức nổi bật về AI và phần mềm trong tuần qua. Chúc bạn một tuần tốt lành."
+      },
+      "importance": "low"
+    },
+    {
+      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA5",
+      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD1",
+      "subject": "Re: [URGENT] Review kiến trúc Personal Task Board v1.0",
+      "receivedDateTime": "2026-09-29T09:30:00Z",
+      "createdDateTime": "2026-09-29T09:29:45Z",
+      "hasAttachments": false,
+      "from": {
+        "emailAddress": {
+          "name": "PM Huy Nguyen",
+          "address": "huy.nguyen@partner.com"
+        }
+      },
+      "toRecipients": [
+        {
+          "emailAddress": {
+            "name": "Dam Quang Cuong",
+            "address": "cuong.dam@company.com"
+          }
+        }
+      ],
+      "bodyPreview": "Cập nhật bổ sung: Đã thêm mục yêu cầu bảo mật Layer 1A, nhờ anh xem xét thêm.",
+      "body": {
+        "contentType": "html",
+        "content": "<html><body><p>Cập nhật bổ sung: Đã thêm mục yêu cầu bảo mật Layer 1A, nhờ anh xem xét thêm.</p><hr>-----Original Message-----<br>From: cuong.dam@company.com<br>Sent: Tuesday, September 29, 2026 8:00 AM<br>Đã nhận tài liệu nhé Huy.</body></html>"
+      },
+      "importance": "high"
+    },
+    {
+      "id": "AAMkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwBGAAAAA6",
+      "conversationId": "AAQkADhkOWE5YjEtMDcxNS00NDc4LTljNjQtZGFjNzQyOTJhOTAwAQAAAAD6",
+      "subject": "[Deleted Notification] Hủy lịch họp đồng bộ dự án",
+      "receivedDateTime": "2026-09-29T10:00:00Z",
+      "createdDateTime": "2026-09-29T10:00:00Z",
+      "hasAttachments": false,
+      "isDeleted": true,
+      "changeType": "deleted",
+      "from": {
+        "emailAddress": {
+          "name": "Calendar Service",
+          "address": "calendar@partner.com"
+        }
+      },
+      "bodyPreview": "Cuộc họp đã bị hủy bởi người tổ chức.",
+      "body": {
+        "contentType": "text",
+        "content": "Cuộc họp đã bị hủy bởi người tổ chức."
       },
       "importance": "normal"
     }

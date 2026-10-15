@@ -57,3 +57,14 @@ class MCPToolCallResult(BaseModel):
     tool_name: str
     content: str
     is_error: bool = False
+
+
+class AuthSecurityStatusResponse(BaseModel):
+    authenticated: bool
+    mode: str = Field(description="'authenticated' or 'dev_mode'")
+    message: Optional[str] = None
+
+
+class DatabaseResetResponse(BaseModel):
+    status: str
+    constraints_restored: bool

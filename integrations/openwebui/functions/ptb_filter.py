@@ -1,173 +1,268 @@
 """
-title: PTB Filter & Assistant
-author: Personal Task Board
-version: 1.0.0
-description: Tự động kết nối Personal Task Board Tools và xử lý các lệnh /board
+title: Personal Task Board Context Filter
+author: Personal Task Board (Wave 2)
+author_url: https://github.com/nxc1802/Personal_Task_Board
+version: 1.2.0
+license: MIT
+description: OpenWebUI Filter for automatic task context grounding and injecting live PTB board data into LLM chat.
 """
 
 import json
 import os
-from pathlib import Path
 import re
-from typing import Any, Callable, Dict, Optional
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+import urllib.error
+import urllib.parse
 import urllib.request
 from pydantic import BaseModel, Field
+
+OFFLINE_ERROR_MESSAGE = (
+    "❌ [PTB-OWUI-001] APPLICATION SERVICE OFFLINE "
+    "(Run 'ptb serve' or 'ptb run' and check port 8000): "
+    "OpenWebUI cannot reach Application API."
+)
+
+
+def _sanitize_for_logging(data: Any) -> Any:
+    """Mask sensitive tokens (API keys, bearer tokens) before logging."""
+    if isinstance(data, dict):
+        sanitized = {}
+        for k, v in data.items():
+            k_lower = str(k).lower()
+            if any(secret in k_lower for secret in ("key", "token", "auth", "secret", "password")):
+                sanitized[k] = "***REDACTED***"
+            else:
+                sanitized[k] = _sanitize_for_logging(v)
+        return sanitized
+    if isinstance(data, list):
+        return [_sanitize_for_logging(item) for item in data]
+    if isinstance(data, str):
+        data = re.sub(r"(Bearer\s+)[A-Za-z0-9_\-\.]{6,}", r"\1***REDACTED***", data)
+        data = re.sub(r"(X-PTB-API-KEY[:=]\s*)[A-Za-z0-9_\-\.]{6,}", r"\1***REDACTED***", data, flags=re.IGNORECASE)
+        return data
+    return data
+
+
+def _log_owui_error(
+    message: str,
+    exc: Optional[Exception] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Ghi log lỗi nội bộ có cấu trúc ra stderr với mã [PTB-OWUI-001] mà không phụ thuộc ptb_contracts."""
+    payload: Dict[str, Any] = {
+        "bug_code": "PTB-OWUI-001",
+        "subsystem": "openwebui_filter",
+        "severity": "WARNING",
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if context:
+        payload["context"] = _sanitize_for_logging(context)
+    if exc is not None:
+        payload["exception_type"] = type(exc).__name__
+        payload["exception_message"] = _sanitize_for_logging(str(exc))
+    sys.stderr.write(f"[PTB-OWUI-001] {json.dumps(payload, ensure_ascii=False)}\n")
+    sys.stderr.flush()
+
 
 class Filter:
     class Valves(BaseModel):
         app_service_url: str = Field(
-            default=os.getenv("PTB_APP_URL", os.getenv("APP_SERVICE_URL", "http://host.docker.internal:8000")),
-            description="Base URL for PTB Application Service"
+            default=os.getenv(
+                "PTB_APP_URL",
+                os.getenv("APP_SERVICE_URL", "http://host.docker.internal:8000"),
+            ),
+            description="Base URL for PTB Application Service",
         )
-        board_html_path: str = Field(
-            default="",
-            description="Absolute or relative path to ptb_board.html"
+        api_key: str = Field(
+            default=os.getenv("PTB_API_KEY", ""),
+            description="PTB API Key cho xác thực X-PTB-API-KEY",
+        )
+        inject_task_context: bool = Field(
+            default=True,
+            description="Tự động gắn context công việc thực tế khi người dùng hỏi về tasks, kế hoạch, hôm nay",
+        )
+        request_timeout: float = Field(
+            default=3.5,
+            description="Timeout cho HTTP request (giây, 1.0 - 15.0)",
+        )
+        max_retries: int = Field(
+            default=1,
+            description="Số lần thử lại khi lỗi mạng",
         )
 
     def __init__(self):
         env_url = os.getenv("PTB_APP_URL") or os.getenv("APP_SERVICE_URL")
+        env_key = os.getenv("PTB_API_KEY", "")
+        kwargs = {}
         if env_url:
-            self.valves = self.Valves(app_service_url=env_url)
-        else:
-            self.valves = self.Valves()
+            kwargs["app_service_url"] = env_url
+        if env_key:
+            kwargs["api_key"] = env_key
+        self.valves = self.Valves(**kwargs)
+        self._last_http_error_logged: bool = False
 
-    def _resolve_board_html_path(self) -> Path:
-        if self.valves.board_html_path:
-            p = Path(self.valves.board_html_path)
-            if p.exists():
-                return p
-        candidate_paths = [
-            Path("/app/backend/data/board/ptb_board.html"),
-            Path("./data/openwebui/board/ptb_board.html"),
-            Path("integrations/openwebui/board/ptb_board.html"),
-        ]
-        for p in candidate_paths:
-            if p.exists() and p.is_file():
-                return p
-        return candidate_paths[0]
+    def _http_get(
+        self,
+        endpoint: str,
+        timeout: Optional[float] = None,
+    ) -> Optional[Any]:
+        """Thực thi HTTP GET an toàn với timeout và auth header."""
+        self._last_http_error_logged = False
+        req_timeout = timeout if timeout is not None else getattr(self.valves, "request_timeout", 3.5)
+        bounded_timeout = max(1.0, min(float(req_timeout), 15.0))
+        max_retries = max(0, min(int(getattr(self.valves, "max_retries", 1)), 3))
 
-    def load_board_html(self) -> str:
-        path = self._resolve_board_html_path()
-        if path.exists() and path.is_file():
-            return path.read_text(encoding="utf-8")
-        return "Board HTML file not found."
+        base_url = self.valves.app_service_url.rstrip("/")
+        url = f"{base_url}{endpoint}"
 
-    def format_as_artifact(self, html_content: str) -> str:
-        return f'\n:::artifact{{type="text/html" title="Personal Task Board"}}\n{html_content}\n:::\n'
+        headers = {"Content-Type": "application/json"}
+        api_key = (getattr(self.valves, "api_key", "") or os.getenv("PTB_API_KEY", "")).strip()
+        if api_key:
+            headers["X-PTB-API-KEY"] = api_key
+            headers["Authorization"] = f"Bearer {api_key}"
 
-    def _http_get(self, endpoint: str) -> Optional[dict]:
-        try:
-            url = f"{self.valves.app_service_url.rstrip('/')}{endpoint}"
-            req = urllib.request.Request(url, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=4.0) as resp:
-                if 200 <= resp.status < 300:
-                    return json.loads(resp.read().decode("utf-8"))
-        except Exception:
-            return None
+        for attempt in range(max_retries + 1):
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            try:
+                with urllib.request.urlopen(req, timeout=bounded_timeout) as response:
+                    if 200 <= response.status < 300:
+                        raw_content = response.read().decode("utf-8")
+                        return json.loads(raw_content) if raw_content else {}
+                return None
+            except urllib.error.HTTPError as http_exc:
+                if http_exc.code >= 500 and attempt < max_retries:
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+                _log_owui_error(
+                    f"Filter HTTP error {http_exc.code}",
+                    exc=http_exc,
+                    context={"endpoint": endpoint, "status": http_exc.code},
+                )
+                return None
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as net_exc:
+                if attempt < max_retries:
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+                _log_owui_error(
+                    "Filter cannot connect to Application API",
+                    exc=net_exc,
+                    context={"endpoint": endpoint},
+                )
+                return None
+            except Exception as exc:
+                _log_owui_error(
+                    "Filter unexpected error",
+                    exc=exc,
+                    context={"endpoint": endpoint},
+                )
+                return None
         return None
 
-    def _format_today_summary(self, data: dict) -> str:
-        if not data:
-            return "Không thể kết nối đến Personal Task Board Application API."
-        headline = data.get("summary_headline") or "Hôm nay không có task ưu tiên khẩn cấp."
-        tasks = data.get("top_tasks") or []
-        risks = data.get("risks") or []
+    def _should_inject_context(self, user_content: str) -> bool:
+        """Determines if the user's message is asking about tasks, today's schedule, or PTB."""
+        if not user_content:
+            return False
+        content_lower = user_content.lower()
 
-        lines = [
-            "### ☀️ Kế hoạch hôm nay (Morning Briefing)\n",
-            f"> **{headline}**\n"
+        # Keywords in English and Vietnamese
+        trigger_keywords = [
+            "today",
+            "hôm nay",
+            "kế hoạch",
+            "công việc",
+            "task",
+            "tasks",
+            "briefing",
+            "lịch làm",
+            "việc cần làm",
+            "priority",
+            "ưu tiên",
+            "deadline",
+            "review queue",
+            "waiting on",
+            "đang chờ",
+            "ptb",
+            "/today",
+            "/tasks",
         ]
-
-        if risks:
-            lines.append("**⚠️ Rủi ro tiến độ cần chú ý:**")
-            for r in risks[:3]:
-                lines.append(f"- {r.get('risk_type', 'Rủi ro')}: **{r.get('description', '')}**")
-            lines.append("")
-
-        if tasks:
-            lines.append("**📋 Danh sách công việc ưu tiên hàng đầu:**")
-            for t in tasks:
-                score = t.get("total_score", 0)
-                title = t.get("title", "Không có tiêu đề")
-                status = t.get("status", "TODO")
-                source = t.get("source", "ms_teams")
-                due = t.get("due_date") or "Chưa đặt hạn"
-                lines.append(f"- **[{score:.1f}/100]** `{status}`: **{title}** (Nguồn: `{source}` | Hạn: {due})")
-        else:
-            lines.append("*Hiện tại không có task nào đang chờ thực hiện.*")
-
-        lines.append("\n💡 *Gõ `/board` để mở giao diện bảng công việc tương tác đầy đủ!*")
-        return "\n".join(lines)
+        return any(kw in content_lower for kw in trigger_keywords)
 
     async def inlet(
         self,
         body: dict,
         __user__: Optional[dict] = None,
-        __event_emitter__: Optional[Callable[[dict], Any]] = None,
     ) -> dict:
-        # 1. Luôn kích hoạt tool ptb_tools
-        tool_ids = body.get("tool_ids") or []
-        if "ptb_tools" not in tool_ids:
-            tool_ids.append("ptb_tools")
-            body["tool_ids"] = tool_ids
+        """
+        OpenWebUI Filter inlet: intercepts outgoing user prompt to inject authoritative PTB task context.
+        """
+        if not getattr(self.valves, "inject_task_context", True):
+            return body
 
         messages = body.get("messages", [])
         if not messages:
             return body
 
-        last_message = messages[-1]
-        raw_content = last_message.get("content", "").strip()
+        last_user_msg = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+        if not last_user_msg:
+            return body
 
-        # Chuẩn hóa nếu có tag [/board]
-        clean_content = raw_content
-        is_slash_cmd = False
-        if clean_content.startswith("[/board]"):
-            clean_content = clean_content[len("[/board]"):].strip() or "/board"
-            is_slash_cmd = True
-        elif clean_content.startswith("/board") or clean_content.startswith("/ptb"):
-            is_slash_cmd = True
+        user_content = str(last_user_msg.get("content", ""))
+        if not self._should_inject_context(user_content):
+            return body
 
-        # 2. Xử lý lệnh /board
-        if is_slash_cmd:
-            parts = clean_content.split()
-            subcommand = parts[1].lower() if len(parts) > 1 else "view"
+        user_id = (__user__.get("id") or __user__.get("email") or "default") if __user__ else "default"
+        endpoint = f"/api/today?{urllib.parse.urlencode({'limit': 5, 'user_id': user_id})}"
+        data = self._http_get(endpoint)
 
-            if subcommand in ("view", "open") or len(parts) <= 1:
-                html = self.load_board_html()
-                artifact = self.format_as_artifact(html)
-                resp = (
-                    "### 🎯 Personal Task Board (Interactive Artifact)\n\n"
-                    f"{artifact}\n\n"
-                    "💡 *Gợi ý: Dùng `/board today` hoặc hỏi 'công việc hôm nay là gì' để xem tóm tắt.*"
-                )
-                if __event_emitter__:
-                    await __event_emitter__({"type": "message", "data": {"content": resp}})
-                    last_message["content"] = "[Executed /board action]"
-                return body
+        if not data or not isinstance(data, dict):
+            # API offline or error; don't disrupt user's conversation, just proceed
+            return body
 
-            elif subcommand == "today":
-                data = self._http_get("/api/today")
-                resp = self._format_today_summary(data)
-                if __event_emitter__:
-                    await __event_emitter__({"type": "message", "data": {"content": resp}})
-                    last_message["content"] = "[Executed /board today]"
-                return body
+        top_tasks = data.get("top_tasks", [])
+        headline = data.get("summary_headline", "")
+        risks = data.get("identified_risks", [])
 
-        # 3. Xử lý câu hỏi tự nhiên về công việc hôm nay
-        # Nếu người dùng hỏi: "công việc hôm nay là gì", "hôm nay có việc gì", "task hôm nay", v.v.
-        lower_q = raw_content.lower()
-        today_keywords = [
-            "công việc hôm nay", "hôm nay là gì", "việc hôm nay",
-            "task hôm nay", "hôm nay làm gì", "có việc gì hôm nay",
-            "kế hoạch hôm nay", "today tasks", "what are today"
+        if not top_tasks and not headline:
+            return body
+
+        context_lines = [
+            "[Personal Task Board Grounding Context (Source of Truth)]:",
+            f"Tóm tắt ngày hôm nay: {headline}" if headline else "",
         ]
-        if any(kw in lower_q for kw in today_keywords):
-            data = self._http_get("/api/today")
-            if data:
-                resp = self._format_today_summary(data)
-                if __event_emitter__:
-                    await __event_emitter__({"type": "message", "data": {"content": resp}})
-                    last_message["content"] = "[Answered today tasks automatically]"
-                return body
+        if risks:
+            context_lines.append(f"Rủi ro cảnh báo: {'; '.join(risks[:2])}")
 
+        if top_tasks:
+            context_lines.append("Top công việc ưu tiên:")
+            for t in top_tasks[:5]:
+                p = t.get("priority", {})
+                score = p.get("total_score", 0.0)
+                context_lines.append(
+                    f"- [{score}/100] ID: {t.get('task_id')} | Tiêu đề: {t.get('title')} | Trạng thái: {t.get('status')} | Hạn chót: {t.get('due_date', 'Không')}"
+                )
+
+        grounding_block = "\n".join(l for l in context_lines if l)
+
+        # Inject into system prompt or as a preceding context message
+        system_msg = next((m for m in messages if m.get("role") == "system"), None)
+        if system_msg:
+            existing_sys_content = system_msg.get("content", "")
+            system_msg["content"] = f"{existing_sys_content}\n\n{grounding_block}".strip()
+        else:
+            messages.insert(0, {"role": "system", "content": grounding_block})
+
+        return body
+
+    async def outlet(
+        self,
+        body: dict,
+        __user__: Optional[dict] = None,
+    ) -> dict:
+        """
+        OpenWebUI Filter outlet: post-processes assistant response before displaying to user.
+        """
         return body

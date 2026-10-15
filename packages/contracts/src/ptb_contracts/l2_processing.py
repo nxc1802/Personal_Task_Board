@@ -16,8 +16,10 @@ class TaskStatus(str, Enum):
     def _missing_(cls, value: object) -> Any:
         if isinstance(value, str):
             val_norm = value.strip().upper()
-            if val_norm == "OPEN":
+            if val_norm in ("OPEN", "PENDING", "TO DO", "TO_DO"):
                 return cls.TODO
+            if val_norm in ("IN PROGRESS", "IN-PROGRESS"):
+                return cls.IN_PROGRESS
             for member in cls:
                 if member.value == val_norm or member.name == val_norm:
                     return member

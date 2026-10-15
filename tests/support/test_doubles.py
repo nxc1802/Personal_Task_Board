@@ -309,6 +309,7 @@ class InMemoryTaskDomainRepository:
             rank = {
                 "IN_PROGRESS": 1,
                 "TODO": 2,
+                "PENDING": 2,
                 "BLOCKED": 3,
                 "DONE": 4,
                 "DISMISSED": 5,

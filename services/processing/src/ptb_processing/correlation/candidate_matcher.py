@@ -66,9 +66,9 @@ class TaskCandidateMatcher:
             return anchors
 
         # 1. Jira key: e.g. OPS-88, PROJ-123
-        jira_matches = re.findall(r"\b[A-Z][A-Z0-9]+-\d+\b", text)
+        jira_matches = re.findall(r"\b[A-Za-z][A-Za-z0-9]+-\d+\b", text)
         for m in jira_matches:
-            if m not in COMMON_NON_JIRA:
+            if m.upper() not in COMMON_NON_JIRA:
                 anchors.add(DeterministicAnchor(anchor_type="jira", value=m.upper()))
 
         # Also Jira key from URL

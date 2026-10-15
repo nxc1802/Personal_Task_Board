@@ -1,0 +1,254 @@
+{
+  "dataset_name": "PTB-BENCH-500",
+  "version": "1.0.0",
+  "commit_baseline": "79a41665d841067331608c9b3a93983f0d147bd8",
+  "created_at": "2026-10-15T10:00:00Z",
+  "evaluation_now": "2026-10-15T12:00:00Z",
+  "samples_sha256": "0842c8f7a14bb850462fbd9b312f8eb2351715f2ceaff67b4a154cfd671d9261",
+  "probes_sha256": "d0689b77c4c2c484483e18c603ea37b85a182bfbeee6407e0a7ac37acf7926e6",
+  "dataset_files": {
+    "calibration_samples.json": {
+      "sha256": "2d6b49cb9bdc34cfc602a64aea557d164bab9632b1320277a1c6de22d76ffffb",
+      "size_bytes": 254954,
+      "item_count": 95
+    },
+    "dev_samples.json": {
+      "sha256": "8067f927075601c9dc06ae5bcb3e2a11cffeaf401572fa944e0a5a4c39f40b87",
+      "size_bytes": 634706,
+      "item_count": 235
+    },
+    "probes.json": {
+      "sha256": "d0689b77c4c2c484483e18c603ea37b85a182bfbeee6407e0a7ac37acf7926e6",
+      "size_bytes": 12451,
+      "item_count": 25
+    },
+    "samples.json": {
+      "sha256": "0842c8f7a14bb850462fbd9b312f8eb2351715f2ceaff67b4a154cfd671d9261",
+      "size_bytes": 1269890,
+      "item_count": 475
+    },
+    "splits.json": {
+      "sha256": "fc9587873ae416d1f28e9c0871215d834b80557ec6d5183ce6acc5a988df9416",
+      "size_bytes": 632,
+      "item_count": null
+    },
+    "test_samples.json": {
+      "sha256": "0a43a8eab38401c242cdd6df9f645e788d13a0af71f3f3e77d60c91c1ffddb57",
+      "size_bytes": 380240,
+      "item_count": 145
+    }
+  },
+  "allowed_email_domains": [
+    "company.com",
+    "partner.com",
+    "fpt.com"
+  ],
+  "supported_controls": [
+    "COMMITMENT",
+    "NONE",
+    "DECISION",
+    "LESSON"
+  ],
+  "personas": [
+    {
+      "canonical_id": "cuong.dam",
+      "canonical_name": "Dam Quang Cuong",
+      "email": "cuong.dam@company.com",
+      "account_ids": [
+        "cuong.dam",
+        "cuong.dam_jira",
+        "cuong.dam_slack",
+        "cuong-dam-gh",
+        "cuongdam"
+      ],
+      "aliases": [
+        "Cuong",
+        "anh Cường",
+        "anh Cuong",
+        "Cuong Dam",
+        "Cường",
+        "Dam Quang Cuong"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": true
+    },
+    {
+      "canonical_id": "lead.tran",
+      "canonical_name": "Tran Van Lead",
+      "email": "lead.tran@company.com",
+      "account_ids": [
+        "lead.tran",
+        "lead.tran_jira",
+        "lead.tran_slack",
+        "lead-tran-gh",
+        "leadtran"
+      ],
+      "aliases": [
+        "Lead",
+        "anh Lead",
+        "Tran Van Lead",
+        "Sếp Lead",
+        "Lead Tran"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "huy.nguyen",
+      "canonical_name": "Nguyen Van Huy",
+      "email": "huy.nguyen@company.com",
+      "account_ids": [
+        "huy.nguyen",
+        "huy.nguyen_jira",
+        "huy.nguyen_slack",
+        "huy-nguyen-gh",
+        "huynguyen"
+      ],
+      "aliases": [
+        "Huy",
+        "Nguyen Van Huy",
+        "anh Huy",
+        "Huy Nguyen"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "lan.pham",
+      "canonical_name": "Pham Thi Lan",
+      "email": "lan.pham@company.com",
+      "account_ids": [
+        "lan.pham",
+        "lan.pham_jira",
+        "lan.pham_slack",
+        "lan-pham-gh",
+        "lanpham"
+      ],
+      "aliases": [
+        "Lan",
+        "chi Lan",
+        "Lan Pham",
+        "Pham Thi Lan",
+        "chị Lan"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "minh.vu",
+      "canonical_name": "Vu Duc Minh",
+      "email": "minh.vu@company.com",
+      "account_ids": [
+        "minh.vu",
+        "minh.vu_jira",
+        "minh.vu_slack",
+        "minh-vu-gh",
+        "minhvu"
+      ],
+      "aliases": [
+        "Minh",
+        "anh Minh",
+        "Minh Vu",
+        "Vu Duc Minh"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "anh.le",
+      "canonical_name": "Le Hoang Anh",
+      "email": "anh.le@company.com",
+      "account_ids": [
+        "anh.le",
+        "anh.le_jira",
+        "anh.le_slack",
+        "anh-le-gh",
+        "anhle"
+      ],
+      "aliases": [
+        "Hoang Anh",
+        "anh Hoang Anh",
+        "Le Hoang Anh",
+        "Anh Le",
+        "QC Anh"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "sarah.chen",
+      "canonical_name": "Sarah Chen",
+      "email": "sarah.chen@company.com",
+      "account_ids": [
+        "sarah.chen",
+        "sarah.chen_jira",
+        "sarah.chen_slack",
+        "sarahchen-gh",
+        "sarahchen"
+      ],
+      "aliases": [
+        "Sarah",
+        "Sarah Chen",
+        "Ms. Sarah"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "alex.miller",
+      "canonical_name": "Alex Miller",
+      "email": "alex.miller@partner.com",
+      "account_ids": [
+        "alex.miller",
+        "alex.miller_jira",
+        "alex.miller_slack",
+        "alexmiller-gh",
+        "alexmiller"
+      ],
+      "aliases": [
+        "Alex",
+        "Alex Miller",
+        "Mr. Miller"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    }
+  ],
+  "probe_groups": {
+    "input_robustness": [
+      "probe-01-missing-timestamp",
+      "probe-02-empty-payload",
+      "probe-03-malformed-json-payload",
+      "probe-04-oversized-text-payload",
+      "probe-05-invalid-source-type",
+      "probe-06-missing-idempotency-key",
+      "probe-13-corrupted-unicode-null-bytes",
+      "probe-14-future-timestamp-drift",
+      "probe-15-deep-link-malformed-scheme",
+      "probe-20-missing-required-jira-summary",
+      "probe-22-null-author-external-id",
+      "probe-24-extremely-long-title-truncation"
+    ],
+    "concurrency_and_lifecycle": [
+      "probe-07-duplicate-event-replay",
+      "probe-08-out-of-order-event-delivery",
+      "probe-19-conflicting-status-transition",
+      "probe-21-circular-parent-id-reference",
+      "probe-23-concurrent-task-update-conflict"
+    ],
+    "infrastructure_recovery": [
+      "probe-09-llm-timeout-recovery",
+      "probe-10-llm-rate-limit-429",
+      "probe-11-neo4j-transient-disconnect",
+      "probe-12-graphiti-sync-failure"
+    ],
+    "attribution_and_identity": [
+      "probe-16-quote-reply-attribution-confusion",
+      "probe-17-cross-tenant-impersonation",
+      "probe-18-unknown-author-display-name"
+    ],
+    "security_integrity": [
+      "probe-25-unauthenticated-reset-guard"
+    ]
+  }
+}

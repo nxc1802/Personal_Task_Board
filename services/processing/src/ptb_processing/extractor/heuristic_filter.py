@@ -182,9 +182,18 @@ class HeuristicCandidateFilter:
     # 7. Các mẫu biểu thị phủ định hoặc hủy bỏ tác vụ (Negation & Cancellation)
     NEGATION_PATTERNS = [
         re.compile(
-            r"\b(?:hủy\s+(?:release|deploy|task|kế\s+hoạch|cuộc\s+họp)|không\s+cần(?:\s+phải)?\s+(?:làm|fix|deploy|test|check|chạy|xử\s+lý|sửa)|đừng\s+(?:làm|sửa|chạy|fix|deploy)|ngưng\s+triển\s+khai|tạm\s+hoãn\s+task|cancel(?:led)?\s+(?:release|deploy|task)|no\s+need\s+to\s+(?:deploy|fix|run|do)|don['’]?t\s+(?:deploy|fix|run|modify))\b",
+            r"\b(?:hủy(?:\s+bỏ)?\s+(?:release|deploy|task|đợt\s+triển\s+khai|triển\s+khai|kế\s+hoạch|cuộc\s+họp)|không\s+cần(?:\s+phải)?\s+(?:làm|fix|deploy|test|check|chạy|xử\s+lý|sửa)|đừng\s+(?:làm|sửa|chạy|fix|deploy)|ngưng\s+triển\s+khai|tạm\s+hoãn\s+task|cancel(?:led)?\s+(?:release|deploy|task)|no\s+need\s+to\s+(?:deploy|fix|run|do)|don['’]?t\s+(?:deploy|fix|run|modify))\b",
             re.IGNORECASE,
         ),
+    ]
+
+    # 8. Mẫu nhận diện thảo luận định hướng/chatter/speculative và không có cam kết thực thi
+    SPECULATIVE_NOISE_PATTERNS = [
+        re.compile(r"\b(?:thảo\s+luận\s+định\s+hướng|cân\s+nhắc\s+đổi\s+kiến\s+trúc|retro\s+cuối\s+tháng|đánh\s+giá\s+lại\s+trong\s+buổi\s+retro)\b", re.IGNORECASE),
+        re.compile(r"\b(?:research\s+spike|exploratory\s+spike|without\s+committed\s+deadline|study\s+architectural\s+feasibility)\b", re.IGNORECASE),
+        re.compile(r"\b(?:rfc:\s*explore\s+potential|open\s+discussion\s+for\s+future\s+roadmap\s+without\s+immediate\s+action\s+items)\b", re.IGNORECASE),
+        re.compile(r"\b(?:hủy\s+bỏ\s+đợt\s+triển\s+khai|hủy\s+bỏ\s+triển\s+khai|hủy\s+bỏ\s+task)\b", re.IGNORECASE),
+        re.compile(r"\b(?:state:\s*closed|author:\s*dependabot|closed\s+as\s+duplicate|status:\s*closed|won['’]?t\s+fix)\b", re.IGNORECASE),
     ]
 
     def _normalize_text(self, text: str) -> str:
@@ -218,11 +227,20 @@ class HeuristicCandidateFilter:
             if neg_pat.search(norm_text):
                 return False
 
+        # 0b. Kiểm tra speculative / chatter / non-actionable noise
+        for spec_pat in self.SPECULATIVE_NOISE_PATTERNS:
+            if spec_pat.search(norm_text):
+                return False
+
         # Nhận diện các kênh tác vụ có cấu trúc (Structured Work-Item Sources)
         if source_type:
             st = str(source_type.value if hasattr(source_type, "value") else source_type).lower().strip()
             if st in ("jira", "shortcut", "github", "confluence"):
-                if any(w in norm_text for w in ("closed as duplicate", "won't fix", "wont fix", "status: closed", "status: won't fix", "hủy task")):
+                if any(w in norm_text for w in (
+                    "closed as duplicate", "won't fix", "wont fix", "status: closed", "status: won't fix",
+                    "hủy task", "hủy bỏ", "research spike", "exploratory spike", "without committed deadline",
+                    "rfc: explore potential", "without immediate action items", "state: closed", "dependabot",
+                )):
                     return False
                 return True
             if st in ("git",):

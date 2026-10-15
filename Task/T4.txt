@@ -1,1 +1,23 @@
-Mở rộng ra toàn bộ các kênh thông tin khác bên cạnh MSTeam như Outlook, Jira, ...
+Yêu cầu Task 4:
+Mở rộng ra toàn bộ các kênh thông tin khác bên cạnh MSTeams như Outlook, Jira, Git, Shortcut, Confluence, GitHub, Slack, Coding Agents.
+
+Trạng thái: HOÀN THÀNH
+
+Chi tiết kiến trúc và triển khai:
+1. Danh mục 9 kênh thông tin chính thức đã tích hợp toàn diện:
+   - MS Teams: Playwright Interceptor & Chat Parser -> EvidenceType.CHAT_COMMITMENT / CHAT_REQUEST
+   - MS Outlook: OutlookMailAdapter (Graph/REST) & OutlookNetworkInterceptor -> EvidenceType.EMAIL_THREAD
+   - Jira Cloud / Server: JiraAdapter (REST API) & JiraIssueParser (ADF & Plain text) -> EvidenceType.JIRA_TICKET
+   - Local Git & Remote: GitWatcherAdapter & GitCommitParser (Conventional Commits, Branch, Hash) -> EvidenceType.COMPLETION_SIGNAL
+   - Shortcut (Clubhouse): ShortcutAdapter & ShortcutStoryParser (Story IDs, Type) -> EvidenceType.SHORTCUT_STORY
+   - Confluence: ConfluenceAdapter & ConfluenceParser (Trích xuất Action Items meeting notes) -> EvidenceType.CONFLUENCE_PAGE
+   - GitHub: GitHubAdapter & GitHubParser (Issues & Pull Requests) -> EvidenceType.GITHUB_PR
+   - Slack: SlackAdapter & SlackParser (mrkdwn, user mentions, threads) -> EvidenceType.CHAT_COMMITMENT
+   - Coding Agents: AgentWatchersAdapter (Cursor, Claude Code, Antigravity, Windsurf, Copilot, Cline, Aider) -> EvidenceType.AGENT_DECISION / AGENT_BUG_FIX
+
+2. Thành phần kỹ thuật cốt lõi:
+   - UnifiedChannelParser (services/processing/src/ptb_processing/parsers/multi_channel.py): Tự động định tuyến gói tin từ bất kỳ kênh nào sang parser chuyên biệt tương ứng.
+   - ProcessingPipeline (services/processing/src/ptb_processing/pipeline.py): Đảm bảo trích xuất đúng evidence_type, chuẩn hóa Attribution, và tự động liên kết đa kênh (Cross-Channel Correlation).
+   - POST /api/ingest/message (services/application/src/ptb_application/api.py): Hỗ trợ trường `source` cho phép nạp trực tiếp sự kiện từ bất kỳ kênh nào qua REST API.
+   - CLI Acquisition Runner (scripts/ptb_cli.py): Lệnh `ptb ingest --source [all | coding_agent | git | jira | shortcut | outlook | confluence | github | slack]`.
+   - Test Suite Độc Lập (tests/test_task_t4_multichannel.py): Đầy đủ 13/13 test cases pass 100%.

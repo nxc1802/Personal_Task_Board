@@ -60,3 +60,6 @@ out/
 # Local data & Playwright sessions
 data/
 *.db
+
+# Temporary scratch & dev artifacts
+scratch/

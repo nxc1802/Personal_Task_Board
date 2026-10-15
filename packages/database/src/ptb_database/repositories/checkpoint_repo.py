@@ -106,17 +106,25 @@ class CheckpointRepository:
         async with driver.session(database=self.neo4j_client.database) as session:
             await session.run(cypher, params)
 
-    async def list_checkpoints(self) -> list[IngestionCheckpointRecord]:
-        """Lấy toàn bộ danh sách IngestionCheckpoint hiện có."""
+    async def list_checkpoints(self, tenant_id: Optional[str] = None) -> list[IngestionCheckpointRecord]:
+        """Lấy toàn bộ danh sách IngestionCheckpoint, có thể lọc theo tenant_id."""
         driver = self._get_driver()
         cypher = """
         MATCH (cp:IngestionCheckpoint)
+        """
+        params = {}
+        if tenant_id is not None and str(tenant_id).strip() != "":
+            cypher += """
+            WHERE cp.tenant_id = $tenant_id
+            """
+            params["tenant_id"] = str(tenant_id).strip()
+        cypher += """
         RETURN cp
         ORDER BY cp.updated_at DESC
         """
         checkpoints: list[IngestionCheckpointRecord] = []
         async with driver.session(database=self.neo4j_client.database) as session:
-            result = await session.run(cypher)
+            result = await session.run(cypher, params)
             async for row in result:
                 node = row.get("cp")
                 if node:
@@ -134,6 +142,33 @@ class CheckpointRepository:
                         data["id"] = hashlib.sha256(f"{tid_val}:{st_val}:{s_id}".encode("utf-8")).hexdigest()
                     checkpoints.append(IngestionCheckpointRecord.model_validate(data))
         return checkpoints
+
+    async def delete_checkpoint(
+        self,
+        source_type: Union[str, SourceType],
+        stream_id: str,
+        tenant_id: str = "default",
+    ) -> bool:
+        """Xóa checkpoint theo composite key (tenant_id, source_type, stream_id)."""
+        driver = self._get_driver()
+        st_val = source_type.value if hasattr(source_type, "value") else str(source_type)
+        tid_val = tenant_id if (tenant_id is not None and str(tenant_id).strip() != "") else "default"
+        cypher = """
+        MATCH (cp:IngestionCheckpoint {tenant_id: $tenant_id, source_type: $source_type, stream_id: $stream_id})
+        DETACH DELETE cp
+        RETURN count(cp) AS deleted_count
+        """
+        params = {
+            "source_type": st_val,
+            "stream_id": stream_id,
+            "tenant_id": tid_val,
+        }
+        async with driver.session(database=self.neo4j_client.database) as session:
+            result = await session.run(cypher, params)
+            row = await result.single()
+            if row and row.get("deleted_count"):
+                return int(row["deleted_count"]) > 0
+            return False
 
     async def cleanup_duplicate_checkpoints(self) -> int:
         """Tìm và xóa các IngestionCheckpoint bị trùng lặp theo (tenant_id, source_type, stream_id),

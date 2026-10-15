@@ -64,6 +64,14 @@ jobs:
       - name: Run Full Non-Docker Suite
         run: uv run pytest -m "not external_integration" -q
 
+      - name: Validate Benchmark Dataset Manifests
+        run: |
+          uv run python -m benchmarks.cli validate --dataset-dir benchmarks/dataset/mini_smoke
+          uv run python -m benchmarks.cli validate --dataset-dir benchmarks/dataset/ptb_500
+
+      - name: Run Release Readiness Gates
+        run: uv run pytest tests/test_release_readiness.py -v
+
       - name: Verify CLI Help & Doctor Syntax
         run: uv run python scripts/ptb_cli.py --help
 

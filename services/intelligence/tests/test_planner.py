@@ -212,3 +212,138 @@ def test_today_board_planner_flow():
     # Headline generated
     assert len(board.summary_headline) > 0
     assert "hôm nay" in board.summary_headline.lower()
+
+
+def test_planner_canonical_sort_contract_all_dimensions():
+    """Verify TodayBoardPlanner implements the Frozen Canonical Sort Contract:
+    Primary:   status_rank ASC (IN_PROGRESS=1, TODO=2, BLOCKED=3, DONE=4, DISMISSED=5)
+    Secondary: priority_score DESC
+    Tertiary:  due_date ASC (nulls last)
+    Quaternary: updated_at DESC
+    """
+    now = datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc)
+    planner = TodayBoardPlanner(max_top_tasks=20)
+
+    # 1. P1-1 Regression: TODO with lower priority must rank BEFORE BLOCKED with higher priority
+    t_blocked_high = UnifiedTaskCandidate(
+        id="t-blocked-90",
+        title="Blocked task with high priority",
+        status=TaskStatus.BLOCKED,
+        priority_override=90.0,
+        due_date=now + timedelta(days=10),
+    )
+    t_todo_mid = UnifiedTaskCandidate(
+        id="t-todo-40",
+        title="Todo task with moderate priority",
+        status=TaskStatus.TODO,
+        priority_override=40.0,
+        due_date=now + timedelta(days=10),
+    )
+    t_in_prog_low = UnifiedTaskCandidate(
+        id="t-inprog-10",
+        title="In-progress task with low priority",
+        status=TaskStatus.IN_PROGRESS,
+        priority_override=10.0,
+        due_date=now + timedelta(days=10),
+    )
+
+    board = planner.plan_today(
+        user_id="test-user",
+        tasks=[t_blocked_high, t_todo_mid, t_in_prog_low],
+        now=now,
+    )
+    top_ids = [t.task_id for t in board.top_tasks]
+    assert top_ids == ["t-inprog-10", "t-todo-40", "t-blocked-90"], (
+        "Status rank must take precedence: IN_PROGRESS (rank 1) > TODO (rank 2) > BLOCKED (rank 3)"
+    )
+
+    # 2. Priority score DESC within same status
+    t_todo_high = UnifiedTaskCandidate(
+        id="t-todo-95",
+        title="Todo high priority",
+        status=TaskStatus.TODO,
+        priority_override=95.0,
+    )
+    t_todo_low = UnifiedTaskCandidate(
+        id="t-todo-15",
+        title="Todo low priority",
+        status=TaskStatus.TODO,
+        priority_override=15.0,
+    )
+    board2 = planner.plan_today(
+        user_id="test-user",
+        tasks=[t_todo_low, t_todo_high],
+        now=now,
+    )
+    assert [t.task_id for t in board2.top_tasks] == ["t-todo-95", "t-todo-15"]
+
+    # 3. Tertiary: due_date ASC (nulls last) for same status and same priority
+    t_due_early = UnifiedTaskCandidate(
+        id="t-due-early",
+        title="Due early",
+        status=TaskStatus.TODO,
+        priority_override=50.0,
+        due_date=now + timedelta(days=1),
+    )
+    t_due_late = UnifiedTaskCandidate(
+        id="t-due-late",
+        title="Due late",
+        status=TaskStatus.TODO,
+        priority_override=50.0,
+        due_date=now + timedelta(days=5),
+    )
+    t_due_none = UnifiedTaskCandidate(
+        id="t-due-none",
+        title="Due none",
+        status=TaskStatus.TODO,
+        priority_override=50.0,
+        due_date=None,
+    )
+    board3 = planner.plan_today(
+        user_id="test-user",
+        tasks=[t_due_none, t_due_late, t_due_early],
+        now=now,
+    )
+    assert [t.task_id for t in board3.top_tasks] == ["t-due-early", "t-due-late", "t-due-none"], (
+        "Tertiary tiebreaker: earlier due_date must rank before later, and nulls must sort last"
+    )
+
+    # 4. Quaternary: updated_at DESC for same status, same priority, same due_date
+    t_upd_recent = UnifiedTaskCandidate(
+        id="t-upd-recent",
+        title="Updated recently",
+        status=TaskStatus.TODO,
+        priority_override=50.0,
+        due_date=now + timedelta(days=2),
+        updated_at=now - timedelta(hours=1),
+    )
+    t_upd_older = UnifiedTaskCandidate(
+        id="t-upd-older",
+        title="Updated older",
+        status=TaskStatus.TODO,
+        priority_override=50.0,
+        due_date=now + timedelta(days=2),
+        updated_at=now - timedelta(days=2),
+    )
+    t_upd_none = UnifiedTaskCandidate(
+        id="t-upd-none",
+        title="Never updated",
+        status=TaskStatus.TODO,
+        priority_override=50.0,
+        due_date=now + timedelta(days=2),
+        updated_at=None,
+    )
+    board4 = planner.plan_today(
+        user_id="test-user",
+        tasks=[t_upd_none, t_upd_older, t_upd_recent],
+        now=now,
+    )
+    assert [t.task_id for t in board4.top_tasks] == ["t-upd-recent", "t-upd-older", "t-upd-none"], (
+        "Quaternary tiebreaker: more recent updated_at must rank first, and None last"
+    )
+
+    # 5. Empty dataset handling
+    board_empty = planner.plan_today(user_id="test-user", tasks=[], now=now)
+    assert len(board_empty.top_tasks) == 0
+    assert "không có việc tồn đọng" in board_empty.summary_headline.lower()
+

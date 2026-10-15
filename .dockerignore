@@ -18,3 +18,7 @@ node_modules
 *.tmp
 data/
 *.gguf
+.env
+.env*.local
+*.pem
+*.key

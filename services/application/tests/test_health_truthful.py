@@ -318,6 +318,16 @@ def test_local_ai_disabled_reports_disabled_and_healthy(monkeypatch):
 def test_local_ai_enabled_unreachable_reports_degraded(monkeypatch):
     """Test Local AI Enabled invariant: PTB_ENABLE_LOCAL_AI=true -> unreachable -> unavailable & status = degraded."""
     monkeypatch.setenv("PTB_ENABLE_LOCAL_AI", "true")
+    import socket
+
+    orig_connect = socket.socket.connect
+
+    def _mock_connect(self, address):
+        if isinstance(address, tuple) and len(address) >= 2 and address[1] in (8081, 8082):
+            raise ConnectionRefusedError("Simulated unreachable local AI service")
+        return orig_connect(self, address)
+
+    monkeypatch.setattr(socket.socket, "connect", _mock_connect)
 
     service = ApplicationService(
         neo4j_client=MockNeo4j(),

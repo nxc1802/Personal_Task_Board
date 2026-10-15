@@ -1,0 +1,252 @@
+[
+  {
+    "probe_id": "probe-01-missing-timestamp",
+    "probe_group": "input_robustness",
+    "name": "Missing timestamp graceful fallback",
+    "target_module": "L1.Acquisition",
+    "fault_injection": "Set raw_event.event_timestamp to None in ingestion stream",
+    "expected_behavior": "Pipeline assigns captured_at as authoritative fallback without raising uncaught exception",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/01"
+  },
+  {
+    "probe_id": "probe-02-empty-payload",
+    "probe_group": "input_robustness",
+    "name": "Empty payload rejection",
+    "target_module": "L2.HeuristicFilter",
+    "fault_injection": "Set raw_payload to empty dict and normalized_text to empty string",
+    "expected_behavior": "Filter rejects empty event gracefully with should_extract=False",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/02"
+  },
+  {
+    "probe_id": "probe-03-malformed-json-payload",
+    "probe_group": "input_robustness",
+    "name": "Malformed JSON payload parsing recovery",
+    "target_module": "L2.UnifiedChannelParser",
+    "fault_injection": "Pass corrupted non-JSON serialized payload string into channel parser",
+    "expected_behavior": "Parser catches deserialization error gracefully, fallbacks to raw string",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/03"
+  },
+  {
+    "probe_id": "probe-04-oversized-text-payload",
+    "probe_group": "input_robustness",
+    "name": "Oversized text message truncation guard",
+    "target_module": "L1.Sanitizer",
+    "fault_injection": "Ingest single raw event containing 1.5MB text block",
+    "expected_behavior": "Sanitizer safely truncates to max safe buffer length without OOM",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/04"
+  },
+  {
+    "probe_id": "probe-05-invalid-source-type",
+    "probe_group": "input_robustness",
+    "name": "Unknown source_type adapter routing",
+    "target_module": "L1.AdapterRouter",
+    "fault_injection": "Inject event with unrecognized source_type 'custom_legacy_crm'",
+    "expected_behavior": "Acquisition logs unknown adapter and applies generic fallback parser",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/05"
+  },
+  {
+    "probe_id": "probe-06-missing-idempotency-key",
+    "probe_group": "input_robustness",
+    "name": "Missing idempotency key deterministic regeneration",
+    "target_module": "L1.AcquisitionPipeline",
+    "fault_injection": "Submit RawEventRecord with empty idempotency_key",
+    "expected_behavior": "Acquisition pipeline recomputes deterministic SHA256 key from payload",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/06"
+  },
+  {
+    "probe_id": "probe-07-duplicate-event-replay",
+    "probe_group": "concurrency_and_lifecycle",
+    "name": "Duplicate event ingestion rejection",
+    "target_module": "L1.JournalRepository",
+    "fault_injection": "Ingest exact duplicate event with identical idempotency_key twice",
+    "expected_behavior": "Journal rejects second entry as duplicate without creating duplicate task",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/07"
+  },
+  {
+    "probe_id": "probe-08-out-of-order-event-delivery",
+    "probe_group": "concurrency_and_lifecycle",
+    "name": "Out-of-order event delivery handling",
+    "target_module": "L3.Lifecycle",
+    "fault_injection": "Deliver earlier event timestamp after a later event on the same ticket has processed",
+    "expected_behavior": "Lifecycle preserves newer state without rolling back authoritative state",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/08"
+  },
+  {
+    "probe_id": "probe-09-llm-timeout-recovery",
+    "probe_group": "infrastructure_recovery",
+    "name": "LLM extractor timeout resilience",
+    "target_module": "L2.LLMStructuredExtractor",
+    "fault_injection": "Simulate 5000ms network timeout on LLM completion endpoint",
+    "expected_behavior": "Pipeline records retry attempt and marks case PENDING without crashing process",
+    "expected_state_or_status": "PENDING",
+    "origin_reference": "ptb_500://probes/09"
+  },
+  {
+    "probe_id": "probe-10-llm-rate-limit-429",
+    "probe_group": "infrastructure_recovery",
+    "name": "LLM API rate limit 429 backoff",
+    "target_module": "L2.LLMStructuredExtractor",
+    "fault_injection": "Simulate HTTP 429 Too Many Requests response with retry-after header",
+    "expected_behavior": "Extractor catches HTTP 429, logs rate limit, marks status RETRY",
+    "expected_state_or_status": "RETRY",
+    "origin_reference": "ptb_500://probes/10"
+  },
+  {
+    "probe_id": "probe-11-neo4j-transient-disconnect",
+    "probe_group": "infrastructure_recovery",
+    "name": "Graph database transient connection recovery",
+    "target_module": "L4.Neo4jDomainRepository",
+    "fault_injection": "Simulate socket disconnect during Cypher transaction execution",
+    "expected_behavior": "Repository triggers exponential backoff retry policy",
+    "expected_state_or_status": "RETRY",
+    "origin_reference": "ptb_500://probes/11"
+  },
+  {
+    "probe_id": "probe-12-graphiti-sync-failure",
+    "probe_group": "infrastructure_recovery",
+    "name": "Secondary knowledge graph sync fault tolerance",
+    "target_module": "L2.EvidenceRecordSync",
+    "fault_injection": "Simulate network failure when syncing EvidenceRecord to Graphiti",
+    "expected_behavior": "Primary transaction succeeds; evidence graph_sync_status set to RETRY",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/12"
+  },
+  {
+    "probe_id": "probe-13-corrupted-unicode-null-bytes",
+    "probe_group": "input_robustness",
+    "name": "Corrupted unicode and null bytes stripping",
+    "target_module": "L1.Sanitizer",
+    "fault_injection": "Inject string with null bytes (\\x00) and orphaned UTF-16 surrogates",
+    "expected_behavior": "Sanitizer cleans illegal codepoints; database write completes cleanly",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/13"
+  },
+  {
+    "probe_id": "probe-14-future-timestamp-drift",
+    "probe_group": "input_robustness",
+    "name": "Far future timestamp drift validation",
+    "target_module": "L1.Sanitizer",
+    "fault_injection": "Submit event with event_timestamp set to year 2099",
+    "expected_behavior": "Sanitizer logs clock skew warning and clamps event timestamp to ingestion time",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/14"
+  },
+  {
+    "probe_id": "probe-15-deep-link-malformed-scheme",
+    "probe_group": "input_robustness",
+    "name": "Malformed deep_link URL scheme handling",
+    "target_module": "L1.Sanitizer",
+    "fault_injection": "Submit event with deep_link 'javascript:alert(1)' or 'htp:////invalid'",
+    "expected_behavior": "URL sanitizer rejects unsafe schemes, sanitizes deep_link to None",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/15"
+  },
+  {
+    "probe_id": "probe-16-quote-reply-attribution-confusion",
+    "probe_group": "attribution_and_identity",
+    "name": "Quote reply owner versus requester disambiguation",
+    "target_module": "L2.AttributionValidator",
+    "fault_injection": "Nested blockquote from Lead Tran, replied by Cuong Dam committing to task",
+    "expected_behavior": "Attribution assigns Cuong Dam as owner, Lead Tran as requester",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/16"
+  },
+  {
+    "probe_id": "probe-17-cross-tenant-impersonation",
+    "probe_group": "attribution_and_identity",
+    "name": "Cross-tenant impersonation attempt isolation",
+    "target_module": "L2.IdentityResolver",
+    "fault_injection": "Submit event claiming author email of another tenant with matching name",
+    "expected_behavior": "IdentityResolver blocks automatic merge across tenants; emits candidate signal",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/17"
+  },
+  {
+    "probe_id": "probe-18-unknown-author-display-name",
+    "probe_group": "attribution_and_identity",
+    "name": "Unregistered author display name handling",
+    "target_module": "L2.IdentityResolver",
+    "fault_injection": "Submit event from external email 'external_vendor@partner.com' without Persona",
+    "expected_behavior": "Resolver returns unresolved status without raising KeyError or unhandled exception",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/18"
+  },
+  {
+    "probe_id": "probe-19-conflicting-status-transition",
+    "probe_group": "concurrency_and_lifecycle",
+    "name": "Conflicting status transition state machine enforcement",
+    "target_module": "L3.StatusInferenceMachine",
+    "fault_injection": "Attempt direct illegal status jump from DONE to DISMISSED without reason",
+    "expected_behavior": "State machine enforces transition invariants, preserves verified status",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/19"
+  },
+  {
+    "probe_id": "probe-20-missing-required-jira-summary",
+    "probe_group": "input_robustness",
+    "name": "Missing summary field in Jira issue webhook",
+    "target_module": "L2.JiraIssueParser",
+    "fault_injection": "Jira webhook JSON payload with missing 'fields.summary' key",
+    "expected_behavior": "Parser falls back to issue key or description snippet without raising KeyError",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/20"
+  },
+  {
+    "probe_id": "probe-21-circular-parent-id-reference",
+    "probe_group": "concurrency_and_lifecycle",
+    "name": "Circular parent_external_id reference cycle breaker",
+    "target_module": "L2.HierarchyDetector",
+    "fault_injection": "Event A has parent_external_id pointing to Event B, and Event B points to Event A",
+    "expected_behavior": "Detector recognizes cyclic graph, breaks cycle safely without stack overflow",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/21"
+  },
+  {
+    "probe_id": "probe-22-null-author-external-id",
+    "probe_group": "input_robustness",
+    "name": "Null author external id fallback",
+    "target_module": "L1.AcquisitionPipeline",
+    "fault_injection": "RawEventRecord with empty or null author_external_id",
+    "expected_behavior": "Acquisition sets author to 'system-anonymous' without crashing",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/22"
+  },
+  {
+    "probe_id": "probe-23-concurrent-task-update-conflict",
+    "probe_group": "concurrency_and_lifecycle",
+    "name": "Concurrent task update version conflict resolution",
+    "target_module": "L4.TaskDomainRepository",
+    "fault_injection": "Simultaneous write of two differing updates against identical task version",
+    "expected_behavior": "Optimistic concurrency check retries stale transaction cleanly",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/23"
+  },
+  {
+    "probe_id": "probe-24-extremely-long-title-truncation",
+    "probe_group": "input_robustness",
+    "name": "Extremely long task title truncation",
+    "target_module": "L2.Extractor",
+    "fault_injection": "Event containing single paragraph of 2000 continuous characters without spaces",
+    "expected_behavior": "Extractor normalizes title length to 255 characters cleanly",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "ptb_500://probes/24"
+  },
+  {
+    "probe_id": "probe-25-unauthenticated-reset-guard",
+    "probe_group": "security_integrity",
+    "name": "Unauthenticated database reset endpoint rejection",
+    "target_module": "Security.Guard",
+    "fault_injection": "Issue HTTP POST /api/database/reset without bearer token or authorization",
+    "expected_behavior": "Security guard rejects request with 401/403 and writes security audit log",
+    "expected_state_or_status": "BLOCKED",
+    "origin_reference": "ptb_500://probes/25"
+  }
+]

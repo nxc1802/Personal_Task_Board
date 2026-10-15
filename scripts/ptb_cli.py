@@ -60,6 +60,9 @@ sys.path.insert(0, str(ROOT_DIR / "services" / "application" / "src"))
 sys.path.insert(0, str(ROOT_DIR / "services" / "mcp" / "src"))
 sys.path.insert(0, str(ROOT_DIR / "packages" / "graph_memory" / "src"))
 sys.path.insert(0, str(ROOT_DIR))
+venv_sp = ROOT_DIR / ".venv" / "Lib" / "site-packages"
+if venv_sp.exists() and str(venv_sp) not in sys.path:
+    sys.path.append(str(venv_sp))
 
 from ptb_contracts import BugCode, log_bug
 
@@ -161,23 +164,29 @@ class AdapterPollingRunner:
 
     def __init__(
         self,
-        name: str,
-        adapter: Any,
-        pipeline: Any,
+        name: Optional[str] = None,
+        adapter: Optional[Any] = None,
+        pipeline: Optional[Any] = None,
         poll_interval: float = 60.0,
         min_backoff: float = 5.0,
         max_backoff: float = 300.0,
         backoff_multiplier: float = 2.0,
         display_name: Optional[str] = None,
     ):
-        self.name = name
+        if adapter is None:
+            raise ValueError("Cần cung cấp adapter cho AdapterPollingRunner")
+        if pipeline is None:
+            raise ValueError("Cần cung cấp pipeline cho AdapterPollingRunner")
+
+        resolved_name = name or (adapter.source_type.value if hasattr(adapter.source_type, "value") else str(adapter.source_type))
+        self.name = resolved_name
         self.adapter = adapter
         self.pipeline = pipeline
         self.poll_interval = max(poll_interval, 0.05)
         self.min_backoff = max(min_backoff, 0.05)
         self.max_backoff = max_backoff
         self.backoff_multiplier = backoff_multiplier
-        self.display_name = display_name or name.replace("_", " ").title()
+        self.display_name = display_name or resolved_name.replace("_", " ").title()
 
         self.consecutive_failures: int = 0
         self.status: str = "INITIALIZING"
@@ -186,51 +195,63 @@ class AdapterPollingRunner:
         self.total_synced_events: int = 0
         self.sync_count: int = 0
 
+    async def poll_once(self) -> float:
+        """Thực thi một chu kỳ sync đơn lẻ, trả về thời gian chờ (poll_interval hoặc backoff)."""
+        try:
+            events_synced = await self.pipeline.sync_adapter(self.adapter, stream_id="all", raise_on_error=True)
+            self.sync_count += 1
+            self.total_synced_events += events_synced
+            self.consecutive_failures = 0
+            self.status = "HEALTHY"
+            self.last_sync_time = datetime.now(timezone.utc)
+            self.last_error = None
+            return self.poll_interval
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self.consecutive_failures += 1
+            self.status = "DEGRADED"
+            self.last_error = str(e)
+            retry_after = getattr(e, "retry_after_seconds", None)
+            if retry_after is not None and retry_after > 0:
+                backoff = min(self.max_backoff, max(self.min_backoff, float(retry_after)))
+            else:
+                backoff = min(
+                    self.max_backoff,
+                    self.min_backoff * (self.backoff_multiplier ** (self.consecutive_failures - 1)),
+                )
+            logger.warning(
+                "Adapter '%s' (%s) polling error (attempt %d): %s. Backoff for %.1fs.",
+                self.name,
+                getattr(self.adapter, "source_type", "unknown"),
+                self.consecutive_failures,
+                e,
+                backoff,
+            )
+            src_val = getattr(self.adapter, "source_type", None)
+            src_type_str = src_val.value if hasattr(src_val, "value") else str(src_val) if src_val else self.name
+            log_bug(
+                code=BugCode.PTB_L1_002,
+                subsystem=f"adapter_{self.name.lower()}",
+                severity="WARNING",
+                message=f"Adapter {self.name} synchronization failed: {e}",
+                source_type=src_type_str,
+                tenant_id=getattr(self.adapter, "tenant_id", None),
+                exc=e,
+                context={"consecutive_failures": self.consecutive_failures, "backoff": backoff},
+            )
+            return backoff
+
     async def run_loop(self, should_run_fn: Callable[[], bool]) -> None:
         """Thực thi vòng lặp polling định kỳ với checkpoint và independent retry/backoff."""
         self.status = "HEALTHY"
         while should_run_fn():
             try:
-                events_synced = await self.pipeline.sync_adapter(self.adapter, stream_id="all")
-                self.sync_count += 1
-                self.total_synced_events += events_synced
-                self.consecutive_failures = 0
-                self.status = "HEALTHY"
-                self.last_sync_time = datetime.now(timezone.utc)
-                self.last_error = None
-                sleep_time = self.poll_interval
+                sleep_time = await self.poll_once()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.consecutive_failures += 1
-                self.status = "DEGRADED"
-                self.last_error = str(e)
-                backoff = min(
-                    self.max_backoff,
-                    self.min_backoff * (self.backoff_multiplier ** (self.consecutive_failures - 1)),
-                )
-                logger.warning(
-                    "Adapter '%s' (%s) polling error (attempt %d): %s. Backoff for %.1fs.",
-                    self.name,
-                    getattr(self.adapter, "source_type", "unknown"),
-                    self.consecutive_failures,
-                    e,
-                    backoff,
-                )
-                src_val = getattr(self.adapter, "source_type", None)
-                src_type_str = src_val.value if hasattr(src_val, "value") else str(src_val) if src_val else self.name
-                log_bug(
-                    code=BugCode.PTB_L1_002,
-                    subsystem=f"adapter_{self.name.lower()}",
-                    severity="WARNING",
-                    message=f"Adapter {self.name} synchronization failed: {e}",
-                    source_type=src_type_str,
-                    tenant_id=getattr(self.adapter, "tenant_id", None),
-                    exc=e,
-                    context={"consecutive_failures": self.consecutive_failures, "backoff": backoff},
-                )
-                sleep_time = backoff
-
+            except Exception:
+                sleep_time = self.min_backoff
             try:
                 await asyncio.sleep(sleep_time)
             except asyncio.CancelledError:
@@ -270,10 +291,15 @@ class PTBProcessSupervisor:
         git_adapter: Optional[Any] = None,
         jira_adapter: Optional[Any] = None,
         shortcut_adapter: Optional[Any] = None,
+        confluence_adapter: Optional[Any] = None,
+        github_adapter: Optional[Any] = None,
+        slack_adapter: Optional[Any] = None,
+        outlook_adapter: Optional[Any] = None,
         sync_worker: Optional[Any] = None,
+        port: Optional[int] = None,
     ):
         self.host = host or os.getenv("PTB_HOST", "127.0.0.1")
-        self.app_port = app_port or int(os.getenv("PTB_PORT", "8000"))
+        self.app_port = port or app_port or int(os.getenv("PTB_PORT", "8000"))
         self.mcp_port = mcp_port or int(os.getenv("PTB_MCP_PORT", "8001"))
         self.tenant_id = tenant_id
         self.enable_playwright = enable_playwright
@@ -286,11 +312,15 @@ class PTBProcessSupervisor:
         self.application_service = application_service
         self.sync_worker = sync_worker
 
-        self.sources_config = sources_config
         self.sources_config_path = sources_config_path
+        self.sources_config = sources_config or (get_sources_config(sources_config_path) if sources_config_path else None)
         self.git_adapter = git_adapter
         self.jira_adapter = jira_adapter
         self.shortcut_adapter = shortcut_adapter
+        self.confluence_adapter = confluence_adapter
+        self.github_adapter = github_adapter
+        self.slack_adapter = slack_adapter
+        self.outlook_adapter = outlook_adapter
 
         self.state: str = "INITIALIZING"
         self._running = False
@@ -520,6 +550,10 @@ class PTBProcessSupervisor:
             GitWatcherAdapter,
             JiraAdapter,
             ShortcutAdapter,
+            ConfluenceAdapter,
+            GitHubAdapter,
+            SlackAdapter,
+            OutlookMailAdapter,
         )
 
         acq_pipeline = AcquisitionPipeline(
@@ -681,6 +715,180 @@ class PTBProcessSupervisor:
         elif shortcut_enabled and not shortcut_token:
             logger.info("Shortcut adapter enabled in configuration but missing api_token. Skipped polling.")
 
+        # (e) Confluence Knowledge & Meeting Notes Adapter
+        conf_cfg = sources_dict.get("confluence", {})
+        conf_enabled = conf_cfg.get("enabled", False) if isinstance(conf_cfg, dict) else False
+        conf_token = (conf_cfg.get("api_token") or os.getenv("CONFLUENCE_API_TOKEN", "")).strip() if isinstance(conf_cfg, dict) else os.getenv("CONFLUENCE_API_TOKEN", "").strip()
+        conf_url = (conf_cfg.get("base_url") or os.getenv("CONFLUENCE_BASE_URL", "")).strip() if isinstance(conf_cfg, dict) else os.getenv("CONFLUENCE_BASE_URL", "").strip()
+
+        if self.confluence_adapter is not None:
+            c_adapter = self.confluence_adapter
+            acq_pipeline.register_adapter("confluence", c_adapter)
+            conf_poll = float(conf_cfg.get("poll_interval_seconds", 120.0)) if isinstance(conf_cfg, dict) else 120.0
+            if self.poll_interval < 1.0:
+                conf_poll = min(conf_poll, self.poll_interval)
+            conf_runner = AdapterPollingRunner(
+                name="confluence",
+                adapter=c_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=conf_poll,
+                min_backoff=min(5.0, conf_poll),
+                display_name="Confluence Docs",
+            )
+            self.adapter_runners["confluence"] = conf_runner
+        elif (conf_enabled or conf_token) and conf_token and conf_url:
+            c_adapter = ConfluenceAdapter(
+                base_url=conf_url,
+                email=conf_cfg.get("email") or os.getenv("CONFLUENCE_EMAIL"),
+                api_token=conf_token,
+                space_keys=conf_cfg.get("space_keys", []),
+                tenant_id=self.tenant_id,
+            )
+            acq_pipeline.register_adapter("confluence", c_adapter)
+            conf_poll = float(conf_cfg.get("poll_interval_seconds", 120.0)) if isinstance(conf_cfg, dict) else 120.0
+            if self.poll_interval < 1.0:
+                conf_poll = min(conf_poll, self.poll_interval)
+            conf_runner = AdapterPollingRunner(
+                name="confluence",
+                adapter=c_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=conf_poll,
+                min_backoff=min(5.0, conf_poll),
+                display_name="Confluence Docs",
+            )
+            self.adapter_runners["confluence"] = conf_runner
+        elif conf_enabled and (not conf_token or not conf_url):
+            logger.info("Confluence adapter enabled in configuration but missing base_url or api_token. Skipped polling.")
+
+        # (f) GitHub Issues & Pull Requests Adapter
+        gh_cfg = sources_dict.get("github", {})
+        gh_enabled = gh_cfg.get("enabled", False) if isinstance(gh_cfg, dict) else False
+        gh_token = (gh_cfg.get("api_token") or os.getenv("GITHUB_TOKEN", "")).strip() if isinstance(gh_cfg, dict) else os.getenv("GITHUB_TOKEN", "").strip()
+        gh_repos = gh_cfg.get("repositories", []) if isinstance(gh_cfg, dict) else []
+
+        if self.github_adapter is not None:
+            gh_adapter_inst = self.github_adapter
+            acq_pipeline.register_adapter("github", gh_adapter_inst)
+            gh_poll = float(gh_cfg.get("poll_interval_seconds", 60.0)) if isinstance(gh_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                gh_poll = min(gh_poll, self.poll_interval)
+            gh_runner = AdapterPollingRunner(
+                name="github",
+                adapter=gh_adapter_inst,
+                pipeline=acq_pipeline,
+                poll_interval=gh_poll,
+                min_backoff=min(5.0, gh_poll),
+                display_name="GitHub Repositories",
+            )
+            self.adapter_runners["github"] = gh_runner
+        elif (gh_enabled or gh_token) and (gh_token or gh_repos):
+            gh_adapter_inst = GitHubAdapter(
+                repositories=gh_repos,
+                api_token=gh_token,
+                tenant_id=self.tenant_id,
+            )
+            acq_pipeline.register_adapter("github", gh_adapter_inst)
+            gh_poll = float(gh_cfg.get("poll_interval_seconds", 60.0)) if isinstance(gh_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                gh_poll = min(gh_poll, self.poll_interval)
+            gh_runner = AdapterPollingRunner(
+                name="github",
+                adapter=gh_adapter_inst,
+                pipeline=acq_pipeline,
+                poll_interval=gh_poll,
+                min_backoff=min(5.0, gh_poll),
+                display_name="GitHub Repositories",
+            )
+            self.adapter_runners["github"] = gh_runner
+        elif gh_enabled and not gh_token:
+            logger.info("GitHub adapter enabled in configuration but missing api_token. Skipped polling.")
+
+        # (g) Slack Workspaces Adapter
+        slack_cfg = sources_dict.get("slack", {})
+        slack_enabled = slack_cfg.get("enabled", False) if isinstance(slack_cfg, dict) else False
+        slack_token = (slack_cfg.get("bot_token") or os.getenv("SLACK_BOT_TOKEN", "")).strip() if isinstance(slack_cfg, dict) else os.getenv("SLACK_BOT_TOKEN", "").strip()
+
+        if self.slack_adapter is not None:
+            slk_adapter = self.slack_adapter
+            acq_pipeline.register_adapter("slack", slk_adapter)
+            slack_poll = float(slack_cfg.get("poll_interval_seconds", 60.0)) if isinstance(slack_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                slack_poll = min(slack_poll, self.poll_interval)
+            slk_runner = AdapterPollingRunner(
+                name="slack",
+                adapter=slk_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=slack_poll,
+                min_backoff=min(5.0, slack_poll),
+                display_name="Slack Workspace",
+            )
+            self.adapter_runners["slack"] = slk_runner
+        elif (slack_enabled or slack_token) and slack_token:
+            slk_adapter = SlackAdapter(
+                bot_token=slack_token,
+                channels=slack_cfg.get("channels", []),
+                tenant_id=self.tenant_id,
+            )
+            acq_pipeline.register_adapter("slack", slk_adapter)
+            slack_poll = float(slack_cfg.get("poll_interval_seconds", 60.0)) if isinstance(slack_cfg, dict) else 60.0
+            if self.poll_interval < 1.0:
+                slack_poll = min(slack_poll, self.poll_interval)
+            slk_runner = AdapterPollingRunner(
+                name="slack",
+                adapter=slk_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=slack_poll,
+                min_backoff=min(5.0, slack_poll),
+                display_name="Slack Workspace",
+            )
+            self.adapter_runners["slack"] = slk_runner
+        elif slack_enabled and not slack_token:
+            logger.info("Slack adapter enabled in configuration but missing bot_token. Skipped polling.")
+
+        # (h) Microsoft Outlook Direct REST / Graph API Adapter
+        outlook_cfg = sources_dict.get("ms_outlook") or sources_dict.get("outlook", {})
+        outlook_enabled = outlook_cfg.get("enabled", False) if isinstance(outlook_cfg, dict) else False
+        outlook_token = (outlook_cfg.get("graph_token") or os.getenv("MS_GRAPH_TOKEN", "")).strip() if isinstance(outlook_cfg, dict) else os.getenv("MS_GRAPH_TOKEN", "").strip()
+
+        if self.outlook_adapter is not None:
+            otl_adapter = self.outlook_adapter
+            acq_pipeline.register_adapter("outlook", otl_adapter)
+            outlook_poll = float(outlook_cfg.get("poll_interval_seconds", 120.0)) if isinstance(outlook_cfg, dict) else 120.0
+            if self.poll_interval < 1.0:
+                outlook_poll = min(outlook_poll, self.poll_interval)
+            otl_runner = AdapterPollingRunner(
+                name="outlook",
+                adapter=otl_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=outlook_poll,
+                min_backoff=min(5.0, outlook_poll),
+                display_name="Outlook Direct Mail",
+            )
+            self.adapter_runners["outlook"] = otl_runner
+        elif (outlook_enabled or outlook_token) and outlook_token:
+            otl_adapter = OutlookMailAdapter(
+                tenant_id=self.tenant_id,
+                graph_token=outlook_token,
+                mailbox=outlook_cfg.get("mailbox") or os.getenv("MS_OUTLOOK_MAILBOX"),
+                folders=outlook_cfg.get("folders", ["Inbox"]),
+                storage_path=self.storage_path,
+            )
+            acq_pipeline.register_adapter("outlook", otl_adapter)
+            outlook_poll = float(outlook_cfg.get("poll_interval_seconds", 120.0)) if isinstance(outlook_cfg, dict) else 120.0
+            if self.poll_interval < 1.0:
+                outlook_poll = min(outlook_poll, self.poll_interval)
+            otl_runner = AdapterPollingRunner(
+                name="outlook",
+                adapter=otl_adapter,
+                pipeline=acq_pipeline,
+                poll_interval=outlook_poll,
+                min_backoff=min(5.0, outlook_poll),
+                display_name="Outlook Direct Mail",
+            )
+            self.adapter_runners["outlook"] = otl_runner
+        elif outlook_enabled and not outlook_token:
+            logger.info("Outlook adapter enabled in configuration but missing graph_token. Skipped polling.")
+
         # 3. Processing Worker
         from ptb_intelligence.lifecycle import TaskIntelligenceLifecycle
 
@@ -744,10 +952,16 @@ class PTBProcessSupervisor:
         )
         self.app_server = uvicorn.Server(app_config)
 
-        from ptb_mcp.server import create_mcp_server, set_application_service as set_mcp_app_service
+        from ptb_mcp.server import create_mcp_server, get_mcp_health, set_application_service as set_mcp_app_service
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
         set_mcp_app_service(shared_service)
         mcp_srv = create_mcp_server(application_service=shared_service)
         starlette_mcp = mcp_srv.sse_app(host=self.host)
+        async def _mcp_health_route(req):
+            h_data = await get_mcp_health(shared_service)
+            return JSONResponse(h_data)
+        starlette_mcp.routes.append(Route("/health", _mcp_health_route))
         mcp_config = uvicorn.Config(
             starlette_mcp,
             host=self.host,
@@ -872,39 +1086,52 @@ class PTBProcessSupervisor:
                     "Playwright session state: %s. Runner in standby. Run 'ptb login microsoft' to connect.",
                     validation_state.value,
                 )
-                while self._running:
-                    try:
-                        await asyncio.sleep(0.5)
-                    except asyncio.CancelledError:
-                        break
-                return
 
-            try:
-                await self.playwright_orchestrator.start_interceptor(run_sweep=True)
-            except asyncio.CancelledError:
-                self.playwright_orchestrator.stop()
-            except Exception as pw_err:
-                logger.warning("Playwright acquisition runner stopped: %s. Entering standby.", pw_err)
-                log_bug(
-                    code=BugCode.PTB_L1_002,
-                    subsystem="playwright",
-                    severity="WARNING",
-                    message=f"Playwright acquisition runner stopped: {pw_err}",
-                    exc=pw_err,
-                )
-                while self._running:
+            while self._running:
+                val_state = self.playwright_orchestrator.session_mgr.validate_session()
+                if val_state in (
+                    SessionHealthState.UNCONFIGURED,
+                    SessionHealthState.LOGIN_REQUIRED,
+                    SessionHealthState.AUTH_EXPIRED,
+                ):
                     try:
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(2.0)
                     except asyncio.CancelledError:
                         break
+                    continue
+
+                try:
+                    await self.playwright_orchestrator.start_interceptor(run_sweep=True)
+                except asyncio.CancelledError:
+                    self.playwright_orchestrator.stop()
+                    break
+                except Exception as pw_err:
+                    logger.warning("Playwright acquisition runner stopped: %s. Entering standby.", pw_err)
+                    log_bug(
+                        code=BugCode.PTB_L1_002,
+                        subsystem="playwright",
+                        severity="WARNING",
+                        message=f"Playwright acquisition runner stopped: {pw_err}",
+                        exc=pw_err,
+                    )
+                    try:
+                        await asyncio.sleep(5.0)
+                    except asyncio.CancelledError:
+                        break
+
+                try:
+                    await asyncio.sleep(self.poll_interval)
+                except asyncio.CancelledError:
+                    break
 
         self.tasks.append(
             asyncio.create_task(_playwright_loop(), name="ptb-playwright-loop")
         )
 
         # 7. Health Polling Supervisor Mechanism
-        app_url = f"http://{self.host}:{self.app_port}/health"
-        mcp_url = f"http://{self.host}:{self.mcp_port}/health"
+        poll_host = "127.0.0.1" if self.host in ("0.0.0.0", "::", "") else self.host
+        app_url = f"http://{poll_host}:{self.app_port}/health"
+        mcp_url = f"http://{poll_host}:{self.mcp_port}/health"
 
         app_ready = False
         mcp_ready = False
@@ -1515,6 +1742,278 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
         "details": kev_detail,
     })
 
+    # 10. Multi-Source Ingestion Channels (9 Channels Health Audit)
+    sources_cfg_doc = get_sources_config(getattr(args, "config", None))
+    src_cfg_dict = sources_cfg_doc.get("sources", {}) if isinstance(sources_cfg_doc, dict) else {}
+
+    # (1) Coding Agent Watchers
+    ca_status = "NOT_CONFIGURED"
+    ca_detail = ""
+    try:
+        from ptb_acquisition.adapters import AgentWatchersAdapter
+        ca_adapter = AgentWatchersAdapter()
+        ca_health = await ca_adapter.health()
+        watchers_map = ca_health.get("watchers", {})
+        installed_cnt = sum(1 for w in watchers_map.values() if isinstance(w, dict) and w.get("installed") is True)
+        if installed_cnt > 0:
+            ca_status = "READY"
+            ca_detail = f"{installed_cnt} agent watchers active"
+        else:
+            ca_status = "READY"
+            ca_detail = "0 active logs detected (standby)"
+    except Exception as ex:
+        ca_status = "DEGRADED"
+        ca_detail = str(ex)
+
+    # (2) Local Git
+    git_status = "NOT_CONFIGURED"
+    git_detail = ""
+    try:
+        from ptb_acquisition.adapters import GitWatcherAdapter
+        g_cfg = src_cfg_dict.get("git", {})
+        r_paths = g_cfg.get("repo_paths", [str(ROOT_DIR)]) if isinstance(g_cfg, dict) else [str(ROOT_DIR)]
+        expanded_paths = [os.path.expanduser(p) for p in r_paths if os.path.exists(os.path.expanduser(p))]
+        if not expanded_paths:
+            expanded_paths = [str(ROOT_DIR)]
+        git_ad = GitWatcherAdapter(repo_paths=expanded_paths)
+        g_health = await git_ad.health()
+        valid_repos = g_health.get("valid_git_repos", [])
+        if valid_repos:
+            git_status = "READY"
+            git_detail = f"{len(valid_repos)} valid git repo(s) found"
+        else:
+            git_status = "NOT_CONFIGURED"
+            git_detail = "No git repos found"
+    except Exception as ex:
+        git_status = "DEGRADED"
+        git_detail = str(ex)
+
+    # (3) Microsoft Teams
+    teams_status = "NOT_CONFIGURED"
+    teams_detail = ""
+    try:
+        from ptb_acquisition.playwright.session import SessionManager, SessionHealthState
+        storage_file = (
+            os.getenv("PTB_STORAGE_STATE")
+            or (src_cfg_dict.get("ms_teams", {}).get("storage_state_path") if isinstance(src_cfg_dict.get("ms_teams"), dict) else None)
+            or os.path.join(ROOT_DIR, "data", "playwright", "storage_state.json")
+        )
+        if not os.path.exists(storage_file):
+            teams_status = "NOT_CONFIGURED"
+            teams_detail = "storage_state.json missing"
+        else:
+            t_mgr = SessionManager(storage_file)
+            val = t_mgr.validate_session()
+            if val in (SessionHealthState.HEALTHY, SessionHealthState.STARTING):
+                teams_status = "READY"
+                teams_detail = f"Session cookies valid ({val.value})"
+            elif val in (SessionHealthState.LOGIN_REQUIRED, SessionHealthState.AUTH_EXPIRED, SessionHealthState.UNCONFIGURED):
+                teams_status = "AUTH_REQUIRED"
+                teams_detail = f"Session {val.value}: run 'ptb login microsoft'"
+            else:
+                teams_status = "DEGRADED"
+                teams_detail = f"Session state {val.value}"
+    except Exception as ex:
+        teams_status = "DEGRADED"
+        teams_detail = str(ex)
+
+    # (4) Microsoft Outlook Direct
+    outlook_status = "NOT_CONFIGURED"
+    outlook_detail = ""
+    try:
+        from ptb_acquisition.adapters import OutlookMailAdapter
+        otl_cfg = src_cfg_dict.get("ms_outlook") or src_cfg_dict.get("outlook", {})
+        otl_tok = (otl_cfg.get("graph_token") or os.getenv("MS_GRAPH_TOKEN", "")).strip() if isinstance(otl_cfg, dict) else os.getenv("MS_GRAPH_TOKEN", "").strip()
+        if not otl_tok:
+            outlook_status = "NOT_CONFIGURED"
+            outlook_detail = "Missing MS_GRAPH_TOKEN"
+        else:
+            otl_ad = OutlookMailAdapter(graph_token=otl_tok)
+            otl_health = await otl_ad.health()
+            st = str(otl_health.get("status", "")).upper()
+            if "HEALTHY" in st or "READY" in st:
+                outlook_status = "READY"
+                outlook_detail = f"Mailbox: {otl_health.get('mailbox', 'me')}"
+            elif "AUTH" in st:
+                outlook_status = "AUTH_REQUIRED"
+                outlook_detail = otl_health.get("error", "Auth token expired or invalid")
+            else:
+                outlook_status = "DEGRADED"
+                outlook_detail = otl_health.get("error", "Service degraded")
+    except Exception as ex:
+        outlook_status = "DEGRADED"
+        outlook_detail = str(ex)
+
+    # (5) Jira Cloud / Server
+    jira_status = "NOT_CONFIGURED"
+    jira_detail = ""
+    try:
+        from ptb_acquisition.adapters import JiraAdapter
+        j_cfg = src_cfg_dict.get("jira", {})
+        j_tok = (j_cfg.get("api_token") or os.getenv("JIRA_API_TOKEN", "")).strip() if isinstance(j_cfg, dict) else os.getenv("JIRA_API_TOKEN", "").strip()
+        j_url = (j_cfg.get("base_url") or os.getenv("JIRA_BASE_URL", "")).strip() if isinstance(j_cfg, dict) else os.getenv("JIRA_BASE_URL", "").strip()
+        if not j_tok or not j_url:
+            jira_status = "NOT_CONFIGURED"
+            jira_detail = "Missing JIRA_BASE_URL or JIRA_API_TOKEN"
+        else:
+            j_ad = JiraAdapter(base_url=j_url, api_token=j_tok, email=j_cfg.get("email") if isinstance(j_cfg, dict) else None)
+            j_health = await j_ad.health()
+            st = str(j_health.get("status", "")).upper()
+            if "HEALTHY" in st or "READY" in st:
+                jira_status = "READY"
+                jira_detail = f"User: {j_health.get('user', 'connected')}"
+            elif "AUTH" in st:
+                jira_status = "AUTH_REQUIRED"
+                jira_detail = j_health.get("error", "Invalid API token or unauthorized")
+            else:
+                jira_status = "DEGRADED"
+                jira_detail = j_health.get("error", "Endpoint unreachable")
+    except Exception as ex:
+        jira_status = "DEGRADED"
+        jira_detail = str(ex)
+
+    # (6) Shortcut Stories
+    shortcut_status = "NOT_CONFIGURED"
+    shortcut_detail = ""
+    try:
+        from ptb_acquisition.adapters import ShortcutAdapter
+        sc_cfg = src_cfg_dict.get("shortcut", {})
+        sc_tok = (sc_cfg.get("api_token") or os.getenv("SHORTCUT_API_TOKEN", "")).strip() if isinstance(sc_cfg, dict) else os.getenv("SHORTCUT_API_TOKEN", "").strip()
+        if not sc_tok:
+            shortcut_status = "NOT_CONFIGURED"
+            shortcut_detail = "Missing SHORTCUT_API_TOKEN"
+        else:
+            sc_ad = ShortcutAdapter(api_token=sc_tok, base_url=sc_cfg.get("base_url") if isinstance(sc_cfg, dict) else None)
+            sc_health = await sc_ad.health()
+            st = str(sc_health.get("status", "")).upper()
+            if "HEALTHY" in st or "READY" in st:
+                shortcut_status = "READY"
+                shortcut_detail = f"User: {sc_health.get('user', 'connected')}"
+            elif "AUTH" in st:
+                shortcut_status = "AUTH_REQUIRED"
+                shortcut_detail = sc_health.get("error", "Invalid API token")
+            else:
+                shortcut_status = "DEGRADED"
+                shortcut_detail = sc_health.get("error", "Service degraded")
+    except Exception as ex:
+        shortcut_status = "DEGRADED"
+        shortcut_detail = str(ex)
+
+    # (7) Confluence Docs
+    conf_status = "NOT_CONFIGURED"
+    conf_detail = ""
+    try:
+        from ptb_acquisition.adapters import ConfluenceAdapter
+        c_cfg = src_cfg_dict.get("confluence", {})
+        c_tok = (c_cfg.get("api_token") or os.getenv("CONFLUENCE_API_TOKEN", "")).strip() if isinstance(c_cfg, dict) else os.getenv("CONFLUENCE_API_TOKEN", "").strip()
+        c_url = (c_cfg.get("base_url") or os.getenv("CONFLUENCE_BASE_URL", "")).strip() if isinstance(c_cfg, dict) else os.getenv("CONFLUENCE_BASE_URL", "").strip()
+        if not c_tok or not c_url:
+            conf_status = "NOT_CONFIGURED"
+            conf_detail = "Missing CONFLUENCE_BASE_URL or CONFLUENCE_API_TOKEN"
+        else:
+            c_ad = ConfluenceAdapter(base_url=c_url, api_token=c_tok, email=c_cfg.get("email") if isinstance(c_cfg, dict) else None)
+            c_health = await c_ad.health()
+            st = str(c_health.get("status", "")).upper()
+            if "HEALTHY" in st or "READY" in st:
+                conf_status = "READY"
+                conf_detail = f"User: {c_health.get('user', 'connected')}"
+            elif "AUTH" in st:
+                conf_status = "AUTH_REQUIRED"
+                conf_detail = c_health.get("error", "Invalid API token or unauthorized")
+            else:
+                conf_status = "DEGRADED"
+                conf_detail = c_health.get("error", "Endpoint unreachable")
+    except Exception as ex:
+        conf_status = "DEGRADED"
+        conf_detail = str(ex)
+
+    # (8) GitHub Repositories
+    gh_status = "NOT_CONFIGURED"
+    gh_detail = ""
+    try:
+        from ptb_acquisition.adapters import GitHubAdapter
+        g_cfg = src_cfg_dict.get("github", {})
+        g_tok = (g_cfg.get("api_token") or os.getenv("GITHUB_TOKEN", "")).strip() if isinstance(g_cfg, dict) else os.getenv("GITHUB_TOKEN", "").strip()
+        g_repos = g_cfg.get("repositories", []) if isinstance(g_cfg, dict) else []
+        if not g_tok and not g_repos:
+            gh_status = "NOT_CONFIGURED"
+            gh_detail = "Missing GITHUB_TOKEN"
+        else:
+            g_ad = GitHubAdapter(api_token=g_tok, repositories=g_repos)
+            g_health = await g_ad.health()
+            st = str(g_health.get("status", "")).upper()
+            if "HEALTHY" in st or "READY" in st:
+                gh_status = "READY"
+                gh_detail = f"User: {g_health.get('user', 'connected')}"
+            elif "AUTH" in st:
+                gh_status = "AUTH_REQUIRED"
+                gh_detail = g_health.get("error", "Invalid token")
+            else:
+                gh_status = "DEGRADED"
+                gh_detail = g_health.get("error", "Service degraded")
+    except Exception as ex:
+        gh_status = "DEGRADED"
+        gh_detail = str(ex)
+
+    # (9) Slack Workspaces
+    slack_status = "NOT_CONFIGURED"
+    slack_detail = ""
+    try:
+        from ptb_acquisition.adapters import SlackAdapter
+        sl_cfg = src_cfg_dict.get("slack", {})
+        sl_tok = (sl_cfg.get("bot_token") or os.getenv("SLACK_BOT_TOKEN", "")).strip() if isinstance(sl_cfg, dict) else os.getenv("SLACK_BOT_TOKEN", "").strip()
+        if not sl_tok:
+            slack_status = "NOT_CONFIGURED"
+            slack_detail = "Missing SLACK_BOT_TOKEN"
+        else:
+            sl_ad = SlackAdapter(bot_token=sl_tok, channels=sl_cfg.get("channels", []) if isinstance(sl_cfg, dict) else [])
+            sl_health = await sl_ad.health()
+            st = str(sl_health.get("status", "")).upper()
+            if "HEALTHY" in st or "READY" in st:
+                slack_status = "READY"
+                slack_detail = f"Team: {sl_health.get('team', 'connected')}"
+            elif "AUTH" in st:
+                slack_status = "AUTH_REQUIRED"
+                slack_detail = sl_health.get("error", "Invalid bot token")
+            else:
+                slack_status = "DEGRADED"
+                slack_detail = sl_health.get("error", "Service degraded")
+    except Exception as ex:
+        slack_status = "DEGRADED"
+        slack_detail = str(ex)
+
+    def _source_badge(st_code: str) -> str:
+        if st_code == "READY":
+            return f"{COLOR_GREEN}[{CHECK_CHAR}] READY{COLOR_RESET}"
+        elif st_code == "AUTH_REQUIRED":
+            return f"{COLOR_YELLOW}[!] AUTH_REQ{COLOR_RESET}"
+        elif st_code == "DEGRADED":
+            return f"{COLOR_YELLOW}[!] DEGRADED{COLOR_RESET}"
+        else:
+            return f"{COLOR_RESET}[i] NOT_CONFIG{COLOR_RESET}"
+
+    source_items = [
+        ("Source: Coding Agents", ca_status, ca_detail),
+        ("Source: Local Git", git_status, git_detail),
+        ("Source: Microsoft Teams", teams_status, teams_detail),
+        ("Source: Microsoft Outlook", outlook_status, outlook_detail),
+        ("Source: Jira Cloud/Server", jira_status, jira_detail),
+        ("Source: Shortcut Stories", shortcut_status, shortcut_detail),
+        ("Source: Confluence Docs", conf_status, conf_detail),
+        ("Source: GitHub Repos", gh_status, gh_detail),
+        ("Source: Slack Workspace", slack_status, slack_detail),
+    ]
+
+    for label, st_code, detail in source_items:
+        is_p = (st_code == "READY")
+        checks.append({
+            "component": label,
+            "status": _source_badge(st_code),
+            "is_pass": is_p,
+            "is_warn": not is_p,
+            "details": f"[{st_code}] {detail}",
+        })
+
     # In bảng tóm tắt
     print(f"\n{COLOR_BOLD}{'Component':<32} | {'Status':<14} | {'Details / Notes'}{COLOR_RESET}")
     print("-" * 75)
@@ -1965,6 +2464,41 @@ async def cmd_ingest(args: argparse.Namespace) -> int:
         elif target_source == "slack":
             print("  [!] Slack chưa được cấu hình credentials (SLACK_BOT_TOKEN)")
 
+    if target_source in ("all", "teams", "ms_teams"):
+        teams_cfg = src_dict.get("ms_teams", {})
+        storage_file = (
+            os.getenv("PTB_STORAGE_STATE")
+            or (teams_cfg.get("storage_state_path") if isinstance(teams_cfg, dict) else None)
+            or os.path.join(ROOT_DIR, "data", "playwright", "storage_state.json")
+        )
+        expanded_storage = os.path.expanduser(storage_file)
+        if os.path.exists(expanded_storage):
+            from ptb_acquisition.playwright.session import SessionManager, SessionHealthState
+            teams_mgr = SessionManager(expanded_storage)
+            val = teams_mgr.validate_session()
+            if val in (SessionHealthState.HEALTHY, SessionHealthState.STARTING):
+                try:
+                    from ptb_acquisition.playwright.runner import PlaywrightOrchestrator
+                    orchestrator = PlaywrightOrchestrator(
+                        storage_path=expanded_storage,
+                        pipeline=pipeline,
+                        raw_event_repo=raw_repo,
+                        tenant_id=f"{tenant_id}-microsoft",
+                        headless=True,
+                    )
+                    # Run on-demand capture sweep for Teams
+                    await orchestrator.start_interceptor(run_sweep=True)
+                    orchestrator.stop()
+                    print("  [Microsoft Teams] ✓ Hoàn tất: quét network interceptor.")
+                    results.append(("Microsoft Teams", "Success", 0))
+                except Exception as t_err:
+                    print(f"  [Microsoft Teams] ✗ Lỗi quét Playwright: {t_err}")
+                    results.append(("Microsoft Teams", f"Error: {t_err}", 0))
+            elif target_source in ("teams", "ms_teams"):
+                print("  [!] Microsoft Teams session chưa sẵn sàng (chạy 'ptb login microsoft')")
+        elif target_source in ("teams", "ms_teams"):
+            print(f"  [!] Microsoft Teams session file không tồn tại: {expanded_storage}")
+
     print(f"\n  -> Đang quét {len(adapters_to_run)} adapters đã kích hoạt...")
 
     total_synced = 0
@@ -2058,12 +2592,18 @@ async def cmd_serve(args: argparse.Namespace) -> int:
         async def _run_mcp():
             print("  [+] Đang khởi động FastMCP Read-Only Server...")
             try:
-                from ptb_mcp.server import create_mcp_server, set_application_service as set_mcp_app_service
+                from ptb_mcp.server import create_mcp_server, get_mcp_health, set_application_service as set_mcp_app_service
+                from starlette.responses import JSONResponse
+                from starlette.routing import Route
                 import uvicorn
                 if shared_service:
                     set_mcp_app_service(shared_service)
                 mcp_srv = create_mcp_server(application_service=shared_service)
                 starlette_mcp = mcp_srv.sse_app(host=args.host)
+                async def _mcp_health_route(req):
+                    h_data = await get_mcp_health(shared_service)
+                    return JSONResponse(h_data)
+                starlette_mcp.routes.append(Route("/health", _mcp_health_route))
                 mcp_config = uvicorn.Config(starlette_mcp, host=args.host, port=8001, log_level="warning")
                 mcp_server = uvicorn.Server(mcp_config)
                 await mcp_server.serve()
@@ -2378,7 +2918,27 @@ def main():
 
     # Command: ingest
     parser_ingest = subparsers.add_parser("ingest", help="Chạy 1 vòng quét tất cả các adapters")
-    parser_ingest.add_argument("--source", default="all", choices=["all", "coding_agent", "git", "jira", "shortcut", "outlook", "confluence", "github", "slack"], help="Nguồn cần nạp")
+    parser_ingest.add_argument(
+        "--source",
+        default="all",
+        choices=[
+            "all",
+            "coding_agents",
+            "coding_agent",
+            "agents",
+            "git",
+            "jira",
+            "shortcut",
+            "outlook",
+            "ms_outlook",
+            "confluence",
+            "github",
+            "slack",
+            "teams",
+            "ms_teams",
+        ],
+        help="Nguồn cần nạp",
+    )
     parser_ingest.add_argument("--tenant-id", default="local-user", help="Tenant ID")
     parser_ingest.add_argument("--config", default=None, help="Đường dẫn file cấu hình sources.yaml")
 

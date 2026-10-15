@@ -23,6 +23,56 @@ from ptb_database.neo4j_client import Neo4jClient
 logger = logging.getLogger("ptb.database.repositories.task_repo")
 
 
+def _safe_timestamp(val: Any, default_ts: float) -> float:
+    """Safely convert datetime, date, int/float, or ISO string to UTC timestamp float."""
+    if val is None:
+        return default_ts
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, datetime):
+        dt = val if val.tzinfo is not None else val.replace(tzinfo=timezone.utc)
+        return float(dt.timestamp())
+    from datetime import date
+    if isinstance(val, date):
+        dt = datetime(val.year, val.month, val.day, tzinfo=timezone.utc)
+        return float(dt.timestamp())
+    if isinstance(val, str) and val.strip():
+        try:
+            cleaned = val.strip().replace("Z", "+00:00")
+            dt = datetime.fromisoformat(cleaned)
+            dt = dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+            return float(dt.timestamp())
+        except Exception:
+            return default_ts
+    return default_ts
+
+
+def _task_sort_key(t: Any) -> tuple[int, float, float, float]:
+    """Sort key conforming to the Frozen Canonical Sort Contract:
+    Primary:   status_rank ASC (IN_PROGRESS=1, TODO=2, BLOCKED=3, DONE=4, DISMISSED=5)
+    Secondary: priority_score DESC
+    Tertiary:  due_date ASC (nulls last)
+    Quaternary: updated_at DESC
+    """
+    s_val = t.status.value if hasattr(t.status, "value") else str(getattr(t, "status", ""))
+    rank = {
+        "IN_PROGRESS": 1,
+        "TODO": 2,
+        "PENDING": 2,
+        "BLOCKED": 3,
+        "DONE": 4,
+        "DISMISSED": 5,
+    }.get(str(s_val).strip().upper(), 6)
+    override = getattr(t, "priority_override", None)
+    if override is not None:
+        p_score = float(override)
+    else:
+        p_score = float(getattr(t, "priority_score", 0.0) or 0.0)
+    due_ts = _safe_timestamp(getattr(t, "due_date", None), default_ts=9999999999.0)
+    updated_ts = _safe_timestamp(getattr(t, "updated_at", None), default_ts=-62135596800.0)
+    return (rank, -p_score, due_ts, -updated_ts)
+
+
 class TaskDomainRepository:
     """Repository quản lý UnifiedTask domain, Evidence provenance và Task State Machine audit trong Neo4j."""
 
@@ -409,6 +459,7 @@ class TaskDomainRepository:
           CASE t.status
             WHEN 'IN_PROGRESS' THEN 1
             WHEN 'TODO' THEN 2
+            WHEN 'PENDING' THEN 2
             WHEN 'BLOCKED' THEN 3
             WHEN 'DONE' THEN 4
             WHEN 'DISMISSED' THEN 5
@@ -425,24 +476,6 @@ class TaskDomainRepository:
                 candidate = self._parse_task_candidate(row)
                 if candidate:
                     tasks.append(candidate)
-
-        def _task_sort_key(t: UnifiedTaskCandidate):
-            s_val = t.status.value if hasattr(t.status, "value") else str(t.status)
-            rank = {
-                "IN_PROGRESS": 1,
-                "TODO": 2,
-                "BLOCKED": 3,
-                "DONE": 4,
-                "DISMISSED": 5,
-            }.get(str(s_val).strip().upper(), 6)
-            p_score = float(t.priority_score or 0.0)
-            updated = t.updated_at or datetime.min.replace(tzinfo=timezone.utc)
-            due_ts = (
-                t.due_date.timestamp()
-                if t.due_date and hasattr(t.due_date, "timestamp")
-                else 9999999999.0
-            )
-            return (rank, -p_score, due_ts, -updated.timestamp())
 
         tasks.sort(key=_task_sort_key)
 
@@ -953,4 +986,7 @@ class TaskDomainRepository:
             if record and record.get("embedding"):
                 return record["embedding"]
             return None
+
+    _task_sort_key = staticmethod(_task_sort_key)
+
 
