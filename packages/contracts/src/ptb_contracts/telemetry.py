@@ -150,11 +150,11 @@ class CostAuditTracker:
             self.kev_by_type[q_key] = self.kev_by_type.get(q_key, 0) + 1
 
     def record_graphiti_sync(self, episodes: int = 1, calls: Optional[int] = None) -> None:
-        """Record Graphiti episodic memory synchronization with accurate internal sub-calls (LLM + Embeddings)."""
+        """Record Graphiti episodic memory synchronization."""
         with self.lock:
             self.graphiti_episodes_total += episodes
-            actual_calls = calls if calls is not None else (episodes * 4)
-            self.graphiti_calls_total += actual_calls
+            if calls is not None:
+                self.graphiti_calls_total += calls
 
     def record_graphiti_subcall(self, subcall_type: str = "general", tokens: int = 0) -> None:
         """Record an individual Graphiti sub-call (e.g. node extract, edge extract, embedding, rerank) and tokens."""

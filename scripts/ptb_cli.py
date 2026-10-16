@@ -2851,25 +2851,18 @@ async def cmd_mcp(args: argparse.Namespace) -> int:
 
 async def cmd_acceptance_report(args: argparse.Namespace) -> int:
     """Tạo báo cáo nghiệm thu phát hành theo chuẩn docs/RELEASE_ACCEPTANCE_HANDOFF.md."""
-    from scripts.generate_acceptance_report import generate_dev_report
+    from scripts.generate_acceptance_report import generate_dev_report, run_verification_checks
     task_statuses: Dict[str, str] = {}
+    task_commands: Dict[str, str] = {}
     task_evidences: Dict[str, str] = {}
     if getattr(args, "run_checks", False):
-        print("[*] Running local readiness verification suite...")
-        res = subprocess.run(["uv", "run", "pytest", "tests/test_release_readiness.py", "-q"], cwd=str(ROOT_DIR))
-        if res.returncode == 0:
-            print("[+] Release readiness tests PASS")
-            task_statuses["DEV-P1-04"] = "PASS"
-            task_evidences["DEV-P1-04"] = "Local test_graphiti_telemetry_instrumentation.py PASS"
-            task_statuses["DEV-P1-03"] = "PASS"
-            task_evidences["DEV-P1-03"] = "Local test_kev_embedding_auto_wiring.py PASS"
-            task_statuses["DEV-P1-01"] = "PASS"
-            task_evidences["DEV-P1-01"] = "Local test_cold_cache_benchmark.py PASS, --cold-cache verified"
+        task_statuses, task_commands, task_evidences = run_verification_checks()
     out_file = generate_dev_report(
         commit_sha=getattr(args, "sha", None),
         author=getattr(args, "author", None),
         verdict=getattr(args, "verdict", "PENDING"),
         task_statuses=task_statuses,
+        task_commands=task_commands,
         task_evidences=task_evidences,
         output_path=Path(args.output) if getattr(args, "output", None) else None,
     )

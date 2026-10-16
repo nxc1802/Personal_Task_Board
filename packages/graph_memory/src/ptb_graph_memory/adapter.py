@@ -80,31 +80,39 @@ class GraphitiQwen3Embedder(EmbedderClient):
 
     async def create(self, input_data: Any) -> List[float]:
         service = self._get_service()
+        if isinstance(input_data, str):
+            res = await asyncio.to_thread(service.embed_text, input_data)
+        elif isinstance(input_data, list) and input_data and isinstance(input_data[0], str):
+            res_list = await asyncio.to_thread(service.embed_batch, input_data)
+            res = res_list[0] if res_list else []
+        else:
+            res = []
+
         try:
             from ptb_contracts.telemetry import get_cost_audit_tracker
-            tokens = len(input_data.split()) if isinstance(input_data, str) else sum(len(x.split()) for x in input_data if isinstance(x, str))
+            actual_tok = getattr(service, "last_usage_tokens", None)
+            tokens = actual_tok if actual_tok is not None else (
+                len(input_data.split()) if isinstance(input_data, str) else sum(len(x.split()) for x in input_data if isinstance(x, str))
+            )
             get_cost_audit_tracker().record_embedding_call(count=1, provider="graphiti_qwen3")
             get_cost_audit_tracker().record_graphiti_subcall("embedding", tokens=tokens)
-        except Exception:
-            pass
+        except Exception as telem_exc:
+            logger.debug("Telemetry recording error in embed create: %s", telem_exc)
 
-        if isinstance(input_data, str):
-            return await asyncio.to_thread(service.embed_text, input_data)
-        elif isinstance(input_data, list) and input_data and isinstance(input_data[0], str):
-            res = await asyncio.to_thread(service.embed_batch, input_data)
-            return res[0] if res else []
-        return []
+        return res
 
     async def create_batch(self, input_data_list: List[str]) -> List[List[float]]:
         service = self._get_service()
+        res = await asyncio.to_thread(service.embed_batch, input_data_list)
         try:
             from ptb_contracts.telemetry import get_cost_audit_tracker
-            tokens = sum(len(x.split()) for x in input_data_list)
+            actual_tok = getattr(service, "last_usage_tokens", None)
+            tokens = actual_tok if actual_tok is not None else sum(len(x.split()) for x in input_data_list)
             get_cost_audit_tracker().record_embedding_call(count=len(input_data_list), is_batch=True, provider="graphiti_qwen3")
             get_cost_audit_tracker().record_graphiti_subcall("embedding_batch", tokens=tokens)
-        except Exception:
-            pass
-        return await asyncio.to_thread(service.embed_batch, input_data_list)
+        except Exception as telem_exc:
+            logger.debug("Telemetry recording error in embed create_batch: %s", telem_exc)
+        return res
 
 
 class GraphitiKevCrossEncoder(CrossEncoderClient):
@@ -131,8 +139,8 @@ class GraphitiKevCrossEncoder(CrossEncoderClient):
             tokens = len(query.split()) + sum(len(p.split()) for p in passages)
             get_cost_audit_tracker().record_kev_call("graphiti_cross_encode")
             get_cost_audit_tracker().record_graphiti_subcall("cross_encoder", tokens=tokens)
-        except Exception:
-            pass
+        except Exception as telem_exc:
+            logger.debug("Telemetry recording error in rank: %s", telem_exc)
 
         try:
             results = await asyncio.to_thread(service.rerank, query, passages)

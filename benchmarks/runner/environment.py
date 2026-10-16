@@ -185,7 +185,7 @@ class EnvironmentManager:
                 )
 
         # REAL Production Extractor: NEVER FakeDeterministicLLMExtractor
-        real_llm_extractor = LLMStructuredExtractor()
+        real_llm_extractor = LLMStructuredExtractor(bypass_cache=cold_cache)
         from benchmarks.runner.extraction_cache import CachedLLMExtractor, ExtractionCache
         cache_instance = ExtractionCache(cold_cache=cold_cache)
         llm_extractor = CachedLLMExtractor(real_llm_extractor, cache=cache_instance)

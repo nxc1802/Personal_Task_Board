@@ -107,6 +107,7 @@ class LLMStructuredExtractor:
         model: Optional[str] = None,
         timeout: float = 30.0,
         cache: Optional[ExtractionCacheManager] = None,
+        bypass_cache: bool = False,
     ) -> None:
         self.base_url = (
             base_url
@@ -124,7 +125,8 @@ class LLMStructuredExtractor:
             or os.getenv("LLM_MODEL", "gpt-4o-mini")
         )
         self.timeout = float(os.getenv("LLM_TIMEOUT", str(timeout)))
-        self.cache = cache or ExtractionCacheManager.get_instance()
+        self.bypass_cache = bypass_cache or os.getenv("PTB_COLD_CACHE", "0").lower() in ("1", "true", "yes")
+        self.cache = None if self.bypass_cache else (cache or ExtractionCacheManager.get_instance())
 
     def _call_openai_completion(self, prompt: str) -> Dict[str, Any]:
         """Gọi OpenAI-compatible API qua HTTP POST bằng urllib với retry."""
@@ -271,25 +273,26 @@ class LLMStructuredExtractor:
 
         # Check extraction cache first (sha256(content:model:prompt_version) or raw_event_id alias)
         cache_key = compute_extraction_cache_key(combined_prompt, self.model, prompt_version="v1.0")
-        cached_cand = self.cache.get(cache_key, alias_key=raw_event_id)
-        if cached_cand is not None:
-            get_cost_audit_tracker().record_cache_hit()
-            cand = cached_cand.model_copy(deep=True)
-            cand.id = str(uuid4())
-            if project_key:
-                cand.project_key = project_key
-            if channel_or_group:
-                cand.channel_or_group = channel_or_group
-            if not cand.requester_name and actual_author:
-                cand.requester_name = actual_author
-            if cand.evidences:
-                for ev in cand.evidences:
-                    ev.id = str(uuid4())
-                    ev.task_id = cand.id
-                    ev.raw_event_id = raw_event_id
-                    if external_url:
-                        ev.external_url = external_url
-            return cand
+        if not self.bypass_cache and self.cache is not None:
+            cached_cand = self.cache.get(cache_key, alias_key=raw_event_id)
+            if cached_cand is not None:
+                get_cost_audit_tracker().record_cache_hit()
+                cand = cached_cand.model_copy(deep=True)
+                cand.id = str(uuid4())
+                if project_key:
+                    cand.project_key = project_key
+                if channel_or_group:
+                    cand.channel_or_group = channel_or_group
+                if not cand.requester_name and actual_author:
+                    cand.requester_name = actual_author
+                if cand.evidences:
+                    for ev in cand.evidences:
+                        ev.id = str(uuid4())
+                        ev.task_id = cand.id
+                        ev.raw_event_id = raw_event_id
+                        if external_url:
+                            ev.external_url = external_url
+                return cand
 
         # 1. Zero-fallback requirement: API key required
         if not self.api_key:
@@ -389,10 +392,11 @@ class LLMStructuredExtractor:
         )
 
         # Store in cache
-        try:
-            self.cache.put(cache_key, candidate, alias_key=raw_event_id)
-        except Exception as e:
-            logger.debug("Failed saving candidate to extraction cache: %s", e)
+        if not self.bypass_cache and self.cache is not None:
+            try:
+                self.cache.put(cache_key, candidate, alias_key=raw_event_id)
+            except Exception as e:
+                logger.debug("Failed saving candidate to extraction cache: %s", e)
 
         return candidate
 

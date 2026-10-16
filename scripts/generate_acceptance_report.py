@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import platform
@@ -17,6 +18,7 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
+logger = logging.getLogger("ptb.release_acceptance")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -33,8 +35,8 @@ def get_git_commit_sha() -> str:
         sha = res.stdout.strip()
         if len(sha) == 40:
             return sha
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.debug("Failed to get git commit SHA: %s", exc)
     return "UNKNOWN_COMMIT_SHA_000000000000000000000000"
 
 
@@ -50,8 +52,8 @@ def get_git_author() -> str:
         name = res.stdout.strip()
         if name:
             return name
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.debug("Failed to get git author: %s", exc)
     return os.getenv("USERNAME") or os.getenv("USER") or "ptb-core-dev"
 
 
@@ -68,8 +70,8 @@ def get_command_version(cmd: List[str]) -> str:
         if res.returncode == 0:
             first_line = (res.stdout or res.stderr).strip().splitlines()
             return first_line[0] if first_line else "Available"
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.debug("Command version check failed for %s: %s", cmd, exc)
     return "Not installed / not reachable"
 
 
@@ -103,8 +105,8 @@ def get_system_hardware() -> Tuple[int, str]:
                         kb = int(line.split()[1])
                         ram_gb = f"{kb / (1024 ** 2):.1f} GB"
                         break
-    except Exception:
-        pass
+    except (OSError, AttributeError, RuntimeError) as exc:
+        logger.debug("Failed to inspect system memory: %s", exc)
     return cpu_count, ram_gb
 
 
@@ -128,6 +130,7 @@ def generate_dev_report(
     author: Optional[str] = None,
     verdict: str = "PENDING",
     task_statuses: Optional[Dict[str, str]] = None,
+    task_commands: Optional[Dict[str, str]] = None,
     task_evidences: Optional[Dict[str, str]] = None,
     output_path: Optional[Path] = None,
 ) -> Path:
@@ -179,6 +182,7 @@ def generate_dev_report(
     ]
 
     t_statuses = task_statuses or {}
+    t_commands = task_commands or {}
     t_evidences = task_evidences or {}
 
     # Telemetry snapshot if available
@@ -220,8 +224,9 @@ def generate_dev_report(
 
     for task_id, priority, desc, acceptance_rule in tasks:
         st = t_statuses.get(task_id, "PENDING")
+        cmd_exit = t_commands.get(task_id, "N/A — not executed in current run")
         ev = t_evidences.get(task_id, acceptance_rule)
-        report_lines.append(f"| {task_id} | {priority} | {desc} | **{st}** | `See verification run` | {ev} |")
+        report_lines.append(f"| {task_id} | {priority} | {desc} | **{st}** | `{cmd_exit}` | {ev} |")
 
     gate_statuses = {
         "1 — CI Matrix": "PASS" if t_statuses.get("DEV-P0-01") == "PASS" else "PENDING",
@@ -263,6 +268,47 @@ def generate_dev_report(
     return target_file
 
 
+def run_verification_checks() -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """Run real automated verification suites and record truthful statuses, exit codes, and evidence."""
+    statuses: Dict[str, str] = {}
+    commands: Dict[str, str] = {}
+    evidences: Dict[str, str] = {}
+
+    checks = [
+        ("DEV-P0-01", ["uv", "run", "pytest", "tests/test_anti_fallback_guard.py", "-q"],
+         "Anti-fallback guard: 0 unwhitelisted fallback patterns in production sources.",
+         False),
+        ("DEV-P1-01", ["uv", "run", "pytest", "tests/test_cold_cache_benchmark.py", "-q"],
+         "Cold-cache dual isolation: ExtractionCache and LLMStructuredExtractor bypass both cache layers.",
+         False),
+        ("DEV-P1-03", ["uv", "run", "pytest", "tests/test_kev_embedding_auto_wiring.py", "-q"],
+         "Auto-wiring & graceful degradation: Local probe, docker host fallback, and honest degradation verified.",
+         False),
+        ("DEV-P1-04", ["uv", "run", "pytest", "tests/test_graphiti_telemetry_instrumentation.py", "-q"],
+         "Telemetry audit: Subcall breakdown, per-model rate tracking, and provider token usage active.",
+         True),
+    ]
+
+    print("[*] Running automated component verification suites...")
+    for task_id, cmd, desc, can_pass in checks:
+        print(f"  -> Executing: {' '.join(cmd)}")
+        res = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+        cmd_str = f"{' '.join(cmd[2:])} (Exit {res.returncode})"
+        commands[task_id] = cmd_str
+        if res.returncode == 0:
+            if can_pass:
+                statuses[task_id] = "PASS"
+                evidences[task_id] = f"{desc} PASS (Exit 0)."
+            else:
+                statuses[task_id] = "PENDING"
+                evidences[task_id] = f"Harness verification PASS (Exit 0). Remote CI / live service verification PENDING."
+        else:
+            statuses[task_id] = "FAIL"
+            evidences[task_id] = f"Verification FAILED (Exit {res.returncode}): {(res.stderr or res.stdout).strip()[:180]}"
+
+    return statuses, commands, evidences
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate PTB Release Acceptance Report")
     parser.add_argument("--sha", type=str, default=None, help="Explicit 40-character commit SHA (default: git rev-parse HEAD)")
@@ -273,25 +319,18 @@ def main() -> int:
     args = parser.parse_args()
 
     task_statuses: Dict[str, str] = {}
+    task_commands: Dict[str, str] = {}
     task_evidences: Dict[str, str] = {}
 
     if args.run_checks:
-        print("[*] Running local readiness verification suite...")
-        res = subprocess.run(["uv", "run", "pytest", "tests/test_release_readiness.py", "-q"], cwd=str(REPO_ROOT))
-        if res.returncode == 0:
-            print("[+] Release readiness tests PASS")
-            task_statuses["DEV-P1-04"] = "PASS"
-            task_evidences["DEV-P1-04"] = "Local test_graphiti_telemetry_instrumentation.py PASS"
-            task_statuses["DEV-P1-03"] = "PASS"
-            task_evidences["DEV-P1-03"] = "Local test_kev_embedding_auto_wiring.py PASS"
-            task_statuses["DEV-P1-01"] = "PASS"
-            task_evidences["DEV-P1-01"] = "Local test_cold_cache_benchmark.py PASS, --cold-cache verified"
+        task_statuses, task_commands, task_evidences = run_verification_checks()
 
     out_file = generate_dev_report(
         commit_sha=args.sha,
         author=args.author,
         verdict=args.verdict,
         task_statuses=task_statuses,
+        task_commands=task_commands,
         task_evidences=task_evidences,
         output_path=Path(args.output) if args.output else None,
     )

@@ -66,6 +66,10 @@ def test_environment_manager_cold_cache_parameter():
     assert env.cold_cache is True
     assert hasattr(env.llm_extractor, "cache")
     assert env.llm_extractor.cache.cold_cache is True
+    # Dual-cache isolation: underlying real_extractor must also bypass ExtractionCacheManager
+    real_extractor = env.llm_extractor.real_extractor
+    assert getattr(real_extractor, "bypass_cache", False) is True
+    assert getattr(real_extractor, "cache", None) is None
 
 
 @pytest.mark.unit

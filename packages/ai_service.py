@@ -46,7 +46,8 @@ class Qwen3EmbeddingService:
             with socket.create_connection((host, port), timeout=0.1):
                 self._last_available = True
                 return True
-        except Exception:
+        except (OSError, socket.error) as exc:
+            logger.debug("Local Qwen3 endpoint %s:%s unavailable: %s", host, port, exc)
             if host in ("127.0.0.1", "localhost") and (os.getenv("IN_DOCKER") or os.path.exists("/.dockerenv")):
                 try:
                     with socket.create_connection(("host.docker.internal", port), timeout=0.1):
@@ -54,8 +55,8 @@ class Qwen3EmbeddingService:
                         self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
                         self._last_available = True
                         return True
-                except Exception:
-                    pass
+                except (OSError, socket.error) as docker_exc:
+                    logger.debug("Docker host fallback for Qwen3 failed: %s", docker_exc)
             self._last_available = False
             return False
 
@@ -66,6 +67,7 @@ class Qwen3EmbeddingService:
                 raise RuntimeError(f"Embedding service at {self.base_url} is unavailable.")
             return [0.0] * 1024
         resp = self.client.embeddings.create(model=self.model, input=text)
+        self.last_usage_tokens = getattr(getattr(resp, "usage", None), "total_tokens", None)
         return resp.data[0].embedding
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
@@ -77,6 +79,7 @@ class Qwen3EmbeddingService:
                 raise RuntimeError(f"Embedding service at {self.base_url} is unavailable.")
             return [[0.0] * 1024 for _ in texts]
         resp = self.client.embeddings.create(model=self.model, input=texts)
+        self.last_usage_tokens = getattr(getattr(resp, "usage", None), "total_tokens", None)
         return [item.embedding for item in resp.data]
 
     def compute_similarity(self, query_vec: List[float], doc_vecs: List[List[float]]) -> List[float]:
@@ -123,7 +126,8 @@ class KevDecisionReranker:
             with socket.create_connection((host, port), timeout=0.1):
                 self._last_available = True
                 return True
-        except Exception:
+        except (OSError, socket.error) as exc:
+            logger.debug("Local Kev endpoint %s:%s unavailable: %s", host, port, exc)
             # If host is localhost/127.0.0.1 and running inside Docker, try host.docker.internal
             if host in ("127.0.0.1", "localhost") and (os.getenv("IN_DOCKER") or os.path.exists("/.dockerenv")):
                 try:
@@ -132,8 +136,8 @@ class KevDecisionReranker:
                         self.systemone_url = f"{self.root_url}/v1/systemone"
                         self._last_available = True
                         return True
-                except Exception:
-                    pass
+                except (OSError, socket.error) as docker_exc:
+                    logger.debug("Docker host fallback for Kev failed: %s", docker_exc)
             self._last_available = False
             return False
 
