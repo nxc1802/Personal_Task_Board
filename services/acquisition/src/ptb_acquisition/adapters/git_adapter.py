@@ -68,6 +68,26 @@ def map_host_path_for_container(path: str) -> str:
     if os.path.exists(path):
         return path
     clean = path.replace("\\", "/").strip()
+
+    # Dynamic host workspace resolution
+    host_workspace = os.getenv("HOST_WORKSPACE", "").replace("\\", "/").strip().rstrip("/")
+    if host_workspace and clean.lower().startswith(host_workspace.lower()):
+        sub = clean[len(host_workspace):].lstrip("/")
+        for prefix in ("/workspace", "/project", "/app"):
+            cand = f"{prefix}/{sub}" if sub else prefix
+            if os.path.exists(cand):
+                return cand
+
+    # Dynamic host home resolution
+    host_home = (os.getenv("HOST_USER_HOME") or os.getenv("USERPROFILE") or str(Path.home())).replace("\\", "/").strip().rstrip("/")
+    if host_home and clean.lower().startswith(host_home.lower()):
+        sub = clean[len(host_home):].lstrip("/")
+        for prefix in ("/host_home", "/mnt/host_home"):
+            cand = f"{prefix}/{sub}" if sub else prefix
+            if os.path.exists(cand):
+                return cand
+
+    # Backward-compatible fallbacks
     if clean.lower().startswith("c:/users/truon"):
         sub = clean[len("c:/users/truon"):].lstrip("/")
         for prefix in ("/host_home", "/c/Users/truon", "/mnt/c/Users/truon"):

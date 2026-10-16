@@ -89,7 +89,16 @@ class ProcessingPipeline:
         self.structured_extractor = structured_extractor or DeterministicStructuredExtractor()
         self.llm_extractor = llm_extractor or LLMStructuredExtractor()
         self.attribution_validator = attribution_validator or AttributionValidator()
-        self.candidate_matcher = candidate_matcher or TaskCandidateMatcher(task_repo=self.task_repo)
+        if candidate_matcher is not None:
+            self.candidate_matcher = candidate_matcher
+        else:
+            reranker = None
+            try:
+                from packages.ai_service import KevDecisionReranker
+                reranker = KevDecisionReranker()
+            except Exception:
+                reranker = None
+            self.candidate_matcher = TaskCandidateMatcher(task_repo=self.task_repo, reranker=reranker)
         self.task_merger = task_merger or TaskMerger(task_repo=self.task_repo)
         self.intelligence_lifecycle = intelligence_lifecycle
         self.health_status: str = "HEALTHY"

@@ -6,6 +6,9 @@ cho dự án Personal Task Board thông qua chuẩn OpenAI API.
 import json
 import logging
 import os
+import socket
+import time
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
 import numpy as np
@@ -68,6 +71,25 @@ class KevDecisionReranker:
         self.systemone_url = f"{self.root_url}/v1/systemone"
         self.api_key = api_key or os.getenv("DECISION_API_KEY", "local")
         self.model = model or os.getenv("DECISION_MODEL", "kev-0.8b")
+        self._last_probe_time = 0.0
+        self._last_available = False
+
+    def _is_available(self) -> bool:
+        """Fast check whether Kev service endpoint is reachable with 30s cache."""
+        now = time.time()
+        if hasattr(self, "_last_probe_time") and (now - self._last_probe_time) < 30.0:
+            return getattr(self, "_last_available", False)
+        self._last_probe_time = now
+        try:
+            parsed = urllib.parse.urlparse(self.root_url)
+            host = parsed.hostname or "127.0.0.1"
+            port = parsed.port or 8081
+            with socket.create_connection((host, port), timeout=0.1):
+                self._last_available = True
+                return True
+        except Exception:
+            self._last_available = False
+            return False
 
     def rerank(self, query: str, documents: List[str], top_k: Optional[int] = None) -> List[Dict[str, Any]]:
         """Rerank danh sách documents theo query sử dụng thuật toán Choice Probabilities của Kev."""
@@ -75,6 +97,9 @@ class KevDecisionReranker:
             return []
         if len(documents) == 1:
             return [{"index": 0, "document": documents[0], "score": 1.0}]
+        if not self._is_available():
+            docs = documents[:top_k] if top_k else documents
+            return [{"index": i, "document": d, "score": 0.5} for i, d in enumerate(docs)]
 
         criteria = {}
         idx_map = {}
@@ -125,6 +150,12 @@ class KevDecisionReranker:
 
     def classify_task_urgency(self, task_text: str) -> Dict[str, Any]:
         """Đánh giá mức độ ưu tiên & tính khả thi của task bằng Kev System 1."""
+        if not self._is_available():
+            return {
+                "is_task_probability": 0.5,
+                "urgency_score": 1.0,
+                "priority_level": "Medium",
+            }
         payload = {
             "state": f"Task: {task_text}",
             "questions": {

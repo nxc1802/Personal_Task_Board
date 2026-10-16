@@ -1,9 +1,11 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv("d:/Working/PTB/Personal_Task_Board-main/.env")
+ROOT_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT_DIR / ".env")
 sys.stdout.reconfigure(encoding="utf-8")
 
 from ptb_database.neo4j_client import Neo4jClient

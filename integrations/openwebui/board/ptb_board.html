@@ -5002,7 +5002,7 @@
           try {
             const hostRes = await fetch(hostUrl, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: getApiHeaders(),
               body: JSON.stringify({ service: service }),
               signal: AbortSignal.timeout(2000)
             });
@@ -5082,7 +5082,7 @@
         try {
           await fetch("http://127.0.0.1:8999/clear", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getApiHeaders(),
             body: JSON.stringify({ confirm: true }),
             signal: AbortSignal.timeout(1000)
           });

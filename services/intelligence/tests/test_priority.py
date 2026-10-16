@@ -268,3 +268,28 @@ weights:
     # Unspecified weights maintain defaults
     assert engine.customer_impact_weight == 25.0
 
+
+def test_resolve_ambiguous_priority_with_kev(priority_engine):
+    """Verify Kev urgency calibration on ambiguous priority (35-65)."""
+    task = UnifiedTaskCandidate(
+        id="task-amb",
+        title="Investigate performance degradation in backend",
+        customer_impact="medium",
+        production_impact="staging",
+    )
+    base = priority_engine.calculate_priority(task)
+
+    class FakeReranker:
+        def classify_task_urgency(self, text):
+            return {"priority_level": "High", "urgency_score": 2.5}
+
+    calibrated = priority_engine.resolve_ambiguous_priority_with_kev(
+        task=task,
+        base_breakdown=base,
+        reranker=FakeReranker(),
+    )
+    if 35.0 <= base.total_score <= 65.0:
+        assert calibrated.total_score == min(100.0, base.total_score + 15.0)
+        assert "Kev Urgency Calibrated (High: +15pts)" in calibrated.llm_explanation
+
+

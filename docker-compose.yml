@@ -80,8 +80,8 @@ services:
       - ./services:/app/services
       - ./packages:/app/packages
       - ./integrations:/app/integrations
-      - ${HOST_USER_HOME:-C:/Users/truon}:/host_home:ro
-      - ${HOST_WORKSPACE:-D:/Working/PTB}:/workspace:ro
+      - ${HOST_USER_HOME:-~}:/host_home:ro
+      - ${HOST_WORKSPACE:-.}:/workspace:ro
       - ./.git:/app/.git:ro
     depends_on:
       - neo4j

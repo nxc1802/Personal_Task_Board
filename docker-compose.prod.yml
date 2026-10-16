@@ -62,9 +62,17 @@ services:
       - PTB_ENABLE_DESTRUCTIVE_API=false
       - PTB_API_KEY=${PTB_API_KEY:?PTB_API_KEY must be configured for production deployment}
       - PTB_CORS_ORIGINS=${PTB_CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000}
+      - PTB_WORKSPACE_ROOT=/workspace
+      - HOST_USER_HOME=/host_home
+      - ANTIGRAVITY_BRAIN_DIR=/host_home/.gemini/antigravity/brain
+      - CODEX_SESSION_DIR=/host_home/.codex/sessions
+      - CURSOR_STORAGE_DIR=/host_home/AppData/Roaming/Cursor/User
+      - CLAUDE_LOG_DIR=/host_home/AppData/Local/Claude/logs
     volumes:
       - ./data:/app/data
       - ./config:/app/config:ro
+      - ${HOST_USER_HOME:-~}:/host_home:ro
+      - ${HOST_WORKSPACE:-.}:/workspace:ro
     depends_on:
       neo4j:
         condition: service_healthy

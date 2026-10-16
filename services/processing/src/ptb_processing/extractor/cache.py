@@ -112,15 +112,29 @@ class ExtractionCacheManager:
         cache_key: str,
         alias_key: Optional[str] = None,
     ) -> Optional[UnifiedTaskCandidate]:
-        """Look up cached candidate by content hash key or secondary alias (raw_event_id)."""
+        """Look up cached candidate by content hash key or secondary alias (raw_event_id).
+        Guarantees correctness by invalidating alias lookups when content hash differs (P1.3).
+        """
         with self._lock:
             raw_data = self._entries.get(cache_key)
             if raw_data is None and alias_key:
-                raw_data = self._entries.get(alias_key)
+                candidate_alias_data = self._entries.get(alias_key)
+                if candidate_alias_data is not None:
+                    expected_hash = candidate_alias_data.get("_cached_content_hash")
+                    is_sha256 = len(cache_key) == 64 and all(c in "0123456789abcdefABCDEF" for c in cache_key)
+                    if expected_hash and is_sha256 and expected_hash != cache_key:
+                        logger.info(
+                            "Cache entry for alias %s invalidated: content hash mismatch (%s != %s)",
+                            alias_key, expected_hash[:8], cache_key[:8]
+                        )
+                        raw_data = None
+                    else:
+                        raw_data = candidate_alias_data
 
             if raw_data is not None:
                 try:
-                    return UnifiedTaskCandidate.model_validate(raw_data)
+                    clean_data = {k: v for k, v in raw_data.items() if not k.startswith("_cached_")}
+                    return UnifiedTaskCandidate.model_validate(clean_data)
                 except Exception as e:
                     logger.warning("Corrupted extraction cache entry for key %s: %s", cache_key, e)
                     return None
@@ -132,12 +146,14 @@ class ExtractionCacheManager:
         candidate: UnifiedTaskCandidate,
         alias_key: Optional[str] = None,
     ) -> None:
-        """Store candidate in cache under content hash key and optional alias."""
+        """Store candidate in cache under content hash key and optional alias with content hash binding."""
         dumped = candidate.model_dump(mode="json")
         with self._lock:
             self._entries[cache_key] = dumped
             if alias_key:
-                self._entries[alias_key] = dumped
+                alias_entry = dict(dumped)
+                alias_entry["_cached_content_hash"] = cache_key
+                self._entries[alias_key] = alias_entry
             self._save_unlocked()
 
     def count(self) -> int:

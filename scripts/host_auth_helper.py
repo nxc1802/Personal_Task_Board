@@ -18,6 +18,7 @@ if hasattr(sys.stdout, "reconfigure"):
 import json
 import re
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -321,8 +322,6 @@ class HostAuthHandler(BaseHTTPRequestHandler):
 
         if storage_path.exists():
             try:
-                import json
-                from datetime import datetime, timezone
                 with open(storage_path, "r", encoding="utf-8") as f:
                     cdata = json.load(f)
                 clist = cdata.get("cookies", [])

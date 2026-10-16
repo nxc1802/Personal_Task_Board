@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from playwright.async_api import async_playwright
 
 async def inspect():
@@ -26,8 +27,9 @@ async def inspect():
         await asyncio.sleep(5)
         
         print("Final URL:", page.url)
-        print("Title:", await page.title())
-        await page.screenshot(path="d:/Working/PTB/raw_samples/teams_ready.png")
+        out_dir = Path(__file__).resolve().parents[1] / "data" / "playwright"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(out_dir / "teams_ready.png"))
         
         info = await page.evaluate("""() => {
             const chats = Array.from(document.querySelectorAll(
@@ -46,7 +48,7 @@ async def inspect():
                 }))
             };
         }""")
-        with open("d:/Working/PTB/raw_samples/dom_info.json", "w", encoding="utf-8") as f:
+        with open(out_dir / "dom_info.json", "w", encoding="utf-8") as f:
             json.dump(info, f, ensure_ascii=False, indent=2)
         print("DOM Info saved to dom_info.json successfully!")
         await b.close()

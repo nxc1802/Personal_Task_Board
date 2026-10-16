@@ -581,7 +581,7 @@ class DeterministicPriorityEngine:
 
             # Map Kev urgency to a calibration delta:
             # High -> +15.0, Medium -> 0.0, Low -> -15.0
-            p_level = res.get("priority", "Medium")
+            p_level = res.get("priority_level") or res.get("priority", "Medium")
             delta = 0.0
             if p_level == "High":
                 delta = 15.0

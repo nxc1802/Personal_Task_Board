@@ -466,9 +466,16 @@ async def test_cli_doctor_truthful_health_9_sources(monkeypatch):
 # 7. CLI INGEST: ON-DEMAND EXECUTION ACROSS SOURCES
 # ==============================================================================
 
+@pytest.mark.external_integration
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_cli_ingest_on_demand_git():
     """Verify ptb ingest --source git executes on-demand without failure."""
+    from ptb_database.neo4j_client import Neo4jClient
+    client = Neo4jClient()
+    if not await client.verify_connectivity():
+        await client.close()
+        pytest.skip("Neo4j is offline (live service required for CLI ingest test)")
     args = argparse.Namespace(
         source="git",
         tenant_id="test-e2e-cli",
@@ -478,9 +485,16 @@ async def test_cli_ingest_on_demand_git():
     assert code == 0, "ptb ingest --source git must return exit code 0"
 
 
+@pytest.mark.external_integration
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_cli_ingest_on_demand_all():
     """Verify ptb ingest --source all completes and isolates unconfigured sources."""
+    from ptb_database.neo4j_client import Neo4jClient
+    client = Neo4jClient()
+    if not await client.verify_connectivity():
+        await client.close()
+        pytest.skip("Neo4j is offline (live service required for CLI ingest test)")
     args = argparse.Namespace(
         source="all",
         tenant_id="test-e2e-cli",

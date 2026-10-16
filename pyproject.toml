@@ -28,6 +28,7 @@ markers = [
     "fixture_e2e: End-to-end vertical slice tests using sanitized fixtures and test doubles",
     "runtime_smoke: Process supervisor and server runtime smoke tests with injected test repositories",
     "external_integration: Integration tests requiring live external Docker/Neo4j/OpenWebUI infrastructure",
+    "e2e: Live end-to-end integration tests requiring external services",
 ]
 
 [dependency-groups]

@@ -749,6 +749,10 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             cfg_file.parent.mkdir(parents=True, exist_ok=True)
             with open(cfg_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
+            try:
+                os.chmod(cfg_file, 0o600)
+            except Exception as perm_err:
+                logger.debug("Failed setting 0600 permissions on %s: %s", cfg_file, perm_err)
         except Exception as e:
             logger.warning("Failed writing persistent connectors config to %s: %s", cfg_file, e)
 
@@ -770,6 +774,11 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         from ptb_acquisition.playwright.session import SessionManager
         mgr = SessionManager(str(st_path)) if st_path else None
         has_ms_session = bool(mgr and mgr.has_valid_session())
+
+        user_home = Path(os.getenv("HOST_USER_HOME") or os.getenv("USERPROFILE") or Path.home())
+        appdata_roaming = Path(os.getenv("APPDATA") or (user_home / "AppData" / "Roaming"))
+        appdata_local = Path(os.getenv("LOCALAPPDATA") or (user_home / "AppData" / "Local"))
+        workspace_root = os.getenv("PTB_WORKSPACE_ROOT") or str(Path.cwd())
 
         connectors = [
             {
@@ -856,8 +865,7 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                 "type": "local_disk",
                 "configured": True,
                 "current_paths": [
-                    os.getenv("PTB_WORKSPACE_ROOT") or r"d:\Working\PTB\Personal_Task_Board-main",
-                    r"d:\Working\PTB",
+                    workspace_root,
                 ],
                 "instructions": "Quét trực tiếp commit log, branches và file diffs từ thư mục ẩn .git trong các dự án trên máy tính cá nhân",
             },
@@ -871,24 +879,24 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                     "antigravity": {
                         "name": "Google Antigravity",
                         "paths": [
-                            r"C:\Users\truon\.gemini\antigravity\brain",
-                            r"C:\Users\truon\.gemini\antigravity-ide\brain",
+                            str(user_home / ".gemini" / "antigravity" / "brain"),
+                            str(user_home / ".gemini" / "antigravity-ide" / "brain"),
                         ],
                         "status": "Ready",
                     },
                     "codex": {
                         "name": "OpenAI Codex Desktop",
                         "paths": [
-                            r"C:\Users\truon\.codex\sessions",
-                            r"C:\Users\truon\.codex\thread_history_1.sqlite",
+                            str(user_home / ".codex" / "sessions"),
+                            str(user_home / ".codex" / "thread_history_1.sqlite"),
                         ],
                         "status": "Ready",
                     },
                     "cursor": {
                         "name": "Cursor (AI Editor)",
                         "paths": [
-                            r"C:\Users\truon\AppData\Roaming\Cursor\User\workspaceStorage",
-                            r"C:\Users\truon\AppData\Roaming\Cursor\User\globalStorage",
+                            str(appdata_roaming / "Cursor" / "User" / "workspaceStorage"),
+                            str(appdata_roaming / "Cursor" / "User" / "globalStorage"),
                         ],
                         "status": "Ready",
                     },
@@ -896,8 +904,8 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                         "name": "Claude Code (CLI)",
                         "paths": [
                             ".claude (project root)",
-                            r"C:\Users\truon\.local\share\claude",
-                            r"C:\Users\truon\AppData\Local\Claude\logs",
+                            str(user_home / ".local" / "share" / "claude"),
+                            str(appdata_local / "Claude" / "logs"),
                         ],
                         "status": "Ready",
                     },
@@ -1093,24 +1101,11 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         if proc_pipe is None:
             proc_pipe = ProcessingPipeline(task_repo=service.task_repo, intelligence_lifecycle=service.lifecycle)
 
-        # P0.1 Kiểm tra cấu hình LLM_API_KEY trước khi gọi mô hình
-        llm_api_key = (os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
-        if not llm_api_key or llm_api_key.lower() in ("placeholder", "none", "your-api-key-here"):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "error": "LLM_API_KEY_REQUIRED",
-                    "code": "PTB_LLM_001",
-                    "message": "Chưa cấu hình biến môi trường LLM_API_KEY. Vui lòng cung cấp khóa API (Google Gemini / OpenAI) trong cấu hình môi trường hoặc giao diện Cấu hình để kích hoạt tính năng trích xuất công việc qua AI.",
-                    "status": "pending_configuration"
-                }
-            )
-
         try:
             result = await proc_pipe.process(raw_event)
         except Exception as proc_err:
             err_str = str(proc_err).lower()
-            if any(term in err_str for term in ("api key", "unauthorized", "invalid_api_key", "llm", "401", "authenticationerror", "api_key")):
+            if any(term in err_str for term in ("api key", "unauthorized", "invalid_api_key", "llm", "401", "authenticationerror", "not configured")):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail={

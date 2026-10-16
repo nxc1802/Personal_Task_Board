@@ -148,6 +148,11 @@ def test_extraction_cache_manager_put_and_get(tmp_path):
     assert retrieved_alias is not None
     assert retrieved_alias.title == "Deploy to Staging"
 
+    # Integrity check: when same alias is queried with different content hash, it must invalidate and return None
+    different_hash = compute_extraction_cache_key("Different prompt content entirely", "gpt-4o-mini", "v1.0")
+    retrieved_mismatched = cache.get(different_hash, alias_key="raw-event-001")
+    assert retrieved_mismatched is None, "Cache must invalidate alias when content hash differs!"
+
 
 @pytest.mark.asyncio
 async def test_llm_extractor_uses_cache_without_calling_http(tmp_path):

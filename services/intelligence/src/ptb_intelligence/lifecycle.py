@@ -52,10 +52,19 @@ class TaskIntelligenceLifecycle:
         task_repo: Optional[TaskDomainRepository] = None,
         status_machine: Optional[StatusInferenceMachine] = None,
         priority_engine: Optional[DeterministicPriorityEngine] = None,
+        reranker: Optional[Any] = None,
     ) -> None:
         self.task_repo = task_repo
         self.status_machine = status_machine or StatusInferenceMachine()
         self.priority_engine = priority_engine or DeterministicPriorityEngine()
+        if reranker is None:
+            try:
+                from packages.ai_service import KevDecisionReranker
+                self.reranker = KevDecisionReranker()
+            except Exception:
+                self.reranker = None
+        else:
+            self.reranker = reranker
 
     async def on_task_changed(
         self,
@@ -157,6 +166,14 @@ class TaskIntelligenceLifecycle:
         # 3. Calculate Deterministic Priority
         eval_input = ctx if ctx is not None else task
         priority_breakdown = self.priority_engine.calculate_priority(eval_input, now=ref_time)
+
+        # 3.1 Kev Priority Urgency Calibration (Review 1 & Review 3 requirement)
+        if hasattr(self.priority_engine, "resolve_ambiguous_priority_with_kev") and self.reranker:
+            priority_breakdown = self.priority_engine.resolve_ambiguous_priority_with_kev(
+                task=eval_input,
+                base_breakdown=priority_breakdown,
+                reranker=self.reranker,
+            )
 
         # 4. Respect Priority Manual Override
         priority_override = getattr(task, "priority_override", None)
