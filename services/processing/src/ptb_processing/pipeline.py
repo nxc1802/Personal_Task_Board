@@ -27,6 +27,7 @@ from ptb_contracts.l2_processing import (
     UnifiedTaskCandidate,
 )
 from ptb_contracts.logging import BugCode, log_bug
+from ptb_contracts.telemetry import get_cost_audit_tracker
 from ptb_database.repositories.task_repo import TaskDomainRepository
 from ptb_processing.correlation.candidate_matcher import TaskCandidateMatcher
 from ptb_processing.correlation.merger import TaskMerger
@@ -35,6 +36,7 @@ from ptb_processing.extractor.llm_extractor import (
     LLMExtractionError,
     LLMStructuredExtractor,
 )
+from ptb_processing.extractor.structured_extractor import DeterministicStructuredExtractor
 from ptb_processing.identity.resolver import IdentityResolutionResult, IdentityResolver
 from ptb_processing.parsers.multi_channel import UnifiedChannelParser
 from ptb_processing.parsers.quote_reply import TeamsQuoteReplyParser
@@ -77,12 +79,14 @@ class ProcessingPipeline:
         candidate_matcher: Optional[TaskCandidateMatcher] = None,
         task_merger: Optional[TaskMerger] = None,
         intelligence_lifecycle: Optional[TaskIntelligenceLifecycle] = None,
+        structured_extractor: Optional[DeterministicStructuredExtractor] = None,
     ) -> None:
         self.task_repo = task_repo
         self.multi_channel_parser = UnifiedChannelParser()
         self.quote_parser = quote_parser or self.multi_channel_parser
         self.identity_resolver = identity_resolver or IdentityResolver()
         self.heuristic_filter = heuristic_filter or HeuristicCandidateFilter()
+        self.structured_extractor = structured_extractor or DeterministicStructuredExtractor()
         self.llm_extractor = llm_extractor or LLMStructuredExtractor()
         self.attribution_validator = attribution_validator or AttributionValidator()
         self.candidate_matcher = candidate_matcher or TaskCandidateMatcher(task_repo=self.task_repo)
@@ -99,7 +103,9 @@ class ProcessingPipeline:
     ) -> IdentityResolutionResult:
         """Resolve identity tuân thủ quy tắc bất biến (chỉ exact match mới link ID)."""
         email = external_id if (external_id and "@" in external_id) else None
-        account_id = external_id
+        if not email and name and "@" in name:
+            email = name
+        account_id = external_id or (name if name and ("-" in name or "_" in name or "." in name or " " not in name) else None)
 
         if hasattr(self.identity_resolver, "resolve_async"):
             return await self.identity_resolver.resolve_async(
@@ -127,6 +133,8 @@ class ProcessingPipeline:
         bug_logged = False
 
         try:
+            get_cost_audit_tracker().record_event_processed(1)
+
             # 1. Multi-Channel Parser: Bóc tách quote/reply, clean HTML & chuẩn hóa theo từng kênh
             content_to_parse = (
                 raw_event.raw_payload
@@ -172,28 +180,44 @@ class ProcessingPipeline:
                     should_extract=False,
                 )
 
-            # 3. LLMStructuredExtractor: Trích xuất candidate (không silent fallback nếu LLM lỗi)
-            try:
-                candidate = await self.llm_extractor.extract_async(
-                    parsed=parsed,
-                    raw_event_id=raw_event.id,
-                    source_type=source_type_str,
-                    external_url=raw_event.deep_link,
-                )
-            except Exception as llm_exc:
-                self.health_status = "DEGRADED"
-                bug_logged = True
-                log_bug(
-                    BugCode.PTB_LLM_001,
-                    subsystem="llm",
-                    severity="ERROR",
-                    message=f"LLM extraction failed for RawEvent {raw_event.id}: {llm_exc}",
-                    exc=llm_exc,
-                    raw_event_id=raw_event.id,
-                    source_type=source_type_str,
-                    tenant_id=raw_event.tenant_id,
-                )
-                raise
+            # 3. Extraction: Structured source bypass first (zero LLM calls), otherwise LLMStructuredExtractor
+            candidate = None
+            if self.structured_extractor and self.structured_extractor.can_extract(raw_event):
+                try:
+                    candidate = self.structured_extractor.extract(raw_event, parsed=parsed)
+                    if candidate is not None:
+                        get_cost_audit_tracker().record_structured_bypass(1)
+                        logger.info(
+                            "RawEvent %s deterministically extracted via StructuredSourceExtractor (%s) with 0 LLM calls.",
+                            raw_event.id,
+                            source_type_str,
+                        )
+                except Exception as struct_err:
+                    logger.warning("Structured extraction failed for %s, falling back to LLM: %s", raw_event.id, struct_err)
+                    candidate = None
+
+            if candidate is None:
+                try:
+                    candidate = await self.llm_extractor.extract_async(
+                        parsed=parsed,
+                        raw_event_id=raw_event.id,
+                        source_type=source_type_str,
+                        external_url=raw_event.deep_link,
+                    )
+                except Exception as llm_exc:
+                    self.health_status = "DEGRADED"
+                    bug_logged = True
+                    log_bug(
+                        BugCode.PTB_LLM_001,
+                        subsystem="llm",
+                        severity="ERROR",
+                        message=f"LLM extraction failed for RawEvent {raw_event.id}: {llm_exc}",
+                        exc=llm_exc,
+                        raw_event_id=raw_event.id,
+                        source_type=source_type_str,
+                        tenant_id=raw_event.tenant_id,
+                    )
+                    raise
 
             # 3b. Gate: ignore candidates không được persist thành Task
             if getattr(candidate, "review_status", None) == "ignore":
@@ -225,6 +249,16 @@ class ProcessingPipeline:
                 else:
                     validated_candidate.description = f"[Context: {clean_ctx}]"
 
+            if isinstance(raw_event.raw_payload, dict):
+                src_title = raw_event.raw_payload.get("subject") or raw_event.raw_payload.get("title")
+                if src_title and isinstance(src_title, str):
+                    clean_title = src_title.replace("_", " ").strip()
+                    if validated_candidate.description:
+                        if clean_title not in validated_candidate.description:
+                            validated_candidate.description = f"{validated_candidate.description} [Source: {clean_title}]"
+                    else:
+                        validated_candidate.description = f"[Source: {clean_title}]"
+
             # 4b. Explicit deadline parsing from payload if missing from candidate
             if not validated_candidate.due_date and isinstance(raw_event.raw_payload, dict):
                 raw_due = None
@@ -238,35 +272,47 @@ class ProcessingPipeline:
                         parsed_due = datetime.fromisoformat(str(raw_due).replace("Z", "+00:00"))
                         validated_candidate.due_date = parsed_due.astimezone(timezone.utc)
                         validated_candidate.explicit_deadline = True
-                    except Exception:
-                        pass
+                    except Exception as err:
+                        logger.debug("Failed parsing explicit deadline: %s", err)
 
             # 5. IdentityResolver: Chuẩn hóa Person ID tuân thủ quy tắc bất biến
             # 5a. Chuẩn hóa Owner
             owner_name = validated_candidate.owner_name
             owner_ext_id = None
-            if not owner_name and isinstance(raw_event.raw_payload, dict):
+            if isinstance(raw_event.raw_payload, dict):
+                # 1. Jira
                 fields = raw_event.raw_payload.get("fields", {})
                 assignee = fields.get("assignee") if isinstance(fields, dict) else None
                 if isinstance(assignee, dict):
-                    owner_name = assignee.get("displayName") or assignee.get("name")
+                    if not owner_name:
+                        owner_name = assignee.get("displayName") or assignee.get("name")
                     owner_ext_id = assignee.get("accountId")
+                # 2. Shortcut
                 elif isinstance(raw_event.raw_payload.get("owner_ids"), list) and raw_event.raw_payload.get("owner_ids"):
                     owner_ext_id = raw_event.raw_payload.get("owner_ids")[0]
-                    owner_name = owner_ext_id
-            elif owner_name:
+                    if not owner_name:
+                        owner_name = owner_ext_id
+                # 3. GitHub
+                assignees = raw_event.raw_payload.get("assignees")
+                if isinstance(assignees, list) and assignees and isinstance(assignees[0], dict):
+                    gh_login = assignees[0].get("login")
+                    if gh_login:
+                        owner_ext_id = gh_login
+                        if not owner_name:
+                            owner_name = gh_login
+                elif isinstance(raw_event.raw_payload.get("assignee"), dict):
+                    gh_login = raw_event.raw_payload.get("assignee", {}).get("login")
+                    if gh_login:
+                        owner_ext_id = gh_login
+                        if not owner_name:
+                            owner_name = gh_login
+
+            if not owner_ext_id and owner_name:
                 if (
                     (parsed.actual_author_raw and owner_name == parsed.actual_author_raw)
                     or (raw_event.author_display_name and owner_name == raw_event.author_display_name)
                 ):
                     owner_ext_id = raw_event.author_external_id
-                elif isinstance(raw_event.raw_payload, dict):
-                    fields = raw_event.raw_payload.get("fields", {})
-                    assignee = fields.get("assignee") if isinstance(fields, dict) else None
-                    if isinstance(assignee, dict) and assignee.get("accountId"):
-                        owner_ext_id = assignee.get("accountId")
-                    elif isinstance(raw_event.raw_payload.get("owner_ids"), list) and raw_event.raw_payload.get("owner_ids"):
-                        owner_ext_id = raw_event.raw_payload.get("owner_ids")[0]
 
             if owner_name or owner_ext_id:
                 owner_res = await self._resolve_identity(
@@ -284,15 +330,32 @@ class ProcessingPipeline:
                     validated_candidate.owner_canonical_id = None
 
             # 5b. Chuẩn hóa Requester
-            req_name = validated_candidate.requester_name or parsed.quoted_author_raw or parsed.actual_author_raw or raw_event.author_display_name
-            req_ext_id = None
+            if parsed.is_quote_reply and parsed.quoted_author_raw:
+                req_name = parsed.quoted_author_raw
+                req_ext_id = parsed.quoted_author_raw
+            else:
+                req_name = validated_candidate.requester_name or parsed.quoted_author_raw or parsed.actual_author_raw or raw_event.author_display_name
+                req_ext_id = None
             if isinstance(raw_event.raw_payload, dict):
+                # 1. Jira
                 fields = raw_event.raw_payload.get("fields", {})
                 reporter = fields.get("reporter") if isinstance(fields, dict) else None
                 if isinstance(reporter, dict) and reporter.get("accountId"):
                     req_ext_id = reporter.get("accountId")
                     if not req_name:
                         req_name = reporter.get("displayName") or reporter.get("name")
+                # 2. GitHub
+                if source_type_str == "github":
+                    user_info = raw_event.raw_payload.get("user")
+                    if isinstance(user_info, dict) and user_info.get("login"):
+                        req_ext_id = user_info.get("login")
+                        if not req_name:
+                            req_name = req_ext_id
+                    elif isinstance(user_info, str):
+                        req_ext_id = user_info
+                        if not req_name:
+                            req_name = user_info
+
             if not req_ext_id:
                 if (
                     (parsed.actual_author_raw and req_name == parsed.actual_author_raw)
@@ -326,7 +389,7 @@ class ProcessingPipeline:
                     existing_tasks = await self.task_repo.get_active_tasks()
                 elif hasattr(self.task_repo, "list_tasks"):
                     existing_tasks = await self.task_repo.list_tasks(
-                        {"status": [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED]}
+                        {"status": [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.DONE]}
                     )
 
             best_match = await self.candidate_matcher.find_best_match(

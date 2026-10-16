@@ -33,6 +33,11 @@ from ptb_contracts.l2_processing import (
     TaskStatus,
     UnifiedTaskCandidate,
 )
+from ptb_contracts.telemetry import get_cost_audit_tracker
+from ptb_processing.extractor.cache import (
+    ExtractionCacheManager,
+    compute_extraction_cache_key,
+)
 
 logger = logging.getLogger("ptb.processing.extractor.llm_extractor")
 
@@ -77,19 +82,14 @@ def classify_review_status(confidence: float) -> str:
         return "ignore"
 
 
-SYSTEM_PROMPT = """Bạn là trợ lý AI chuyên trích xuất Task và Commitment từ tin nhắn công việc (Teams, Chat, Email).
-Hãy phân tích nội dung được cung cấp và trích xuất thông tin task dưới định dạng JSON với các trường:
-- "title": Tiêu đề ngắn gọn, rõ ràng của hành động cần làm.
-- "description": Bối cảnh hoặc ghi chú thêm.
-- "owner_name": Tên người sẽ thực hiện (nếu có).
-- "requester_name": Tên người giao việc hoặc yêu cầu (nếu có).
-- "due_date": Thời hạn hoàn thành dạng ISO 8601 (e.g. "2026-09-18T17:00:00Z"), hoặc null.
-- "explicit_deadline": boolean (true nếu có giờ/ngày cụ thể).
-- "extraction_confidence": float từ 0.0 đến 1.0 đánh giá mức độ chắc chắn đây là task/cam kết.
-  (>=0.65 nếu có cam kết rõ ràng, 0.40-0.64 nếu nghi ngờ cần người duyệt, <0.40 nếu là tin rác/không phải task).
-- "evidence_snippet": Câu hoặc đoạn trích ngắn chứng minh cam kết/yêu cầu này.
-
-CHỈ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ, KHÔNG KÈM TEXT GIẢI THÍCH."""
+SYSTEM_PROMPT = """Bạn là trợ lý AI trích xuất Task và Commitment từ tin nhắn công việc.
+Hãy phân tích nội dung và trích xuất đúng schema JSON sau:
+{"title":"<tiêu đề hành động>","description":"<bối cảnh/ghi chú>","owner_name":"<người làm/null>","requester_name":"<người giao/null>","due_date":null,"explicit_deadline":false,"extraction_confidence":0.8,"evidence_snippet":"<trích dẫn bằng chứng>"}
+Quy tắc:
+- due_date: ISO 8601 (e.g. "2026-09-18T17:00:00Z") hoặc null nếu không có.
+- explicit_deadline: true nếu có ngày/giờ cụ thể, false nếu không.
+- extraction_confidence: >=0.65 (rõ ràng), 0.40-0.64 (nghi ngờ/cần duyệt), <0.40 (rác/không phải task).
+CHỈ TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON HỢP LỆ, KHÔNG KÈM GIẢI THÍCH."""
 
 
 class LLMExtractionError(RuntimeError):
@@ -106,6 +106,7 @@ class LLMStructuredExtractor:
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         timeout: float = 30.0,
+        cache: Optional[ExtractionCacheManager] = None,
     ) -> None:
         self.base_url = (
             base_url
@@ -123,6 +124,7 @@ class LLMStructuredExtractor:
             or os.getenv("LLM_MODEL", "gpt-4o-mini")
         )
         self.timeout = float(os.getenv("LLM_TIMEOUT", str(timeout)))
+        self.cache = cache or ExtractionCacheManager.get_instance()
 
     def _call_openai_completion(self, prompt: str) -> Dict[str, Any]:
         """Gọi OpenAI-compatible API qua HTTP POST bằng urllib với retry."""
@@ -164,7 +166,20 @@ class LLMStructuredExtractor:
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as response:
                     res_body = response.read().decode("utf-8")
-                    return json.loads(res_body)
+                    res_json = json.loads(res_body)
+                    usage = res_json.get("usage", {})
+                    in_tokens = usage.get("prompt_tokens", 0)
+                    out_tokens = usage.get("completion_tokens", 0)
+                    get_cost_audit_tracker().record_llm_call(
+                        provider="openai",
+                        model=self.model,
+                        subsystem="extraction",
+                        input_tokens=in_tokens,
+                        output_tokens=out_tokens,
+                        attempts=attempt,
+                        cached=False,
+                    )
+                    return res_json
             except urllib.error.HTTPError as e:
                 last_error = e
                 # Retry on 429, 500, 502, 503, 504
@@ -254,6 +269,28 @@ class LLMStructuredExtractor:
         context_parts.append(f"Tin nhắn phản hồi (từ {actual_author or 'Người trả lời'}): \"{actual_text}\"")
         combined_prompt = "\n".join(context_parts)
 
+        # Check extraction cache first (sha256(content:model:prompt_version) or raw_event_id alias)
+        cache_key = compute_extraction_cache_key(combined_prompt, self.model, prompt_version="v1.0")
+        cached_cand = self.cache.get(cache_key, alias_key=raw_event_id)
+        if cached_cand is not None:
+            get_cost_audit_tracker().record_cache_hit()
+            cand = cached_cand.model_copy(deep=True)
+            cand.id = str(uuid4())
+            if project_key:
+                cand.project_key = project_key
+            if channel_or_group:
+                cand.channel_or_group = channel_or_group
+            if not cand.requester_name and actual_author:
+                cand.requester_name = actual_author
+            if cand.evidences:
+                for ev in cand.evidences:
+                    ev.id = str(uuid4())
+                    ev.task_id = cand.id
+                    ev.raw_event_id = raw_event_id
+                    if external_url:
+                        ev.external_url = external_url
+            return cand
+
         # 1. Zero-fallback requirement: API key required
         if not self.api_key:
             log_bug(
@@ -335,7 +372,7 @@ class LLMStructuredExtractor:
             extraction_version="v1.0",
         )
 
-        return UnifiedTaskCandidate(
+        candidate = UnifiedTaskCandidate(
             id=task_id,
             title=extracted_schema.title or "(Không phải task)",
             description=extracted_schema.description,
@@ -350,6 +387,14 @@ class LLMStructuredExtractor:
             review_status=review_status,
             evidences=[evidence],
         )
+
+        # Store in cache
+        try:
+            self.cache.put(cache_key, candidate, alias_key=raw_event_id)
+        except Exception as e:
+            logger.debug("Failed saving candidate to extraction cache: %s", e)
+
+        return candidate
 
     def extract_from_raw_event(
         self,

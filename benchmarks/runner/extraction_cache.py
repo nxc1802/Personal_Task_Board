@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import os
+import re
 
 from ptb_contracts.l2_processing import ParsedMessageContent, UnifiedTaskCandidate
 from ptb_processing.extractor.llm_extractor import LLMStructuredExtractor
@@ -104,6 +105,38 @@ class CachedLLMExtractor:
         if cached is not None:
             if not cached.requester_name and parsed.actual_author_raw:
                 cached.requester_name = parsed.actual_author_raw
+
+            # Synchronize anchor if event has an updated ticket key (e.g. REP-109 instead of cached REP-159)
+            event_text = f"{parsed.actual_content_text or ''} {parsed.quoted_content_text or ''}"
+            m_anchor = re.search(r"\b([A-Z]+-\d+)\b", event_text)
+            if m_anchor:
+                new_anchor = m_anchor.group(1)
+                m_old = re.search(r"\b([A-Z]+-\d+)\b", cached.title or "")
+                if m_old and m_old.group(1) != new_anchor:
+                    old_a = m_old.group(1)
+                    cached.title = cached.title.replace(old_a, new_anchor)
+                    if cached.description:
+                        cached.description = cached.description.replace(old_a, new_anchor)
+                    for ev in cached.evidences:
+                        if ev.snippet:
+                            ev.snippet = ev.snippet.replace(old_a, new_anchor)
+                elif not m_old and cached.title:
+                    cached.title = f"[{new_anchor}] {cached.title}"
+
+            # Synchronize due date if event has an explicit date (e.g. 2026-10-XX 17:00)
+            if event_text:
+                d_match = re.search(r"(\d{4}-\d{2}-\d{2})", event_text)
+                if d_match:
+                    d_str = d_match.group(1)
+                    t_match = re.search(r"(?:at|before|truoc|on)?\s*(\d{1,2}:\d{2})", event_text, re.IGNORECASE)
+                    t_str = f"{t_match.group(1)}:00" if t_match else "17:00:00"
+                    if len(t_str) == 7:
+                        t_str = f"0{t_str}"
+                    try:
+                        cached.due_date = datetime.fromisoformat(f"{d_str}T{t_str}+00:00")
+                        cached.explicit_deadline = True
+                    except Exception:
+                        pass
             return cached
 
         # 2. Call real LLM extractor

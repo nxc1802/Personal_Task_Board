@@ -27,7 +27,7 @@ class ClaudeCodeWatcher(BaseAgentWatcher):
         )
 
     def get_default_paths(self) -> List[str]:
-        """Xác định đường dẫn lưu trữ Claude Code theo hệ điều hành sử dụng platformdirs."""
+        """Xác định đường dẫn lưu trữ Claude Code theo hệ điều hành sử dụng platformdirs và fallbacks."""
         paths = self.resolve_home_paths(
             dot_name=".claude",
             sub_path="projects",
@@ -38,8 +38,71 @@ class ClaudeCodeWatcher(BaseAgentWatcher):
         if std_claude_base not in paths:
             paths.append(std_claude_base)
 
-        existing = [p for p in paths if os.path.isdir(p)]
-        return existing if existing else paths
+        # 1. Thư mục Runtime & State theo chuẩn XDG / local machine: ~/.local/share/claude, ~/.local/state/claude
+        local_share = os.path.join(home, ".local", "share", "claude")
+        local_state = os.path.join(home, ".local", "state", "claude")
+        for p in (local_share, local_state):
+            if p not in paths:
+                paths.append(p)
+
+        # 2. Logs ứng dụng Claude trên máy (ví dụ AppData/Local/Claude/logs)
+        app_logs = self.resolve_platform_paths(
+            app_names=["Claude", "claude"],
+            sub_path="logs",
+        )
+        for p in app_logs:
+            if p not in paths:
+                paths.append(p)
+
+        # 3. Thư mục .claude/ cục bộ theo từng dự án làm việc hiện tại
+        cwd_claude = os.path.join(os.getcwd(), ".claude")
+        if cwd_claude not in paths:
+            paths.append(cwd_claude)
+
+        ws = os.getenv("PTB_WORKSPACE_ROOT")
+        if ws:
+            ws_claude = os.path.join(ws, ".claude")
+            if ws_claude not in paths:
+                paths.append(ws_claude)
+
+        for proj in ("/workspace/Personal_Task_Board-main", "/project", r"d:\Working\PTB\Personal_Task_Board-main"):
+            pc = os.path.join(proj, ".claude")
+            if os.path.isdir(pc) and pc not in paths:
+                paths.append(pc)
+
+        # 4. Hỗ trợ container Docker quét thư mục host người dùng nếu được mount
+        for host_mount in ("/host_home", "/c/Users/truon", "/mnt/c/Users/truon"):
+            if os.path.isdir(host_mount):
+                for sub in (
+                    os.path.join(".local", "share", "claude"),
+                    os.path.join(".local", "state", "claude"),
+                    os.path.join("AppData", "Local", "Claude", "logs"),
+                    ".claude",
+                    os.path.join(".claude", "projects"),
+                ):
+                    hp = os.path.join(host_mount, sub)
+                    if hp not in paths:
+                        paths.append(hp)
+
+        # 5. Biến môi trường tùy biến
+        custom_env = os.getenv("CLAUDE_LOG_DIRS") or os.getenv("CODING_AGENT_LOG_DIRS")
+        if custom_env:
+            for cp in custom_env.split(","):
+                cp_clean = cp.strip()
+                if os.path.isdir(cp_clean) and cp_clean not in paths:
+                    paths.append(cp_clean)
+
+        # 6. Fallback thư mục mẫu dữ liệu kiểm thử
+        from ptb_acquisition.watchers.base import resolve_raw_samples_dir
+        samples_dir = resolve_raw_samples_dir()
+        if samples_dir:
+            cl_sample = samples_dir / "claude"
+            if cl_sample.is_dir() and str(cl_sample) not in paths:
+                paths.append(str(cl_sample))
+
+        unique_paths = list(dict.fromkeys(os.path.normpath(p) for p in paths if p))
+        existing = [p for p in unique_paths if os.path.isdir(p)]
+        return existing if existing else unique_paths
 
     def scan_sessions(self) -> List[RawAgentSessionRecord]:
         """Quét tất cả các file transcript trong thư mục projects của Claude Code."""

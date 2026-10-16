@@ -23,6 +23,27 @@ load_dotenv()
 sys.path.insert(0, str(ROOT_DIR / "packages"))
 sys.path.insert(0, str(ROOT_DIR))
 
+
+def resolve_raw_samples_dir() -> Optional[Path]:
+    """Tìm thư mục raw_samples linh hoạt cho fallbacks kiểm thử & mẫu data thực tế."""
+    custom = os.getenv("PTB_RAW_SAMPLES_DIR")
+    if custom and Path(custom).exists():
+        return Path(custom)
+    candidates = [
+        Path("/app/raw_samples"),
+        Path.cwd() / "raw_samples",
+        Path.cwd().parent / "raw_samples",
+        ROOT_DIR / "raw_samples",
+        ROOT_DIR.parent / "raw_samples",
+        Path(__file__).resolve().parents[4] / "raw_samples",
+        Path(__file__).resolve().parents[5] / "raw_samples",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_dir():
+            return p
+    return None
+
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -46,6 +67,7 @@ from ptb_contracts.l5_experience import (
     KnowledgeSearchResponse,
     TaskActionResponse,
 )
+from ptb_contracts.telemetry import get_cost_audit_tracker
 
 logger = logging.getLogger("ptb.application.api")
 
@@ -94,6 +116,13 @@ def verify_api_key(
         return None
 
     expected_key = os.getenv("PTB_API_KEY")
+    env = (os.getenv("PTB_ENVIRONMENT") or os.getenv("ENVIRONMENT") or "").strip().lower()
+    if env == "production" and (not expected_key or not expected_key.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server misconfiguration: PTB_API_KEY must be configured in production environment.",
+        )
+
     if not expected_key or not expected_key.strip():
         # Dev mode: unauthenticated access allowed with warning log
         logger.warning(
@@ -277,6 +306,14 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
     ) -> Dict[str, Any]:
         """Kiểm tra tình trạng sức khỏe sâu (deep health) của service và các dependencies."""
         return await service.get_system_health()
+
+    # --------------------------------------------------------------------------
+    # 1b. GET /api/audit/cost
+    # --------------------------------------------------------------------------
+    @app.get("/api/audit/cost")
+    async def get_cost_audit() -> Dict[str, Any]:
+        """Trả về toàn bộ telemetry về số lần gọi AI, token, chi phí, retry và hiệu quả cache."""
+        return get_cost_audit_tracker().get_metrics()
 
     # --------------------------------------------------------------------------
     # 2. GET /api/today
@@ -671,9 +708,69 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
     # --------------------------------------------------------------------------
     # 14B. GET & POST /api/connectors/config (Dynamic Connector Credentials - P1)
     # --------------------------------------------------------------------------
+    def _get_connectors_config_file() -> Path:
+        possible_dirs = [
+            Path("data/config"),
+            Path(__file__).resolve().parents[4] / "data" / "config",
+            Path.cwd() / "data" / "config",
+        ]
+        for d in possible_dirs:
+            if d.parent.exists():
+                d.mkdir(parents=True, exist_ok=True)
+                return d / "connectors.json"
+        p = Path("data/config/connectors.json")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def _load_connectors_persistent_config() -> None:
+        cfg_file = _get_connectors_config_file()
+        if cfg_file.exists() and cfg_file.is_file():
+            try:
+                with open(cfg_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    for k, v in data.items():
+                        if k and v and isinstance(v, str) and k not in os.environ:
+                            os.environ[k] = v
+            except Exception as e:
+                logger.warning("Failed loading persistent connectors config from %s: %s", cfg_file, e)
+
+    def _save_connectors_persistent_config(updates: Dict[str, str]) -> None:
+        cfg_file = _get_connectors_config_file()
+        data: Dict[str, str] = {}
+        if cfg_file.exists():
+            try:
+                with open(cfg_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data.update(updates)
+        try:
+            cfg_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(cfg_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning("Failed writing persistent connectors config to %s: %s", cfg_file, e)
+
+    # Initial load of persistent connectors on app creation
+    _load_connectors_persistent_config()
+
     @app.get("/api/connectors/config")
     async def get_connectors_config_api() -> Dict[str, Any]:
         """Trả về danh sách 9 connectors cùng trạng thái cấu hình token (masked)."""
+        _load_connectors_persistent_config()
+
+        # Check actual storage_state.json validity
+        possible_st_paths = [
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        st_path = next((p for p in possible_st_paths if p.exists()), None)
+        from ptb_acquisition.playwright.session import SessionManager
+        mgr = SessionManager(str(st_path)) if st_path else None
+        has_ms_session = bool(mgr and mgr.has_valid_session())
+
         connectors = [
             {
                 "id": "github",
@@ -741,7 +838,7 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                 "key": "ms_teams",
                 "name": "Microsoft Teams",
                 "type": "local_cookie",
-                "configured": True,
+                "configured": has_ms_session,
                 "instructions": "Tự động thu thập qua Chromium (Playwright storage_state.json)",
             },
             {
@@ -749,24 +846,63 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                 "key": "ms_outlook",
                 "name": "Microsoft Outlook",
                 "type": "local_cookie",
-                "configured": True,
+                "configured": has_ms_session or bool(os.getenv("MS_GRAPH_TOKEN")),
                 "instructions": "Tự động thu thập qua Chromium (Playwright storage_state.json)",
             },
             {
                 "id": "git",
                 "key": "git",
-                "name": "Local Git Watcher",
+                "name": "Local Git Watcher (.git)",
                 "type": "local_disk",
                 "configured": True,
-                "instructions": "Quét commit log & diff cục bộ trong workspace",
+                "current_paths": [
+                    os.getenv("PTB_WORKSPACE_ROOT") or r"d:\Working\PTB\Personal_Task_Board-main",
+                    r"d:\Working\PTB",
+                ],
+                "instructions": "Quét trực tiếp commit log, branches và file diffs từ thư mục ẩn .git trong các dự án trên máy tính cá nhân",
             },
             {
                 "id": "coding_agent",
                 "key": "coding_agent",
-                "name": "Coding Agent Watcher",
+                "name": "Coding Agent Watchers",
                 "type": "local_disk",
                 "configured": True,
-                "instructions": "Theo dõi phiên làm việc Antigravity / Cursor / Claude Code",
+                "agents": {
+                    "antigravity": {
+                        "name": "Google Antigravity",
+                        "paths": [
+                            r"C:\Users\truon\.gemini\antigravity\brain",
+                            r"C:\Users\truon\.gemini\antigravity-ide\brain",
+                        ],
+                        "status": "Ready",
+                    },
+                    "codex": {
+                        "name": "OpenAI Codex Desktop",
+                        "paths": [
+                            r"C:\Users\truon\.codex\sessions",
+                            r"C:\Users\truon\.codex\thread_history_1.sqlite",
+                        ],
+                        "status": "Ready",
+                    },
+                    "cursor": {
+                        "name": "Cursor (AI Editor)",
+                        "paths": [
+                            r"C:\Users\truon\AppData\Roaming\Cursor\User\workspaceStorage",
+                            r"C:\Users\truon\AppData\Roaming\Cursor\User\globalStorage",
+                        ],
+                        "status": "Ready",
+                    },
+                    "claude": {
+                        "name": "Claude Code (CLI)",
+                        "paths": [
+                            ".claude (project root)",
+                            r"C:\Users\truon\.local\share\claude",
+                            r"C:\Users\truon\AppData\Local\Claude\logs",
+                        ],
+                        "status": "Ready",
+                    },
+                },
+                "instructions": "Theo dõi và nạp lịch sử hội thoại từ Google Antigravity, OpenAI Codex, Cursor, Claude Code",
             },
         ]
         return {"status": "success", "connectors": connectors}
@@ -779,7 +915,7 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
 
     @app.post("/api/connectors/config")
     async def update_connector_config_api(req: ConnectorConfigUpdate) -> Dict[str, Any]:
-        """Cập nhật runtime token cho connector mà không cần khởi động lại container (P1)."""
+        """Cập nhật runtime token hoặc đường dẫn cho connector mà không cần khởi động lại container (P1)."""
         key = (req.connector or req.connector_id or "").lower().strip()
         token = req.token.strip()
 
@@ -789,12 +925,15 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             "slack": "SLACK_BOT_TOKEN",
             "shortcut": "SHORTCUT_API_TOKEN",
             "confluence": "CONFLUENCE_API_TOKEN",
+            "git": "PTB_GIT_REPOS",
+            "coding_agent": "CODING_AGENT_LOG_DIRS",
+            "agents": "CODING_AGENT_LOG_DIRS",
         }
         env_var = env_map.get(key)
         if not env_var:
-            raise HTTPException(status_code=400, detail=f"Connector '{key}' không hỗ trợ cập nhật token qua API này.")
+            raise HTTPException(status_code=400, detail=f"Connector '{key}' không hỗ trợ cập nhật qua API này.")
 
-        # Update in-memory environment immediately for current container process
+        # Update in-memory environment immediately for current process
         os.environ[env_var] = token
         if req.extra_url:
             if key == "jira":
@@ -802,7 +941,16 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             elif key == "confluence":
                 os.environ["CONFLUENCE_URL"] = req.extra_url.strip()
 
-        # Persist to .env file if available
+        # 1. Persist to data/config/connectors.json in mounted volume
+        persisted = {env_var: token}
+        if req.extra_url:
+            if key == "jira":
+                persisted["JIRA_URL"] = req.extra_url.strip()
+            elif key == "confluence":
+                persisted["CONFLUENCE_URL"] = req.extra_url.strip()
+        _save_connectors_persistent_config(persisted)
+
+        # 2. Persist to .env file if available
         env_file_paths = [
             Path(".env"),
             Path(__file__).resolve().parents[4] / ".env",
@@ -824,9 +972,9 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         return {
             "status": "success",
             "connector": key,
-            "message": f"Đã lưu và kích hoạt token cho {key.upper()} tức thì (không cần restart container)!",
+            "message": f"Đã lưu và kích hoạt cấu hình cho {key.upper()} tức thì (không cần restart container)!",
             "configured": bool(token),
-            "masked_token": (token[:6] + "..." + token[-4:]) if token else "Chưa cấu hình",
+            "masked_token": (token[:6] + "..." + token[-4:]) if (token and "TOKEN" in env_var) else token,
         }
 
     # --------------------------------------------------------------------------
@@ -1029,10 +1177,8 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
 
         pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="local-user")
 
-        workspace = os.getenv("PTB_WORKSPACE_ROOT", str(ROOT_DIR))
-        repo_paths = [workspace] if os.path.isdir(os.path.join(workspace, ".git")) else []
-        if req and req.repo_path and os.path.exists(req.repo_path):
-            repo_paths = [req.repo_path]
+        git_cands = [req.repo_path] if (req and req.repo_path) else None
+        repo_paths = GitWatcherAdapter.resolve_repo_paths(git_cands)
 
         adapters = [
             AgentWatchersAdapter(tenant_id="local-user"),
@@ -1179,8 +1325,8 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                             ));
                             if (webBtn) webBtn.click();
                         }""")
-                    except Exception:
-                        pass
+                    except Exception as eval_err:
+                        logger.debug("Web app click non-fatal: %s", eval_err)
 
                     # Chờ giao diện chính Teams tải và các gói tin bắt đầu nạp
                     await asyncio.sleep(8)
@@ -1375,8 +1521,9 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         except Exception as e:
             logger.error("Playwright Outlook capture error: %s", e)
             # Nếu có lỗi khi mở trình duyệt, thử dùng pre-captured samples nếu có
-            sample_file = Path(r"d:\Working\PTB\raw_samples\outlook\outlook_messages.jsonl")
-            if sample_file.exists():
+            samples_dir = resolve_raw_samples_dir()
+            sample_file = (samples_dir / "outlook" / "outlook_messages.jsonl") if samples_dir else None
+            if sample_file and sample_file.exists():
                 logger.info("Dùng fallback sample outlook_messages.jsonl")
                 try:
                     with open(sample_file, "r", encoding="utf-8") as sf:
@@ -1450,29 +1597,32 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             raise HTTPException(status_code=500, detail="ApplicationService chưa được cấu hình repositories")
 
         target_platform = (req.platform if req and req.platform else "all").strip().lower()
-        pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id="local-user")
+        tenant_id = os.getenv("PTB_TENANT_ID") or os.getenv("TENANT_ID", "local-user")
+        pipeline = AcquisitionPipeline(raw_event_repo=raw_repo, checkpoint_repo=ckpt_repo, tenant_id=tenant_id)
 
-        workspace = os.getenv("PTB_WORKSPACE_ROOT", str(ROOT_DIR))
-        repo_paths = [workspace] if os.path.isdir(os.path.join(workspace, ".git")) else []
-        if req and req.repo_path and os.path.exists(req.repo_path):
-            repo_paths = [req.repo_path]
+        # Quét repo_paths linh hoạt từ biến môi trường, workspace và thư mục hiện tại
+        git_cands = [req.repo_path] if (req and req.repo_path) else None
+        repo_paths = GitWatcherAdapter.resolve_repo_paths(git_cands)
 
         adapters_to_sync = []
         notes = []
         total_ingested = 0
         adapter_details = {}
 
+        # Kiểm tra storage_state.json cho Microsoft Playwright Sessions
+        possible_paths = [
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        st_path = next((p for p in possible_paths if p.exists()), None)
+        from ptb_acquisition.playwright.session import SessionManager
+        mgr = SessionManager(str(st_path)) if st_path else None
+        has_ms_session = bool(mgr and mgr.has_valid_session())
+
         # 0. Microsoft Teams (Playwright with storage_state.json)
         if target_platform in ("all", "teams", "ms_teams"):
-            possible_paths = [
-                Path("data/playwright/storage_state.json"),
-                Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
-                Path.cwd() / "data" / "playwright" / "storage_state.json",
-            ]
-            st_path = next((p for p in possible_paths if p.exists()), None)
-            from ptb_acquisition.playwright.session import SessionManager
-            mgr = SessionManager(str(st_path)) if st_path else None
-            if mgr and mgr.has_valid_session():
+            if has_ms_session:
                 try:
                     teams_res = await ingest_teams_api(service=service)
                     captured = teams_res.get("captured_teams", teams_res.get("captured_events", 0))
@@ -1483,27 +1633,30 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                     adapter_details["teams"] = f"Lỗi/Hết hạn: {te}"
                     notes.append(f"Teams: {te}")
             elif target_platform in ("teams", "ms_teams"):
-                notes.append("Chưa có phiên đăng nhập Teams hợp lệ. Vui lòng bấm 'Đăng Nhập Microsoft Teams' để xác thực.")
+                return {
+                    "success": False,
+                    "auth_required": True,
+                    "platform": "teams",
+                    "ingested_count": 0,
+                    "processed_count": 0,
+                    "failed_count": 0,
+                    "pending_count": 0,
+                    "message": "Chưa có phiên đăng nhập Microsoft Teams hợp lệ. Vui lòng kết nối tài khoản để tiếp tục.",
+                }
+            else:
+                notes.append("Teams chưa đăng nhập, bỏ qua trong lần quét toàn bộ.")
 
-        # 1. Git
-        if target_platform in ("all", "git"):
-            adapters_to_sync.append(("git", GitWatcherAdapter(repo_paths=repo_paths, tenant_id="local-user")))
+        # 1. Git (Nguồn Local: Quét trực tiếp máy người dùng)
+        if target_platform in ("all", "git", "all_local", "local"):
+            adapters_to_sync.append(("git", GitWatcherAdapter(repo_paths=repo_paths, tenant_id=tenant_id)))
 
-        # 2. Coding Agents
-        if target_platform in ("all", "coding_agent", "agents"):
-            adapters_to_sync.append(("coding_agent", AgentWatchersAdapter(tenant_id="local-user")))
+        # 2. Coding Agents (Nguồn Local: Quét trực tiếp máy người dùng)
+        if target_platform in ("all", "coding_agent", "agents", "all_local", "local"):
+            adapters_to_sync.append(("coding_agent", AgentWatchersAdapter(tenant_id=tenant_id)))
 
         # 3. Microsoft Outlook (Playwright with storage_state.json or Graph Token)
         if target_platform in ("all", "outlook", "ms_outlook"):
-            possible_paths = [
-                Path("data/playwright/storage_state.json"),
-                Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
-                Path.cwd() / "data" / "playwright" / "storage_state.json",
-            ]
-            st_path = next((p for p in possible_paths if p.exists()), None)
-            from ptb_acquisition.playwright.session import SessionManager
-            mgr = SessionManager(str(st_path)) if st_path else None
-            if mgr and mgr.has_valid_session():
+            if has_ms_session:
                 try:
                     outlook_res = await ingest_outlook_api(service=service)
                     captured = outlook_res.get("captured_outlook", 0)
@@ -1516,35 +1669,123 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             else:
                 graph_token = os.getenv("MS_GRAPH_TOKEN")
                 if graph_token:
-                    outlook_adp = OutlookMailAdapter(tenant_id="local-user", graph_token=graph_token)
+                    outlook_adp = OutlookMailAdapter(tenant_id=tenant_id, graph_token=graph_token)
                     adapters_to_sync.append(("outlook", outlook_adp))
                 elif target_platform in ("outlook", "ms_outlook"):
-                    notes.append("Chưa có phiên đăng nhập Outlook hợp lệ trong storage_state.json hoặc MS_GRAPH_TOKEN.")
+                    return {
+                        "success": False,
+                        "auth_required": True,
+                        "platform": "outlook",
+                        "ingested_count": 0,
+                        "processed_count": 0,
+                        "failed_count": 0,
+                        "pending_count": 0,
+                        "message": "Chưa có phiên đăng nhập Microsoft Outlook hợp lệ trong storage_state.json hoặc MS_GRAPH_TOKEN. Vui lòng kết nối tài khoản.",
+                    }
+                else:
+                    notes.append("Outlook chưa đăng nhập, bỏ qua trong lần quét toàn bộ.")
 
-        # 4. Jira
+        # 4. Jira (Cloud / Server: Cần Base URL & Token)
         if target_platform in ("all", "jira"):
             jira_url = os.getenv("JIRA_BASE_URL")
             jira_token = os.getenv("JIRA_API_TOKEN")
             if jira_url and jira_token:
-                adapters_to_sync.append(("jira", JiraAdapter(base_url=jira_url, api_token=jira_token, tenant_id="local-user")))
+                adapters_to_sync.append(("jira", JiraAdapter(base_url=jira_url, api_token=jira_token, tenant_id=tenant_id)))
             elif target_platform == "jira":
-                notes.append("Jira chưa cấu hình JIRA_API_TOKEN trong .env hoặc config/sources.yaml")
+                return {
+                    "success": False,
+                    "auth_required": True,
+                    "platform": "jira",
+                    "ingested_count": 0,
+                    "processed_count": 0,
+                    "failed_count": 0,
+                    "pending_count": 0,
+                    "message": "Jira Software chưa được cấu hình API Token và Base URL. Vui lòng kết nối tài khoản.",
+                }
+            else:
+                notes.append("Jira chưa cấu hình token, bỏ qua trong lần quét toàn bộ.")
 
-        # 5. GitHub
+        # 5. GitHub (Cloud: Cần GitHub Token)
         if target_platform in ("all", "github"):
             gh_token = os.getenv("GITHUB_TOKEN")
             if gh_token:
-                adapters_to_sync.append(("github", GitHubAdapter(api_token=gh_token, tenant_id="local-user")))
+                adapters_to_sync.append(("github", GitHubAdapter(api_token=gh_token, tenant_id=tenant_id)))
             elif target_platform == "github":
-                notes.append("GitHub chưa cấu hình GITHUB_TOKEN")
+                return {
+                    "success": False,
+                    "auth_required": True,
+                    "platform": "github",
+                    "ingested_count": 0,
+                    "processed_count": 0,
+                    "failed_count": 0,
+                    "pending_count": 0,
+                    "message": "GitHub chưa cấu hình GITHUB_TOKEN. Vui lòng kết nối tài khoản.",
+                }
+            else:
+                notes.append("GitHub chưa cấu hình token, bỏ qua trong lần quét toàn bộ.")
 
         # 6. Slack
         if target_platform in ("all", "slack"):
             slack_token = os.getenv("SLACK_BOT_TOKEN")
             if slack_token:
-                adapters_to_sync.append(("slack", SlackAdapter(bot_token=slack_token, tenant_id="local-user")))
+                adapters_to_sync.append(("slack", SlackAdapter(bot_token=slack_token, tenant_id=tenant_id)))
             elif target_platform == "slack":
-                notes.append("Slack chưa cấu hình SLACK_BOT_TOKEN")
+                return {
+                    "success": False,
+                    "auth_required": True,
+                    "platform": "slack",
+                    "ingested_count": 0,
+                    "processed_count": 0,
+                    "failed_count": 0,
+                    "pending_count": 0,
+                    "message": "Slack chưa cấu hình SLACK_BOT_TOKEN. Vui lòng kết nối tài khoản.",
+                }
+
+        # 7. Shortcut
+        if target_platform in ("all", "shortcut"):
+            shortcut_token = os.getenv("SHORTCUT_API_TOKEN")
+            if shortcut_token:
+                adapters_to_sync.append(("shortcut", ShortcutAdapter(api_token=shortcut_token, tenant_id=tenant_id)))
+            elif target_platform == "shortcut":
+                return {
+                    "success": False,
+                    "auth_required": True,
+                    "platform": "shortcut",
+                    "ingested_count": 0,
+                    "processed_count": 0,
+                    "failed_count": 0,
+                    "pending_count": 0,
+                    "message": "Shortcut chưa cấu hình SHORTCUT_API_TOKEN. Vui lòng kết nối tài khoản.",
+                }
+            else:
+                notes.append("Shortcut chưa cấu hình token, bỏ qua trong lần quét toàn bộ.")
+
+        # 8. Confluence
+        if target_platform in ("all", "confluence"):
+            confluence_token = os.getenv("CONFLUENCE_API_TOKEN")
+            confluence_url = os.getenv("CONFLUENCE_URL") or os.getenv("CONFLUENCE_BASE_URL")
+            if confluence_token and confluence_url:
+                adapters_to_sync.append(
+                    ("confluence", ConfluenceAdapter(
+                        base_url=confluence_url,
+                        api_token=confluence_token,
+                        email=os.getenv("CONFLUENCE_EMAIL"),
+                        tenant_id=tenant_id
+                    ))
+                )
+            elif target_platform == "confluence":
+                return {
+                    "success": False,
+                    "auth_required": True,
+                    "platform": "confluence",
+                    "ingested_count": 0,
+                    "processed_count": 0,
+                    "failed_count": 0,
+                    "pending_count": 0,
+                    "message": "Confluence chưa cấu hình API Token hoặc Base URL. Vui lòng kết nối tài khoản.",
+                }
+            else:
+                notes.append("Confluence chưa cấu hình token/URL, bỏ qua trong lần quét toàn bộ.")
 
         for adp_name, adp in adapters_to_sync:
             try:
@@ -1560,10 +1801,33 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
 
         worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
-        batch_limit = req.limit if req and req.limit else 15
-        asyncio.create_task(worker.process_batch(limit=batch_limit))
+        batch_limit = max(req.limit if req and req.limit else 25, 25)
+        processed_res = await worker.process_batch(limit=batch_limit)
+        if isinstance(processed_res, list):
+            processed_count = sum(
+                1 for s in processed_res
+                if s == ProcessingStatus.PROCESSED or str(getattr(s, "value", s)).lower() == "processed"
+            )
+            failed_count = sum(
+                1 for s in processed_res
+                if s == ProcessingStatus.FAILED or str(getattr(s, "value", s)).lower() == "failed"
+            )
+            retry_count = sum(
+                1 for s in processed_res
+                if s == ProcessingStatus.RETRY or str(getattr(s, "value", s)).lower() == "retry"
+            )
+        elif isinstance(processed_res, dict):
+            processed_count = processed_res.get("processed", 0)
+            failed_count = processed_res.get("failed", 0)
+            retry_count = processed_res.get("retry", 0)
+        else:
+            processed_count = 0
+            failed_count = 0
+            retry_count = 0
 
-        summary_msg = f"Đã quét và thu thập {total_ingested} sự kiện mới ({', '.join(adapter_details.keys()) if adapter_details else 'không có dữ liệu mới'}), tiến trình xử lý công việc đang chạy ngầm."
+        pending_count = max(total_ingested - (processed_count + failed_count), 0)
+
+        summary_msg = f"Đã quét và thu thập {total_ingested} sự kiện mới ({', '.join(adapter_details.keys()) if adapter_details else 'không có dữ liệu mới'}), đã xử lý {processed_count} sự kiện thành công."
         if notes:
             summary_msg += f" (Lưu ý: {'; '.join(notes)})"
 
@@ -1571,17 +1835,19 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             "success": True,
             "platform": target_platform,
             "ingested_count": total_ingested,
-            "processed_count": total_ingested,
+            "processed_count": processed_count,
+            "failed_count": failed_count,
+            "pending_count": pending_count,
             "details": adapter_details,
             "message": summary_msg,
         }
 
     # --------------------------------------------------------------------------
-    # 17D. GET /api/auth/session-status (Inspect Playwright Storage State)
+    # 17D. GET /api/auth/session-status (Inspect Playwright Storage State & Cloud Integrations)
     # --------------------------------------------------------------------------
     @app.get("/api/auth/session-status")
     async def get_session_status_api() -> Dict[str, Any]:
-        """Kiểm tra tình trạng cookie/session lưu trữ (storage_state.json) của Teams & Outlook."""
+        """Kiểm tra tình trạng cookie/session lưu trữ (storage_state.json) và các tài khoản đám mây."""
         from ptb_acquisition.playwright.session import SessionManager, DEFAULT_STORAGE_PATH, SessionHealthState
 
         custom_env = os.getenv("PTB_STORAGE_STATE")
@@ -1616,6 +1882,39 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             except Exception as e:
                 logger.warning("Error reading cookie state: %s", e)
 
+        # Kiểm tra chi tiết trạng thái từng nền tảng đăng nhập
+        is_teams_connected = any("teams" in d for d in domains)
+        is_outlook_connected = any("outlook" in d or "office" in d for d in domains) or bool(os.getenv("MS_GRAPH_TOKEN"))
+        is_jira_connected = bool(os.getenv("JIRA_API_TOKEN") and os.getenv("JIRA_BASE_URL")) or any("atlassian" in d or "jira" in d for d in domains)
+        is_github_connected = bool(os.getenv("GITHUB_TOKEN")) or any("github" in d for d in domains)
+
+        platforms_status = {
+            "teams": {
+                "name": "Microsoft Teams",
+                "connected": is_teams_connected,
+                "auth_type": "cookie",
+                "status_text": "Connected" if is_teams_connected else "Sign-In Required",
+            },
+            "outlook": {
+                "name": "Microsoft Outlook",
+                "connected": is_outlook_connected,
+                "auth_type": "cookie_or_token",
+                "status_text": "Connected" if is_outlook_connected else "Sign-In Required",
+            },
+            "jira": {
+                "name": "Jira Software",
+                "connected": is_jira_connected,
+                "auth_type": "cookie_or_token",
+                "status_text": "Connected" if is_jira_connected else "Sign-In Required",
+            },
+            "github": {
+                "name": "GitHub",
+                "connected": is_github_connected,
+                "auth_type": "cookie_or_token",
+                "status_text": "Connected" if is_github_connected else "Sign-In Required",
+            },
+        }
+
         return {
             "status": state.value,
             "exists": active_path.exists(),
@@ -1623,6 +1922,7 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             "cookie_count": cookie_count,
             "valid_cookies": valid_cookies,
             "domains": domains[:6],
+            "platforms": platforms_status,
             "message": "Phiên đăng nhập hợp lệ, sẵn sàng tự động thu thập." if state in (SessionHealthState.HEALTHY, SessionHealthState.STARTING) else "Chưa có phiên hoặc phiên đã hết hạn. Cần đăng nhập để lưu cookie."
         }
 
@@ -1670,6 +1970,32 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             "cookie_count": len(data.get('cookies', []))
         }
 
+    class PlatformCredentialRequest(BaseModel):
+        platform: str
+        token: Optional[str] = None
+        base_url: Optional[str] = None
+
+    # --------------------------------------------------------------------------
+    # 17E1. POST /api/auth/save-credentials (Save Token/Credentials for Jira & GitHub)
+    # --------------------------------------------------------------------------
+    @app.post("/api/auth/save-credentials")
+    async def save_credentials_api(req: PlatformCredentialRequest) -> Dict[str, Any]:
+        """Lưu credentials cho các nền tảng đám mây (Jira, GitHub)."""
+        plat = req.platform.lower().strip()
+        if plat == "jira":
+            if req.base_url:
+                os.environ["JIRA_BASE_URL"] = req.base_url.strip()
+            if req.token:
+                os.environ["JIRA_API_TOKEN"] = req.token.strip()
+            return {"status": "success", "message": "Thông tin kết nối Jira đã được lưu thành công!"}
+        elif plat == "github":
+            if req.token:
+                os.environ["GITHUB_TOKEN"] = req.token.strip()
+            return {"status": "success", "message": "GitHub Token đã được lưu thành công!"}
+        elif plat in ("outlook", "teams"):
+            return {"status": "success", "message": "Vui lòng sử dụng tính năng đăng nhập trình duyệt để lưu phiên Microsoft."}
+        raise HTTPException(status_code=400, detail=f"Nền tảng không hỗ trợ: {plat}")
+
     # --------------------------------------------------------------------------
     # 17E2. POST /api/auth/clear-cookies & DELETE /api/auth/cookies
     # --------------------------------------------------------------------------
@@ -1689,13 +2015,19 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         with open(target_path, "w", encoding="utf-8") as f:
             json.dump({"cookies": [], "origins": []}, f, indent=2)
 
-        # Clear host helper cookies if reachable
+        # Clear host helper cookies if reachable (requires POST with confirmation)
         try:
             import urllib.request
-            with urllib.request.urlopen("http://host.docker.internal:8999/clear", timeout=1.0) as _:
+            req_data = json.dumps({"confirm": True}).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+            api_key = os.getenv("PTB_API_KEY")
+            if api_key:
+                headers["X-PTB-API-KEY"] = api_key
+            req = urllib.request.Request("http://host.docker.internal:8999/clear", data=req_data, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=1.0) as _:
                 pass
-        except Exception:
-            pass
+        except Exception as clear_err:
+            logger.debug("Failed notifying host helper /clear: %s", clear_err)
 
         return {
             "status": "success",
@@ -1704,17 +2036,27 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         }
 
     class StartLoginRequest(BaseModel):
-        service: str = Field(default="all", description="Dịch vụ cần đăng nhập: 'teams', 'outlook', hoặc 'all'")
+        service: str = Field(default="all", description="Dịch vụ cần đăng nhập: 'teams', 'outlook', 'jira', 'github', hoặc 'all'")
 
     # --------------------------------------------------------------------------
     # 17F. POST /api/auth/start-login (Launch Interactive Login with Auto-Capture)
     # --------------------------------------------------------------------------
     @app.post("/api/auth/start-login")
-    async def start_login_api(req: StartLoginRequest = StartLoginRequest()) -> Dict[str, Any]:
-        """Khởi chạy đăng nhập Microsoft Teams / Outlook và tự động bắt cookie."""
-        svc = req.service.lower()
-        if svc not in ("teams", "outlook", "all"):
+    @app.get("/api/auth/start-login")
+    async def start_login_api(req: Optional[StartLoginRequest] = None, service: Optional[str] = None) -> Dict[str, Any]:
+        """Khởi chạy đăng nhập Microsoft Teams / Outlook / Jira / GitHub và tự động bắt cookie."""
+        svc_raw = service or (req.service if req else None) or "all"
+        svc = str(svc_raw).lower().strip()
+        if svc not in ("teams", "outlook", "jira", "github", "all"):
             svc = "all"
+
+        web_urls = {
+            "teams": "https://teams.microsoft.com",
+            "outlook": "https://outlook.office.com/mail/",
+            "jira": "https://id.atlassian.com/login",
+            "github": "https://github.com/login"
+        }
+        web_url = web_urls.get(svc, "https://teams.microsoft.com")
 
         possible_paths = [
             Path("data/playwright/storage_state.json"),
@@ -1771,13 +2113,19 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                     # Thử kết nối tới Host Auth Helper trên máy chính qua host.docker.internal:8999
                     try:
                         import urllib.request
-                        host_url = f"http://host.docker.internal:8999/login?service={svc}"
-                        with urllib.request.urlopen(host_url, timeout=1.5) as hresp:
+                        req_data = json.dumps({"service": svc}).encode("utf-8")
+                        headers = {"Content-Type": "application/json"}
+                        api_key = os.getenv("PTB_API_KEY")
+                        if api_key:
+                            headers["X-PTB-API-KEY"] = api_key
+                        req = urllib.request.Request("http://host.docker.internal:8999/login", data=req_data, headers=headers, method="POST")
+                        with urllib.request.urlopen(req, timeout=1.5) as hresp:
                             if hresp.status == 200:
                                 hdata = json.loads(hresp.read().decode("utf-8"))
                                 return {
                                     "status": "LAUNCHED",
                                     "service": svc,
+                                    "web_url": web_url,
                                     "message": f"Đã mở cửa sổ trình duyệt đăng nhập {svc.upper()} trên màn hình máy chính của bạn! Vui lòng hoàn thành đăng nhập trên cửa sổ vừa mở.",
                                     "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
                                 }
@@ -1787,7 +2135,8 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                     return {
                         "status": "MANUAL_REQUIRED",
                         "service": svc,
-                        "message": f"Hệ thống đang chạy trong môi trường Docker container (máy ảo headless) nên không thể mở trực tiếp cửa sổ trên màn hình máy chính. Vui lòng mở tệp 'scripts/login_teams.bat' trên máy tính của bạn hoặc chạy lệnh sau trên PowerShell/CMD:",
+                        "web_url": web_url,
+                        "message": f"Hệ thống đang chạy trong container Docker. Đang mở trang web {svc.upper()} trực tiếp trên trình duyệt của bạn để đăng nhập:",
                         "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
                     }
 
@@ -1810,7 +2159,8 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             return {
                 "status": "LAUNCHED",
                 "service": svc,
-                "message": f"Đã mở cửa sổ trình duyệt đăng nhập {svc.upper()} trên màn hình máy tính của bạn. Vui lòng đăng nhập tài khoản Microsoft trên cửa sổ vừa mở!",
+                "web_url": web_url,
+                "message": f"Đã mở cửa sổ trình duyệt đăng nhập {svc.upper()} trên màn hình máy tính của bạn. Vui lòng đăng nhập trên cửa sổ vừa mở!",
                 "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
             }
         except Exception as e:
@@ -1818,7 +2168,8 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             return {
                 "status": "MANUAL_REQUIRED",
                 "service": svc,
-                "message": f"Không thể mở trực tiếp trình duyệt ({e}). Vui lòng mở 'scripts/login_teams.bat' hoặc chạy lệnh:",
+                "web_url": web_url,
+                "message": f"Không thể mở trực tiếp trình duyệt ({e}). Đang mở trang web {svc.upper()} trên trình duyệt:",
                 "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
             }
 
@@ -2066,6 +2417,18 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
 
         try:
             res_data = await asyncio.to_thread(_call_llm)
+            usage = res_data.get("usage", {})
+            in_tokens = usage.get("prompt_tokens", 0)
+            out_tokens = usage.get("completion_tokens", 0)
+            get_cost_audit_tracker().record_llm_call(
+                provider="openai",
+                model=model,
+                subsystem="chat",
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+                attempts=1,
+                cached=False,
+            )
             reply = res_data["choices"][0]["message"]["content"]
             cleaned = re.sub(r"<(think|thought)>.*?</\1>", "", reply, flags=re.DOTALL).strip()
             if not cleaned:

@@ -52,6 +52,7 @@ class TodayTaskItem(BaseModel):
     deep_link: Optional[str] = None
     is_at_risk: bool = False
     risk_reason: Optional[str] = None
+    source_type: Optional[str] = None
 
 
 class ForgottenCommitmentItem(BaseModel):

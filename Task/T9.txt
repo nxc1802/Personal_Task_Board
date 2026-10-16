@@ -1,0 +1,83 @@
+================================================================================
+KẾ HOẠCH VÀ TIẾN ĐỘ THỰC HIỆN TASK T9 - BẢO MẬT DỮ LIỆU LOCAL, ĐỒNG BỘ UI & AUTHENTICATION
+================================================================================
+
+[MỤC TIÊU VÀ YÊU CẦU CỦA USER]
+1. Cô lập dữ liệu cá nhân & Quét Local động:
+   - Thư mục dự án chỉ chứa source code. Không chứa hardcoded path máy cá nhân (d:\Working\PTB) hay data nhạy cảm.
+   - Khi chuyển qua user khác hay mới clone dự án về, hệ thống không bị rò rỉ dữ liệu hoặc bị lỗi đường dẫn.
+   - Quét phiên làm việc coding agent và commit git động trực tiếp trên máy người dùng (Antigravity tại ~/.gemini, Cursor tại workspaceStorage/agent-transcripts, Codex tại ~/.codex/sessions, Git local repos). raw_samples chỉ đóng vai trò mẫu dữ liệu fallback.
+2. UI - Sync Platforms vs Connect Platforms:
+   - Nơi "Sync Platforms" (dropdown): Kích hoạt quét thu thập dữ liệu. Các nền tảng local (Git, Coding Agent) tự động quét trực tiếp trên máy người dùng mà không đòi hỏi cloud auth.
+   - Các nền tảng Cloud (Teams, Outlook, Jira, GitHub) nếu chưa đăng nhập/chưa có token thì thông báo cho người dùng và mở "Connect Platforms" để đăng nhập.
+   - "Connect Platforms" (Platform Authentication modal): CHỈ chứa các nền tảng cần đăng nhập (Microsoft Teams, Microsoft Outlook, Jira Software, GitHub). LOẠI BỎ hoàn toàn Local Git và Coding Agents ra khỏi modal này.
+   - Lưu trữ cookie / credentials bền vững để lần sau không cần đăng nhập lại.
+3. Đồng bộ số đếm các Tab tức thì (Immediate Tab Badge Numbers):
+   - 8 Tabs: Today, Inbox / Review, Task Components, Waiting, Forgotten, Decisions, Lessons, Sources / Health phải hiển thị số đếm ngay khi trang load, không đợi người dùng bấm vào từng tab mới load số.
+   - Đảm bảo FE và BE hoạt động đồng nhất, tự động làm mới số khi có thay đổi (tạo việc, sửa, duyệt, huỷ, sync).
+4. Đồng bộ màu sắc giữa Web OpenWebUI và Board:
+   - Sử dụng bảng màu OpenWebUI (#171717, #202020, accent emerald #10a37f, font Geist).
+   - Tự động nhận diện và đồng bộ trạng thái Dark/Light mode theo OpenWebUI cha thông qua MutationObserver.
+
+--------------------------------------------------------------------------------
+TIẾN ĐỘ THỰC HIỆN CHI TIẾT (100% HOÀN THÀNH)
+--------------------------------------------------------------------------------
+
+[X] 1. REFACTOR WATCHERS & LOCAL ACQUISITION SCANNING (BACKEND)
+    [x] resolve_raw_samples_dir() hỗ trợ đường dẫn tương đối và biến môi trường (PTB_RAW_SAMPLES_DIR, /app/raw_samples, ./raw_samples), loại bỏ hardcode d:\Working\PTB.
+    [x] antigravity_watcher.py: Quét dynamic thư mục local brain (~/.gemini/antigravity-ide/brain) trên máy cá nhân, đọc trực tiếp transcript.jsonl / transcript_full.jsonl.
+    [x] cursor_watcher.py: Quét dynamic Cursor storage & transcripts (extract_from_jsonl + state.vscdb).
+    [x] codex_watcher.py: Quét dynamic Codex sessions (~/.codex/sessions).
+    [x] agent_adapters.py: Tích hợp đầy đủ các coding agents vào pipeline Ingestion.
+    [x] Kiểm thử tự động: 29/29 acquisition unit tests passed 100%.
+
+[X] 2. BACKEND API AUTH GUARDS & MULTI-PLATFORM SYNC
+    [x] services/application/api.py:
+        - ingest_sync_platform_api: Thêm dynamic repo detection (CURRENT_DIR, parent dirs, /app, .) cho local Git scan.
+        - Cloud auth guards: Trả về auth_required: True và thông báo đăng nhập khi chọn Teams, Outlook, Jira, GitHub mà chưa kết nối.
+        - get_session_status_api: Trả về trạng thái chi tiết theo từng platform (teams, outlook, jira, github).
+        - POST /api/auth/save-credentials: Lưu cấu hình Jira (URL + Token) và GitHub (Token) an toàn vào .env/state.
+    [x] Kiểm thử tự động: 20/20 application unit tests passed 100%.
+
+[X] 3. THIẾT KẾ LẠI MODAL "CONNECT PLATFORMS" (PLATFORM AUTHENTICATION)
+    [x] Loại bỏ hoàn toàn "Local Git" và "Coding Agents" ra khỏi modal Connect Platforms.
+    [x] Modal chỉ gồm đúng 4 nền tảng Cloud cần thông tin đăng nhập:
+        1. Microsoft Teams (Browser SSO / Cookies)
+        2. Microsoft Outlook (Browser SSO / Cookies)
+        3. Jira Software (Base URL & API Token Config Panel)
+        4. GitHub (Personal Access Token Config Panel)
+    [x] Xoá bỏ thẻ HTML footer trùng lặp: Footer chỉ còn 1 dòng duy nhất gồm "Clear Session" và "Close".
+    [x] Tích hợp kiểm tra auth tự động (checkAuthStatus) cập nhật badge trạng thái (Connected, Token Required, Configured).
+
+[X] 4. ĐỒNG NHẤT SỐ ĐẾM 8 TABS NGAY TRÊN TRANG LOAD (IMMEDIATE TAB COUNTS)
+    [x] Thêm hàm refreshAllTabCounts() gọi song song bằng Promise.allSettled() tới 8 endpoints:
+        - /api/today -> count-today (10 việc)
+        - /api/review -> count-review (4 việc)
+        - /api/tasks -> count-tasks (15 việc)
+        - /api/waiting -> count-waiting (0 việc)
+        - /api/forgotten -> count-forgotten (0 việc)
+        - /api/knowledge?query=decision -> count-decisions (0 việc)
+        - /api/knowledge?query=lesson -> count-lessons (0 việc)
+        - /api/sources/health -> count-health (DEGRADED / HEALTHY)
+    [x] Tự động chạy ngay trong bootstrap() lúc tải trang -> Người dùng thấy ngay toàn bộ số lượng trên các tab mà không cần click vào từng tab.
+    [x] Tích hợp refreshAllTabCounts() vào renderCurrentView(), syncPlatforms(), tạo task, sửa task, duyệt task, huỷ task để số đếm luôn đồng bộ chính xác giữa FE và BE.
+
+[X] 5. ĐỒNG BỘ THEME & BẢNG MÀU OPENWEBUI
+    [x] Cập nhật toàn bộ CSS tokens: Canvas #171717, Surface #202020, Border #2e2e2e, Text #ececec, Accent Emerald #10a37f, font Geist & Geist Mono.
+    [x] Tích hợp syncWithParentTheme() kèm MutationObserver theo dõi trực tiếp class "dark" của OpenWebUI cha để đồng bộ trạng thái màu tức thì.
+
+[X] 6. DEPLOY & KIỂM THỬ TỔNG THỂ
+    [x] Cập nhật đồng bộ các file vào ptb_openwebui container (/app/backend/data/board/ptb_board.html, /app/backend/data/artifacts/ptb_board.html) và ptb_app container.
+    [x] Toàn bộ test suite chạy trên hệ thống: 217 passed, 1 skipped trong 6.74s!
+
+[X] 7. CHẠY ẨN COMMAND & SETUP KẾT NỐI XUYÊN SUỐT CÁC CỔNG (PORT 8999, 8000, 3000)
+    [x] Chạy ẩn hoàn toàn cửa sổ dòng lệnh (Zero black CMD popup):
+        - Tạo bộ launcher ẩn `scripts/run_login_silent.vbs` chạy ngầm `pythonw.exe` bằng VBScript WshShell.Run với WindowStyle=0 (SW_HIDE).
+        - Cập nhật toàn bộ các file `.bat` (login_teams.bat, login_outlook.bat, login_jira.bat, login_github.bat) kích hoạt qua launcher ẩn và thoát ngay lập tức, triệt tiêu hoàn toàn cửa sổ cmd đen gây vướng màn hình.
+        - `host_auth_helper.py` kích hoạt tiến trình login bằng `pythonw.exe` và cờ `CREATE_NO_WINDOW`, chỉ duy nhất cửa sổ trình duyệt Chromium mở ra tương tác.
+    [x] Thiết lập cổng 8999 (Host Auth Helper) & Kết nối Docker:
+        - Tạo script `scripts/run_host_auth_helper_silent.vbs` giúp Host Auth Helper chạy ngầm vĩnh viễn trên cổng 8999.
+        - Container `ptb_app:8000` kết nối ổn định với host qua `http://host.docker.internal:8999`.
+        - Cả 4 nền tảng (Microsoft Teams, Microsoft Outlook, Jira Software, GitHub) đều hỗ trợ mở trình duyệt và tự động bắt cookie/token.
+        - Đồng bộ mã nguồn mới nhất vào `ptb_app` và `ptb_openwebui:3000`.
+    [x] Lưu ý: Chưa thực hiện push git main theo yêu cầu của user.

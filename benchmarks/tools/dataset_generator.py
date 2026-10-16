@@ -478,6 +478,11 @@ class PTB500Generator:
         self.rng = random.Random(seed)
         self.current_user = next(p for p in PERSONAS if p["is_current_user"])
         self.other_personas = [p for p in PERSONAS if not p["is_current_user"]]
+        self.primary_topic_keys: Dict[str, str] = {}
+        self.primary_topic_requesters: Dict[str, Dict[str, Any]] = {}
+        self.primary_topic_due_days: Dict[str, int] = {}
+        self.primary_topic_due_dts: Dict[str, str] = {}
+        self.primary_topic_statuses: Dict[str, TaskStatus] = {}
 
     def _generate_teams_sample(
         self,
@@ -496,6 +501,19 @@ class PTB500Generator:
         due_day = 18 + (index % 12)
         due_dt = f"2026-10-{due_day:02d}T17:00:00Z"
         t_key = f"{topic['ticket_prefix']}-{100 + index}"
+        if category in ("direct_task", "issue_tracking"):
+            if topic["topic"] not in self.primary_topic_keys:
+                self.primary_topic_keys[topic["topic"]] = t_key
+                self.primary_topic_requesters[topic["topic"]] = requester
+                self.primary_topic_due_days[topic["topic"]] = due_day
+                self.primary_topic_due_dts[topic["topic"]] = due_dt
+        elif category in ("near_duplicate", "cross_source") and topic["topic"] in self.primary_topic_keys:
+            t_key = self.primary_topic_keys[topic["topic"]]
+            if topic["topic"] in self.primary_topic_requesters:
+                requester = self.primary_topic_requesters[topic["topic"]]
+            if topic["topic"] in self.primary_topic_due_days:
+                due_day = self.primary_topic_due_days[topic["topic"]]
+                due_dt = self.primary_topic_due_dts[topic["topic"]]
 
         if category == "noise":
             noise_texts = [
@@ -862,6 +880,19 @@ class PTB500Generator:
         t_key = f"{topic['ticket_prefix']}-{200 + index}"
         due_day = 19 + (index % 11)
         due_dt = f"2026-10-{due_day:02d}T17:00:00Z"
+        if category in ("direct_task", "issue_tracking"):
+            if topic["topic"] not in self.primary_topic_keys:
+                self.primary_topic_keys[topic["topic"]] = t_key
+                self.primary_topic_requesters[topic["topic"]] = author
+                self.primary_topic_due_days[topic["topic"]] = due_day
+                self.primary_topic_due_dts[topic["topic"]] = due_dt
+        elif category in ("near_duplicate", "cross_source") and topic["topic"] in self.primary_topic_keys:
+            t_key = self.primary_topic_keys[topic["topic"]]
+            if topic["topic"] in self.primary_topic_requesters:
+                author = self.primary_topic_requesters[topic["topic"]]
+            if topic["topic"] in self.primary_topic_due_days:
+                due_day = self.primary_topic_due_days[topic["topic"]]
+                due_dt = self.primary_topic_due_dts[topic["topic"]]
 
         if category == "noise":
             subjects = [
@@ -1309,6 +1340,19 @@ class PTB500Generator:
         t_key = f"{topic['ticket_prefix']}-{300 + index}"
         due_day = 20 + (index % 10)
         due_dt = f"2026-10-{due_day:02d}T17:00:00Z"
+        if category in ("direct_task", "issue_tracking"):
+            if topic["topic"] not in self.primary_topic_keys:
+                self.primary_topic_keys[topic["topic"]] = t_key
+                self.primary_topic_requesters[topic["topic"]] = author
+                self.primary_topic_due_days[topic["topic"]] = due_day
+                self.primary_topic_due_dts[topic["topic"]] = due_dt
+        elif category in ("near_duplicate", "cross_source") and topic["topic"] in self.primary_topic_keys:
+            t_key = self.primary_topic_keys[topic["topic"]]
+            if topic["topic"] in self.primary_topic_requesters:
+                author = self.primary_topic_requesters[topic["topic"]]
+            if topic["topic"] in self.primary_topic_due_days:
+                due_day = self.primary_topic_due_days[topic["topic"]]
+                due_dt = self.primary_topic_due_dts[topic["topic"]]
 
         if category == "noise":
             noise_texts = [
@@ -1742,13 +1786,26 @@ class PTB500Generator:
         sample_id = f"ptb500-{index:03d}-jira-{category}"
         raw_id = f"raw-jira-{index:03d}"
         t_key = f"{topic['ticket_prefix']}-{400 + index}"
-        ext_id = t_key
-        conv_id = topic["ticket_prefix"]
-        ts = f"2026-10-15T{8 + (index % 10):02d}:{index % 60:02d}:00Z"
-        cap_ts = f"2026-10-15T{8 + (index % 10):02d}:{index % 60:02d}:05Z"
         reporter = self.rng.choice(self.other_personas)
         due_day = 21 + (index % 10)
         due_dt = f"2026-10-{due_day:02d}T18:00:00Z"
+        if category in ("direct_task", "issue_tracking"):
+            if topic["topic"] not in self.primary_topic_keys:
+                self.primary_topic_keys[topic["topic"]] = t_key
+                self.primary_topic_requesters[topic["topic"]] = reporter
+                self.primary_topic_due_days[topic["topic"]] = due_day
+                self.primary_topic_due_dts[topic["topic"]] = due_dt
+        elif category in ("near_duplicate", "cross_source") and topic["topic"] in self.primary_topic_keys:
+            t_key = self.primary_topic_keys[topic["topic"]]
+            if topic["topic"] in self.primary_topic_requesters:
+                reporter = self.primary_topic_requesters[topic["topic"]]
+            if topic["topic"] in self.primary_topic_due_days:
+                due_day = self.primary_topic_due_days[topic["topic"]]
+                due_dt = self.primary_topic_due_dts[topic["topic"]]
+        ext_id = f"ext-jira-{index:03d}" if category in ("near_duplicate", "cross_source") else t_key
+        conv_id = topic["ticket_prefix"]
+        ts = f"2026-10-15T{8 + (index % 10):02d}:{index % 60:02d}:00Z"
+        cap_ts = f"2026-10-15T{8 + (index % 10):02d}:{index % 60:02d}:05Z"
 
         if category == "noise":
             summary = f"{t_key}: Closed duplicate report for {topic['keywords'][0]}"
@@ -1926,6 +1983,7 @@ class PTB500Generator:
             )
 
         elif category == "cross_source":
+            self.primary_topic_statuses[topic["topic"]] = TaskStatus.IN_PROGRESS
             summary = f"{t_key}: Cross-source tracker for {topic['keywords'][0]}"
             desc = f"Main issue coordinating PR and chat discussion for {topic['action_vi']}."
             payload = {
@@ -2179,6 +2237,19 @@ class PTB500Generator:
         t_key = f"{topic['ticket_prefix']}-{500 + index}"
         due_day = 22 + (index % 9)
         due_dt = f"2026-10-{due_day:02d}T17:00:00Z"
+        if category in ("direct_task", "issue_tracking"):
+            if topic["topic"] not in self.primary_topic_keys:
+                self.primary_topic_keys[topic["topic"]] = t_key
+                self.primary_topic_requesters[topic["topic"]] = author
+                self.primary_topic_due_days[topic["topic"]] = due_day
+                self.primary_topic_due_dts[topic["topic"]] = due_dt
+        elif category in ("near_duplicate", "cross_source") and topic["topic"] in self.primary_topic_keys:
+            t_key = self.primary_topic_keys[topic["topic"]]
+            if topic["topic"] in self.primary_topic_requesters:
+                author = self.primary_topic_requesters[topic["topic"]]
+            if topic["topic"] in self.primary_topic_due_days:
+                due_day = self.primary_topic_due_days[topic["topic"]]
+                due_dt = self.primary_topic_due_dts[topic["topic"]]
 
         if category == "noise":
             title = f"chore(deps): bump library versions for {topic['keywords'][0]}"
@@ -2256,6 +2327,7 @@ class PTB500Generator:
             )
 
         elif category == "cross_source":
+            self.primary_topic_statuses[topic["topic"]] = TaskStatus.IN_PROGRESS
             title = f"feat({topic['topic']}): resolves {t_key} {topic['keywords'][0]}"
             body = f"Resolves issue {t_key}. Assignee: {self.current_user['canonical_name']}. Target deadline: 2026-10-{due_day:02d} 17:00."
             payload = {
@@ -2350,7 +2422,7 @@ class PTB500Generator:
                     expected_requester_name=author["canonical_name"],
                     expected_due_date=due_dt,
                     expected_explicit_deadline=True,
-                    expected_status=TaskStatus.TODO,
+                    expected_status=self.primary_topic_statuses.get(topic["topic"], TaskStatus.TODO),
                     correlation=ExpectedCorrelationSpec(
                         expected_merge=True,
                         expected_anchors=[t_key],
@@ -2607,6 +2679,19 @@ class PTB500Generator:
         t_key = f"{topic['ticket_prefix']}-{600 + index}"
         due_day = 23 + (index % 8)
         due_dt = f"2026-10-{due_day:02d}T17:00:00Z"
+        if category in ("direct_task", "issue_tracking"):
+            if topic["topic"] not in self.primary_topic_keys:
+                self.primary_topic_keys[topic["topic"]] = t_key
+                self.primary_topic_requesters[topic["topic"]] = author
+                self.primary_topic_due_days[topic["topic"]] = due_day
+                self.primary_topic_due_dts[topic["topic"]] = due_dt
+        elif category in ("near_duplicate", "cross_source") and topic["topic"] in self.primary_topic_keys:
+            t_key = self.primary_topic_keys[topic["topic"]]
+            if topic["topic"] in self.primary_topic_requesters:
+                author = self.primary_topic_requesters[topic["topic"]]
+            if topic["topic"] in self.primary_topic_due_days:
+                due_day = self.primary_topic_due_days[topic["topic"]]
+                due_dt = self.primary_topic_due_dts[topic["topic"]]
 
         if category == "noise":
             title = f"Architecture Guidelines: Best practices for {topic['keywords'][0]}"
@@ -2831,7 +2916,7 @@ class PTB500Generator:
                     expected_requester_name=author["canonical_name"],
                     expected_due_date=due_dt,
                     expected_explicit_deadline=True,
-                    expected_status=TaskStatus.TODO,
+                    expected_status=self.primary_topic_statuses.get(topic["topic"], TaskStatus.TODO),
                     correlation=ExpectedCorrelationSpec(
                         expected_merge=True,
                         expected_anchors=[t_key],
@@ -2892,7 +2977,7 @@ class PTB500Generator:
                     expected_requester_name=author["canonical_name"],
                     expected_due_date=due_dt,
                     expected_explicit_deadline=True,
-                    expected_status=TaskStatus.TODO,
+                    expected_status=self.primary_topic_statuses.get(topic["topic"], TaskStatus.TODO),
                     correlation=ExpectedCorrelationSpec(
                         expected_merge=True,
                         expected_anchors=[t_key],

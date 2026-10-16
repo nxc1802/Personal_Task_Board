@@ -509,29 +509,60 @@ PORTAL_HTML = r"""<!DOCTYPE html>
         <div>
           <div class="card-header">
             <div class="card-title">
-              <span>⚡</span> Quét & Nạp Tự Động (Layer 1)
+              <span>⚡</span> Quét & Nạp Tự Động (Layer 1: Git & 4 Coding Agents)
             </div>
-            <span class="badge badge-success">Automated Scan</span>
+            <span class="badge badge-success">Local Automated Scan</span>
           </div>
 
           <p style="font-size: 13px; color: var(--text-muted); margin-top: 10px;">
-            Hệ thống sẽ tự động quét toàn bộ nguồn Layer 1 trên máy bạn (Git commits, Coding Agent sessions như Cursor, Claude Code, Antigravity) và bóc tách lưu thẳng vào database mà không cần chạy lệnh terminal.
+            Hệ thống tự động quét trực tiếp commit log từ thư mục ẩn <code>.git</code> và lịch sử hội thoại từ 4 Coding Agents trên máy của bạn:
           </p>
+
+          <!-- 4 Coding Agents Location Pills -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 11.5px;">
+            <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 8px; padding: 8px 10px;">
+              <strong style="color: #60a5fa;">🤖 Google Antigravity</strong>
+              <div style="color: var(--text-dim); font-family: var(--mono); font-size: 10.5px; margin-top: 2px;">.gemini/antigravity/brain/</div>
+            </div>
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 10px;">
+              <strong style="color: #34d399;">⚡ OpenAI Codex</strong>
+              <div style="color: var(--text-dim); font-family: var(--mono); font-size: 10.5px; margin-top: 2px;">.codex/sessions/ (2025-2026)</div>
+            </div>
+            <div style="background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 8px; padding: 8px 10px;">
+              <strong style="color: #c084fc;">✨ Cursor AI Editor</strong>
+              <div style="color: var(--text-dim); font-family: var(--mono); font-size: 10.5px; margin-top: 2px;">Cursor/User/workspaceStorage</div>
+            </div>
+            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 8px 10px;">
+              <strong style="color: #fbbf24;">📜 Claude Code CLI</strong>
+              <div style="color: var(--text-dim); font-family: var(--mono); font-size: 10.5px; margin-top: 2px;">.claude/ & Claude/logs</div>
+            </div>
+          </div>
 
           <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 12px;">
             <div class="form-group">
-              <label for="gitRepoPath">Thư mục Git Repo (để trống để tự động quét workspace hiện tại):</label>
-              <input type="text" id="gitRepoPath" value="" placeholder="Mặc định: workspace hiện tại hoặc thư mục mẹ...">
+              <label for="gitRepoPath">Thư mục Git Repo (.git) - Để trống để tự động quét toàn bộ workspace:</label>
+              <input type="text" id="gitRepoPath" value="" placeholder="Mặc định: d:\Working\PTB\Personal_Task_Board-main\.git...">
             </div>
 
-            <div style="display: flex; gap: 10px; margin-top: 4px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button id="btnScanGit" class="btn btn-secondary" style="flex: 1; padding: 9px 12px; font-size: 12.5px;" onclick="runGitScan()">
+                <span class="spinner" id="spinnerScanGit"></span>
+                <span>⚡ Quét Commit Git (.git)</span>
+              </button>
+              <button id="btnScanAgents" class="btn btn-secondary" style="flex: 1; padding: 9px 12px; font-size: 12.5px;" onclick="runAgentsScan()">
+                <span class="spinner" id="spinnerScanAgents"></span>
+                <span>⚡ Quét 4 Coding Agents</span>
+              </button>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
               <button id="btnScanL1" class="btn btn-primary" style="flex: 1; padding: 10px 10px; font-size: 13px;" onclick="runLayer1Scan()">
                 <span class="spinner" id="spinnerScan"></span>
-                <span>🔄 Quét Local (Git & Agent)</span>
+                <span>🚀 Quét Toàn Bộ Local (Git + Agents)</span>
               </button>
-              <button id="btnScanTeams" class="btn btn-primary" style="flex: 1; padding: 10px 10px; font-size: 13px; background: linear-gradient(135deg, #6366f1, #8b5cf6);" onclick="runTeamsScan()">
+              <button id="btnScanTeams" class="btn btn-primary" style="padding: 10px 14px; font-size: 13px; background: linear-gradient(135deg, #6366f1, #8b5cf6);" onclick="runTeamsScan()">
                 <span class="spinner" id="spinnerTeams"></span>
-                <span>💬 Quét Microsoft Teams</span>
+                <span>💬 Quét Teams</span>
               </button>
             </div>
             <div id="scanResultBox" style="display: none;" class="log-box"></div>
@@ -851,6 +882,75 @@ PORTAL_HTML = r"""<!DOCTYPE html>
       }
     }
 
+    async function runGitScan() {
+      const btn = document.getElementById("btnScanGit");
+      const box = document.getElementById("scanResultBox");
+      const repoPath = document.getElementById("gitRepoPath").value.trim();
+
+      btn.disabled = true;
+      btn.classList.add("loading");
+      box.style.display = "block";
+      box.innerText = "⏳ Đang quét commit log và diffs từ thư mục ẩn .git trên máy...";
+
+      try {
+        const resp = await fetch("/api/ingest/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform: "git", repo_path: repoPath || null, limit: 15 })
+        });
+        const data = await resp.json();
+
+        if (resp.ok && (data.success || data.status === "success")) {
+          box.innerText = `[✓] QUÉT LOCAL GIT COMMITS THÀNH CÔNG!\n` +
+            `• Sự kiện Git thu nạp: ${data.ingested_count || 0}\n` +
+            `• Chi tiết: ${data.message || 'Hoàn tất'}\n` +
+            `• Đã đồng bộ trực tiếp vào Neo4j Single-Store.`;
+          loadTasks();
+        } else {
+          box.innerText = `[✗] Lỗi quét Git: ${data.detail || data.error || data.message || JSON.stringify(data)}`;
+        }
+      } catch (err) {
+        box.innerText = `[✗] Lỗi kết nối: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+      }
+    }
+
+    async function runAgentsScan() {
+      const btn = document.getElementById("btnScanAgents");
+      const box = document.getElementById("scanResultBox");
+
+      btn.disabled = true;
+      btn.classList.add("loading");
+      box.style.display = "block";
+      box.innerText = "⏳ Đang quét 4 Coding Agents (Antigravity, Codex, Cursor, Claude Code)...";
+
+      try {
+        const resp = await fetch("/api/ingest/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ platform: "coding_agent", limit: 25 })
+        });
+        const data = await resp.json();
+
+        if (resp.ok && (data.success || data.status === "success")) {
+          box.innerText = `[✓] QUÉT 4 CODING AGENTS THÀNH CÔNG!\n` +
+            `• Phiên & sự kiện thu nạp: ${data.ingested_count || 0}\n` +
+            `• Chi tiết: ${data.message || 'Hoàn tất'}\n` +
+            `• Đã trích xuất và đồng bộ vào Neo4j Single-Store.`;
+          loadTasks();
+        } else {
+          box.innerText = `[✗] Lỗi quét Coding Agents: ${data.detail || data.error || data.message || JSON.stringify(data)}`;
+        }
+      } catch (err) {
+        box.innerText = `[✗] Lỗi kết nối: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove("loading");
+      }
+    }
+
     async function runLayer1Scan() {
       const btn = document.getElementById("btnScanL1");
       const box = document.getElementById("scanResultBox");
@@ -865,19 +965,19 @@ PORTAL_HTML = r"""<!DOCTYPE html>
         const resp = await fetch("/api/ingest/layer1", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ repo_path: repoPath || null, limit: 3 })
+          body: JSON.stringify({ repo_path: repoPath || null, limit: 10 })
         });
         const data = await resp.json();
 
         if (resp.ok && data.status === "success") {
           let detailStr = "";
           if (data.details) {
-            detailStr = Object.entries(data.details).map(([k, v]) => `  • ${k}: ${v} events`).join("\\n");
+            detailStr = Object.entries(data.details).map(([k, v]) => `  • ${k}: ${v} events`).join("\n");
           }
-          box.innerText = `[✓] QUÉT VÀ NẠP LAYER 1 THÀNH CÔNG!\\n` +
-            `• Tổng sự kiện thu nạp (Ingested): ${data.ingested}\\n` +
-            detailStr + (detailStr ? "\\n" : "") +
-            `• Sự kiện đã bóc tách & chuyển đổi thành Tasks: ${data.processed}\\n` +
+          box.innerText = `[✓] QUÉT VÀ NẠP LAYER 1 THÀNH CÔNG!\n` +
+            `• Tổng sự kiện thu nạp (Ingested): ${data.ingested}\n` +
+            detailStr + (detailStr ? "\n" : "") +
+            `• Sự kiện đã bóc tách & chuyển đổi thành Tasks: ${data.processed}\n` +
             `• Đã lưu bền vững vào Neo4j Single-Store.`;
           loadTasks();
         } else {

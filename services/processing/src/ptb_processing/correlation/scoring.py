@@ -25,6 +25,8 @@ class CorrelationScoreResult:
     target_task_id: Optional[str] = None
     has_anchor_conflict: bool = False
     reason: str = ""
+    kev_score: Optional[float] = None
+    kev_calibrated: bool = False
 
 
 class CorrelationScorer:

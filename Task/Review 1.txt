@@ -1,0 +1,196 @@
+1. Kết luận: PTB đã có tối ưu cơ bản, nhưng chưa tối ưu toàn diện
+PTB đang làm đúng một số điều quan trọng: lọc sự kiện trước LLM, chống xử lý trùng lặp, tính priority không cần LLM và cache kết quả extraction trong benchmark.
+Tuy nhiên, có ba vấn đề nổi bật:
+- LLM: Vẫn được gọi khá nhiều. Chưa có cache extraction dùng chung cho production và chưa tận dụng tối đa dữ liệu cấu trúc.
+- Embedding: Có hỗ trợ batch nhưng đường lưu task vẫn gọi embedding từng lần và chưa tránh được việc tính lại vector không cần thiết.
+- Kev: Đã tích hợp vào Graphiti như cross-encoder, nhưng chưa thực sự tham gia thuật toán correlation và priority chính của PTB.
+LLM cache entries374
+Trong 475 RawEvents
+
+
+Heuristic bypass101
+21,3% sự kiện
+
+
+Kev trong benchmark0
+Call thực hiện bởi runner
+
+
+
+Số liệu từ extraction cache và benchmark runner hiện tại. Cache entries không đồng nghĩa với tổng số HTTP requests đã thực hiện trong quá khứ.
+2. Hiện tại PTB gọi model ở những bước nào?
+RawEvent từ Teams, Outlook, Jira, GitHub, Coding Agents...
+
+
+Parser + Heuristic Filter
+Không gọi AI — lọc noise, negation và tín hiệu task
+
+Không cần xử lý
+Bỏ qua AI
+
+
+
+Có khả năng là task
+LLM Extraction
+1 logical call/event
+
+
+
+
+Attribution → Correlation → Task Merge
+Hiện sử dụng deterministic anchors và text similarity, không cần embedding/Kev
+
+
+Neo4j + Priority Engine
+Có thể tạo embedding khi bật Local AI; priority tính bằng công thức
+
+
+Graphiti Memory
+Có thể phát sinh thêm LLM và embedding; Kev hỗ trợ reranking khi đi qua Graphiti search phù hợp
+
+
+Đánh giá từng loại model
+Model	Số call trong đường xử lý chính	Nhận xét
+LLM Extraction	1 logical call/sự kiện vượt heuristic	Hợp lý về kiến trúc, nhưng filter chưa tối ưu
+Qwen3 Embedding	1 request cho mỗi task upsert khi bật Local AI	Chưa tránh được re-embed
+Kev Decision	Không được gọi bởi priority engine hiện tại	Chưa tận dụng
+Kev Reranking	Có điều kiện qua Graphiti	Không phải bước mặc định của correlation
+Graphiti LLM	Phụ thuộc số episode và cách Graphiti xử lý	Chưa có đo lường call/token đáng tin cậy
+Chat LLM	1 request mỗi lượt /api/chat	Có thể tối ưu truy xuất context
+Điểm đáng chú ý: config/models.yaml có khai báo model planning, nhưng DeterministicPriorityEngine thực tế không gọi model này. Đây là quyết định tiết kiệm chi phí tốt.
+Các file quan trọng: LLM Extractor, AI Services, Graphiti Adapter.
+
+3. Full Benchmark 500 mẫu cần bao nhiêu call?
+Kết quả từ dataset hiện tại
+Dataset bao gồm 475 RawEvents và 25 probes. Đối chiếu các kết quả cache với nhãn benchmark cho ra:
+
+
+
+
+
+
+330 task-positive
+
+
+44 non-task qua filter
+
+
+101 bị filter loại
+
+
+374 trường hợp có kết quả extraction trong cache, gồm 330 mẫu được gắn nhãn task và 44 mẫu non-task.
+Trong 44 mẫu non-task vẫn đi qua LLM có 15 mẫu noise, 5 mẫu negation và 24 mẫu ambiguous. Không phải tất cả đều là lãng phí: các trường hợp ambiguous có thể cần model để đưa ra quyết định an toàn.
+Ma trận call ước tính
+Chế độ chạy	LLM Extraction	Qwen Embed	Kev
+Fixture với cache hiện có, cache hit đầy đủ	0 request mới	0	0
+Fixture clean, cache rỗng, model hoạt động	Khoảng 374	0	0
+Replay sau clean trên cùng state	0 nếu dedup đúng	0	0
+25 Failure/Recovery Probes hiện tại	0 request LLM thực từ probe runner	0	0
+Full E2E production-like với Graphiti	374 extraction cơ sở + call nội bộ Graphiti	Phụ thuộc task/episode	Phụ thuộc đường search
+Cần lưu ý: Chế độ --live của benchmark runner hiện vẫn tạo BenchmarkInMemory*Repository và BenchmarkGraphMemorySink, dù có kiểm tra khả năng truy cập Neo4j/LLM. Vì vậy, nó chưa thực sự đo toàn bộ call của một production E2E có Graphiti hoạt động.
+Ngoài ra, 25 probes không tương đương với 25 lần gọi AI. Một số probe như timeout/429 đang được xác nhận bằng logic mô phỏng, thay vì thực hiện lỗi mạng trực tiếp lên LLM.
+Retry làm thay đổi ngân sách
+LLM Extractor hiện cho phép tối đa 3 HTTP attempts trên mỗi logical call.
+Do đó, với 374 trường hợp extraction:
+- Không có lỗi mạng: khoảng 374 requests.
+- Nếu tất cả đều gặp lỗi có thể retry đến giới hạn: tối đa 1.122 HTTP attempts trong một lượt benchmark.
+- Trong production, ProcessingWorker còn có retry ở cấp sự kiện, nên tổng số attempts có thể cao hơn nếu không giới hạn phối hợp.
+Đây là lý do cần phân biệt logical extraction count với actual HTTP request count.
+
+4. Khi đưa vào thực tiễn thì sao?
+PTB không nhất thiết gọi LLM liên tục theo chu kỳ polling 30–120 giây. Nếu nguồn không có sự kiện mới và cơ chế checkpoint/dedup hoạt động đúng, có thể không phát sinh extraction call nào.
+Sử dụng tỷ lệ vượt heuristic 78,7% của benchmark làm giả định minh họa:
+RawEvents mới/ngày	LLM Extraction/ngày	Trong 30 ngày
+100	~79	~2.370
+500	~394	~11.820
+1.000	~787	~23.610
+2.000	~1.575	~47.250
+Đây là phép ngoại suy, không phải số liệu production. Phân bố tin nhắn thực có thể khác đáng kể so với benchmark.
+Chi phí tiền thực tế
+Lấy ví dụ gpt-4o-mini, tài liệu giá hiện tại ghi khoảng $0,15/1 triệu input tokens và $0,60/1 triệu output tokens. Model này cũng đã được đánh dấu deprecated, nên không nên chọn làm mặc định dài hạn cho một bản production mới. 
+
+OpenAI API
+
+
+
+Giả định mỗi extraction dùng 1.200 input tokens và 250 output tokens:
+Chi phí extraction minh họaFull Benchmark — 374 calls~$0.12
+
+1.000 events/ngày — 30 ngày~$7.80
+
+
+
+Chỉ tính LLM extraction theo giả định trên, chưa gồm retry, Graphiti, embedding, Kev, chat, máy chủ hay GPU. Nếu dùng Gemini/local model, cần thay bằng giá hoặc chi phí vận hành tương ứng.
+
+Điều này dẫn tới một nhận xét quan trọng: chi phí của một LLM nhỏ để trích xuất task có thể khá thấp. Nguy cơ lớn hơn nằm ở việc gọi Graphiti quá nhiều lần hoặc vận hành GPU local liên tục khi nhu cầu sử dụng thấp.
+Đặc biệt, Graphiti không chỉ thực hiện một phép embedding đơn giản. Tùy phiên bản và cấu hình, ingestion có thể liên quan đến nhiều bước xử lý LLM, entity/relationship extraction và embedding. Code PTB chưa có telemetry đủ để xác định chính xác số request phát sinh cho mỗi episode.
+
+5. Những điểm chưa tối ưu nên sửa
+A. LLM — Tối ưu trước khi extraction
+Bản hiện tại đã có HeuristicCandidateFilter, nhưng nó vẫn để 44 non-task events đi vào extraction trên bộ dữ liệu này.
+Đề xuất kiến trúc:
+1. Checkpoint + idempotency trước mọi xử lý AI, tránh xử lý lại cùng một nội dung.
+2. Source-aware classification: Jira, Shortcut hoặc issue GitHub có trường cấu trúc nên ưu tiên parser deterministic; không gọi LLM để đọc lại những field đã rõ ràng.
+3. Heuristic + lightweight gate: chỉ dùng Kev hoặc classifier nhỏ cho nhóm thực sự không chắc chắn, không chạy cho mọi event.
+4. LLM Extraction: chỉ gọi khi cần suy luận từ ngôn ngữ tự nhiên, ngữ cảnh quote/reply hoặc owner/requester phức tạp.
+5. Cache theo nội dung và cấu hình: tránh gọi lại khi cùng input, model và prompt version.
+
+Không nên tối ưu bằng cách giảm call bằng mọi giá. Trong bộ dữ liệu, cả 330 mẫu được gắn nhãn task đều có kết quả extraction trong cache. Nếu siết filter quá mạnh, số call giảm nhưng recall có thể giảm theo.
+B. Embedding — Chỉ tạo vector khi nội dung thay đổi
+Hiện TaskDomainRepository.upsert_task_atomic() gọi embed_text() sau upsert khi có embedding service, bất kể title/description có thay đổi hay không.
+Nên sửa thành:
+content_hash(title + description + model_version) → kiểm tra vector hiện có → chỉ embed khi hash thay đổi.
+Đồng thời, sử dụng embed_batch() mà dự án đã triển khai để xử lý nhiều task cùng lúc khi đồng bộ một batch.
+C. Kev — Dùng cho đúng bước
+Không nên gọi Kev trên toàn bộ RawEvents chỉ để có thêm một lớp kiểm tra.
+Tôi đề xuất dùng Kev cho hai tình huống có giá trị hơn:
+- Rerank một nhóm nhỏ ứng viên correlation khi deterministic anchors không đủ kết luận.
+- Hỗ trợ xác định trường hợp ưu tiên mơ hồ sau khi priority engine đã tính điểm bằng công thức.
+Tuy nhiên, cần benchmark A/B trước khi đưa vào pipeline. Kev không nên có quyền tự động merge chỉ dựa trên một điểm xác suất thiếu bằng chứng.
+Hiện tại KevDecisionReranker.classify_task_urgency() đã tồn tại, nhưng priority engine chưa sử dụng phương thức này.
+D. Graphiti — Chỉ đồng bộ thông tin thực sự có giá trị
+Không phải Evidence nào cũng cần Graphiti thực hiện full semantic ingestion.
+Ví dụ: trạng thái task thông thường, thay đổi deadline hoặc metadata đơn giản có thể tiếp tục được lưu trong Neo4j mà chưa cần một vòng Graphiti AI mới.
+Nên ưu tiên Graphiti cho Decision, Lesson, thay đổi ngữ cảnh có ý nghĩa và Evidence cần semantic retrieval. Với các nguồn tần suất cao, có thể gom những cập nhật liên quan trong cùng một episode mà vẫn giữ từng RawEvent/Evidence gốc trong Neo4j.
+
+6. Kiến trúc tối ưu tôi đề xuất cho PTB
+Giai đoạn	Công nghệ	Mục tiêu call
+Raw ingestion	Parser + dedup	0 AI
+Task/no-task gate	Heuristic, có thể thêm Kev có điều kiện	0 hoặc 1 Kev cho ca khó
+Structured extraction	Pydantic mapping / rules	0 LLM nếu đủ dữ liệu
+Natural-language extraction	LLM	1 call khi thật sự cần
+Exact task matching	Deterministic anchors	0 AI
+Semantic candidate retrieval	Embedding + Neo4j vector index	Embed 1 lần cho nội dung mới, tái sử dụng vector đã lưu
+Ambiguous correlation	Kev reranker	1 call cho nhóm top-K cần đánh giá
+Priority & status	Deterministic engine	0 AI mặc định
+Knowledge memory	Graphiti có chọn lọc	Theo số episode có giá trị
+Task Board read	Neo4j	0 AI
+Natural-language Q&A	LLM + retrieval	Theo lượt hỏi
+Phương án này quan trọng hơn việc chỉ thay model đắt bằng model rẻ. Nó đưa AI vào đúng nơi cần suy luận và để các thao tác xác định được xử lý bằng code.
+7. Cần thêm một Cost & Call Audit trước khi tối ưu sâu
+Hiện repository chưa có bằng chứng đo đạc đầy đủ cho mọi provider. Tôi đề xuất thêm một lớp telemetry thống nhất theo mỗi lần gọi AI, ghi nhận:
+Metric	Công dụng
+llm_requests_total	Tổng HTTP requests theo provider, model, subsystem
+llm_input_tokens, llm_output_tokens	Chi phí token thực tế
+embedding_requests_total, embedding_inputs_total	Phân biệt số batch requests và số văn bản được embed
+kev_requests_total	Số lần Decision/Reranking
+cache_hit_rate	Hiệu quả cache
+retry_amplification	Tổng HTTP attempts / logical operations
+graphiti_calls_per_episode	Phát hiện chi phí Graphiti tăng bất thường
+cost_per_1000_events	Chỉ số hiệu quả tổng thể
+Không ghi raw token, mật khẩu hoặc nội dung cá nhân vào log telemetry.
+Sau khi có số đo, mới nên thử các phương án như tăng độ chọn lọc của heuristic, structured-source bypass, semantic candidate retrieval và selective Graphiti sync, rồi chạy lại benchmark để bảo đảm chất lượng không giảm.
+
+8. Thứ tự tối ưu nên thực hiện
+Ưu tiên	Công việc	Mức tác động dự kiến
+P0	Đo chính xác request, tokens, retry, cache và provider	Bắt buộc để biết chi phí thật
+P0	Kiểm tra Graphiti LLM/embedding call amplification	Có thể tác động lớn
+P1	Sửa cache key theo content hash + model + prompt version	Tránh kết quả cũ và request thừa
+P1	Không re-embed khi title/description không đổi	Giảm embedding lặp lại
+P1	Structured extraction cho Jira/GitHub/Shortcut	Giảm LLM tùy độ phủ
+P1	Exact anchors → vector top-K → Kev cho ca khó	Cải thiện correlation và kiểm soát call
+P2	Batch embedding và concurrency/rate limiting	Tăng throughput
+P2	Selective Graphiti ingestion	Giảm xử lý semantic dư thừa
+P2	Tối ưu system prompt và output schema	Giảm tokens và lỗi parse
+Kết luận cuối: PTB hiện có cơ chế tiết kiệm LLM ở mức cơ bản, nhưng chưa có kiến trúc tối ưu chi phí toàn hệ thống được kiểm chứng. Đối với Full Benchmark hiện tại, khoảng 374 logical extraction calls là một baseline có cơ sở; còn tổng số call embedding, Kev và Graphiti trong production E2E chưa được đo đúng.
+Tôi sẽ ưu tiên Cost Audit + Graphiti instrumentation trước, sau đó mới cải tiến heuristic, caching và correlation. Với PTB, mục tiêu cuối cùng không phải ít call nhất, mà là chi phí thấp nhất trên mỗi task được phát hiện, hợp nhất và ưu tiên đúng.

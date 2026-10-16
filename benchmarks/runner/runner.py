@@ -209,6 +209,9 @@ class ReplayRunner:
                 probe_results = await probe_runner.run_all_probes(dataset.probes, filter_id=probe_filter)
 
         final_tasks = await self.env.task_repo.list_tasks()
+        if final_tasks:
+            from benchmarks.evaluator.metrics import canonical_task_sort_key
+            final_tasks = sorted(final_tasks, key=canonical_task_sort_key)
         return RunTrace(
             mode=self.env.mode,
             dataset_version=dataset.manifest.version,

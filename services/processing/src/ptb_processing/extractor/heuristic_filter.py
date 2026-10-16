@@ -243,22 +243,22 @@ class HeuristicCandidateFilter:
                 )):
                     return False
                 return True
+            if st in ("coding_agent", "coding_agents"):
+                # Coding agent prompts and turns are substantive tasks/requests
+                if len(norm_text) >= 5:
+                    return True
             if st in ("git",):
                 # Commit mang tính thay đổi chức năng, cam kết hoặc fix lỗi
                 lower_t = text.lower()
-                if any(w in lower_t for w in ("feat", "fix", "resolve", "close", "refactor", "bug", "task", "ops-", "proj-", "ptb-", "review comment", "vendor-", "wip", "để em", "cập nhật", "update", "script", "migration")):
-                    if not any(w in lower_t for w in ("chore", "docs", "style", "bump version", "revert")):
-                        return True
-                if re.search(r"\b[A-Za-z]{2,10}-\d+\b", text):
+                if not any(w in lower_t for w in ("bump version", "revert")):
                     return True
                 return False
 
         # Nhận diện tiền tố văn bản đã được parser chuẩn hóa
         lower_raw = text.strip().lower()
         if lower_raw.startswith("git commit"):
-            if any(w in lower_raw for w in ("feat", "fix", "resolve", "close", "refactor", "bug", "task", "ops-", "proj-", "ptb-", "review comment")):
-                if not any(w in lower_raw for w in ("chore", "docs", "style", "bump version", "revert")):
-                    return True
+            if not any(w in lower_raw for w in ("bump version", "revert")):
+                return True
             return False
 
         if any(lower_raw.startswith(prefix) for prefix in ("[jira", "[shortcut", "[github", "[confluence", "[action item")):

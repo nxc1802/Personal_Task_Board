@@ -314,6 +314,11 @@ class RawEventRecord(BaseModel):
         elif self.last_processing_error and not self.last_error:
             object.__setattr__(self, "last_error", self.last_processing_error)
 
+    @property
+    def stream_id(self) -> str:
+        """Alias for conversation_or_project_id."""
+        return self.conversation_or_project_id
+
 
 class IngestionCheckpointRecord(BaseModel):
     id: Optional[str] = Field(default=None, description="UUID hoặc deterministic key của checkpoint")

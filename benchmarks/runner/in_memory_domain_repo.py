@@ -50,7 +50,7 @@ class BenchmarkInMemoryTaskRepository:
         return [
             t.model_copy(deep=True)
             for t in self.tasks.values()
-            if t.status in (TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED)
+            if t.status in (TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.DONE)
         ]
 
     async def list_tasks(self, filter_dict: Optional[Dict[str, Any]] = None) -> List[UnifiedTaskCandidate]:

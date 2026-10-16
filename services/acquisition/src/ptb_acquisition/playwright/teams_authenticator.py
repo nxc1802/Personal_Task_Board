@@ -211,8 +211,8 @@ class TeamsAuthenticatorSession:
                             raise ValueError(msg)
                 except ValueError:
                     raise
-                except Exception:
-                    pass
+                except Exception as err_kw_ex:
+                    logger.debug("Non-fatal checking error keyword: %s", err_kw_ex)
 
 
                 # Check for KMSI ("Stay signed in?" / "Duy trì đăng nhập?")
@@ -224,8 +224,8 @@ class TeamsAuthenticatorSession:
                         await self._page.locator('#idSIButton9, input[value="Yes"], input[value="Có"]').first.click(timeout=5000)
                         await asyncio.sleep(2)
                         continue
-                    except Exception:
-                        pass
+                    except Exception as kmsi_err:
+                        logger.debug("Non-fatal KMSI click: %s", kmsi_err)
 
                 # Check for Microsoft Authenticator number challenge
                 # Microsoft displays numbers in #richChallengedTile or div[data-bind*="displaySign"]
@@ -291,8 +291,8 @@ class TeamsAuthenticatorSession:
             with open(self.storage_path, "r", encoding="utf-8") as f:
                 cdata = json.load(f)
                 cookie_count = len(cdata.get("cookies", []))
-        except Exception:
-            pass
+        except Exception as read_err:
+            logger.debug("Failed counting saved cookies: %s", read_err)
 
         self.cookie_count = cookie_count
         self._set_state(

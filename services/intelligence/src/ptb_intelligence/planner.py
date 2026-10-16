@@ -105,7 +105,7 @@ class TodayBoardPlanner:
         priority_engine: Optional[DeterministicPriorityEngine] = None,
         forgotten_detector: Optional[ForgottenCommitmentDetector] = None,
         waiting_detector: Optional[WaitingOnDetector] = None,
-        max_top_tasks: int = 10,
+        max_top_tasks: int = 30,
     ) -> None:
         self.priority_engine = priority_engine or DeterministicPriorityEngine()
         self.forgotten_detector = forgotten_detector or ForgottenCommitmentDetector()
@@ -185,10 +185,10 @@ class TodayBoardPlanner:
                 if diff_seconds < 0:
                     is_at_risk = True
                     days_over = abs(int(diff_seconds // 86400))
-                    risk_reason = f"Overdue by {days_over} day(s)"
+                    risk_reason = f"Đã quá hạn {days_over} ngày (Overdue by {days_over} day(s))"
                 elif diff_seconds <= 86400 and candidate.status == TaskStatus.BLOCKED:
                     is_at_risk = True
-                    risk_reason = "Near deadline (<24h) but status is BLOCKED"
+                    risk_reason = "Gần hạn chót (<24h) nhưng đang bị chặn (Near deadline but BLOCKED)"
             
             if not is_at_risk and ctx and ctx.days_in_current_status >= 7:
                 is_at_risk = True
@@ -197,12 +197,15 @@ class TodayBoardPlanner:
             if is_at_risk and risk_reason:
                 identified_risks.append(f"Task '{candidate.title}': {risk_reason}")
 
-            # Primary snippet & deep link
+            # Primary snippet & deep link & source_type
             snippet = candidate.description or candidate.title
             deep_link = None
+            source_type = None
             if candidate.evidences:
                 snippet = candidate.evidences[0].snippet or snippet
                 deep_link = candidate.evidences[0].external_url
+                st_obj = candidate.evidences[0].source_type
+                source_type = st_obj.value if hasattr(st_obj, "value") else str(st_obj) if st_obj else None
 
             today_task_items.append(
                 TodayTaskItem(
@@ -218,6 +221,7 @@ class TodayBoardPlanner:
                     deep_link=deep_link,
                     is_at_risk=is_at_risk,
                     risk_reason=risk_reason,
+                    source_type=source_type,
                 )
             )
 
@@ -276,19 +280,19 @@ class TodayBoardPlanner:
     ) -> str:
         parts = []
         if top_tasks_count > 0:
-            parts.append(f"{top_tasks_count} tasks to focus on today")
+            parts.append(f"{top_tasks_count} việc cần tập trung hôm nay ({top_tasks_count} tasks to focus on today)")
         else:
-            parts.append("No pending tasks for today")
+            parts.append("Hôm nay không có việc tồn đọng (No pending tasks for today)")
 
         if risks_count > 0:
-            parts.append(f"{risks_count} risk(s) to review")
+            parts.append(f"{risks_count} rủi ro tiến độ ({risks_count} risk(s) to review)")
 
         if waiting_count > 0:
-            parts.append(f"{waiting_count} waiting on others")
+            parts.append(f"{waiting_count} việc đang chờ người khác ({waiting_count} waiting on others)")
 
         if forgotten_count > 0:
-            parts.append(f"{forgotten_count} commitments to update")
+            parts.append(f"{forgotten_count} cam kết cần cập nhật ({forgotten_count} commitments to update)")
 
-        return "Today: " + ", ".join(parts) + "."
+        return "Hôm nay (Today): " + ", ".join(parts) + "."
     
     _today_sort_key = staticmethod(_today_sort_key)

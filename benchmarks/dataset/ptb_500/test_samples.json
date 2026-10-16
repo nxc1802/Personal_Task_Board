@@ -324,17 +324,17 @@
       "conversation_or_project_id": "SPACE-ENG",
       "deep_link": null,
       "raw_payload": {
-        "title": "Cross-Team Alignment: Status of QA-1050",
+        "title": "Cross-Team Alignment: Status of QA-110",
         "space": "ENG",
         "author": "Sarah Chen",
         "body": {
           "storage": {
-            "value": "<p>Biên bản thống nhất đồng bộ liên kênh cho task QA-1050:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Cuong Dam cập nhật tiến độ liên kênh cho QA-1050 trước 17:00 ngày 2026-10-25.</ac:task-body></ac:task></ac:task-list>"
+            "value": "<p>Biên bản thống nhất đồng bộ liên kênh cho task QA-110:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Cuong Dam cập nhật tiến độ liên kênh cho QA-110 trước 17:00 ngày 2026-10-28.</ac:task-body></ac:task></ac:task-list>"
           }
         }
       },
       "payload_json": null,
-      "normalized_text": "[Confluence: Cross-Team Alignment: Status of QA-1050] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Cuong Dam cập nhật tiến độ liên kênh cho QA-1050 trước 17:00 ngày 2026-10-25.",
+      "normalized_text": "[Confluence: Cross-Team Alignment: Status of QA-110] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Cuong Dam cập nhật tiến độ liên kênh cho QA-110 trước 17:00 ngày 2026-10-28.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -351,30 +351,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "QA-1050",
+        "QA-110",
         "regression"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
       "expected_requester_id": "sarah.chen",
       "expected_requester_name": "Sarah Chen",
-      "expected_due_date": "2026-10-25T17:00:00Z",
+      "expected_due_date": "2026-10-28T17:00:00Z",
       "expected_explicit_deadline": true,
-      "expected_status": "TODO",
+      "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-QA-1050",
+        "expected_cluster_id": "cluster-QA-110",
         "expected_merge": true,
         "expected_anchors": [
-          "QA-1050"
+          "QA-110"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-confluence-450",
         "expected_snippet_substrings": [
-          "Cuong Dam cập nhật tiến độ liên kênh cho QA-1050 trước 17:00 ngày 2026-10-25."
+          "Cuong Dam cập nhật tiến độ liên kênh cho QA-110 trước 17:00 ngày 2026-10-28."
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -395,22 +395,22 @@
       "idempotency_key": "idemp-raw-confluence-454",
       "event_timestamp": "2026-10-15T12:34:00Z",
       "captured_at": "2026-10-15T12:34:05Z",
-      "author_external_id": "huy.nguyen@company.com",
-      "author_display_name": "Nguyen Van Huy",
+      "author_external_id": "sarah.chen@company.com",
+      "author_display_name": "Sarah Chen",
       "conversation_or_project_id": "SPACE-ENG",
       "deep_link": null,
       "raw_payload": {
-        "title": "Cross-Team Alignment: Status of OPS-1054",
+        "title": "Cross-Team Alignment: Status of OPS-104",
         "space": "ENG",
-        "author": "Nguyen Van Huy",
+        "author": "Sarah Chen",
         "body": {
           "storage": {
-            "value": "<p>Biên bản thống nhất đồng bộ liên kênh cho task OPS-1054:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Cuong Dam cập nhật tiến độ liên kênh cho OPS-1054 trước 17:00 ngày 2026-10-29.</ac:task-body></ac:task></ac:task-list>"
+            "value": "<p>Biên bản thống nhất đồng bộ liên kênh cho task OPS-104:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Cuong Dam cập nhật tiến độ liên kênh cho OPS-104 trước 17:00 ngày 2026-10-22.</ac:task-body></ac:task></ac:task-list>"
           }
         }
       },
       "payload_json": null,
-      "normalized_text": "[Confluence: Cross-Team Alignment: Status of OPS-1054] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Cuong Dam cập nhật tiến độ liên kênh cho OPS-1054 trước 17:00 ngày 2026-10-29.",
+      "normalized_text": "[Confluence: Cross-Team Alignment: Status of OPS-104] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Cuong Dam cập nhật tiến độ liên kênh cho OPS-104 trước 17:00 ngày 2026-10-22.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -427,30 +427,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "OPS-1054",
+        "OPS-104",
         "kubernetes"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "huy.nguyen",
-      "expected_requester_name": "Nguyen Van Huy",
-      "expected_due_date": "2026-10-29T17:00:00Z",
+      "expected_requester_id": "sarah.chen",
+      "expected_requester_name": "Sarah Chen",
+      "expected_due_date": "2026-10-22T17:00:00Z",
       "expected_explicit_deadline": true,
-      "expected_status": "TODO",
+      "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-OPS-1054",
+        "expected_cluster_id": "cluster-OPS-104",
         "expected_merge": true,
         "expected_anchors": [
-          "OPS-1054"
+          "OPS-104"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-confluence-454",
         "expected_snippet_substrings": [
-          "Cuong Dam cập nhật tiến độ liên kênh cho OPS-1054 trước 17:00 ngày 2026-10-29."
+          "Cuong Dam cập nhật tiến độ liên kênh cho OPS-104 trước 17:00 ngày 2026-10-22."
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -471,22 +471,22 @@
       "idempotency_key": "idemp-raw-confluence-455",
       "event_timestamp": "2026-10-15T13:35:00Z",
       "captured_at": "2026-10-15T13:35:05Z",
-      "author_external_id": "minh.vu@company.com",
-      "author_display_name": "Vu Duc Minh",
+      "author_external_id": "anh.le@company.com",
+      "author_display_name": "Le Hoang Anh",
       "conversation_or_project_id": "SPACE-ENG",
       "deep_link": null,
       "raw_payload": {
-        "title": "Cross-Team Alignment: Status of SRCH-1055",
+        "title": "Cross-Team Alignment: Status of SRCH-105",
         "space": "ENG",
-        "author": "Vu Duc Minh",
+        "author": "Le Hoang Anh",
         "body": {
           "storage": {
-            "value": "<p>Biên bản thống nhất đồng bộ liên kênh cho task SRCH-1055:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Cuong Dam cập nhật tiến độ liên kênh cho SRCH-1055 trước 17:00 ngày 2026-10-30.</ac:task-body></ac:task></ac:task-list>"
+            "value": "<p>Biên bản thống nhất đồng bộ liên kênh cho task SRCH-105:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Cuong Dam cập nhật tiến độ liên kênh cho SRCH-105 trước 17:00 ngày 2026-10-23.</ac:task-body></ac:task></ac:task-list>"
           }
         }
       },
       "payload_json": null,
-      "normalized_text": "[Confluence: Cross-Team Alignment: Status of SRCH-1055] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Cuong Dam cập nhật tiến độ liên kênh cho SRCH-1055 trước 17:00 ngày 2026-10-30.",
+      "normalized_text": "[Confluence: Cross-Team Alignment: Status of SRCH-105] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Cuong Dam cập nhật tiến độ liên kênh cho SRCH-105 trước 17:00 ngày 2026-10-23.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -503,30 +503,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "SRCH-1055",
+        "SRCH-105",
         "search"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "minh.vu",
-      "expected_requester_name": "Vu Duc Minh",
-      "expected_due_date": "2026-10-30T17:00:00Z",
+      "expected_requester_id": "anh.le",
+      "expected_requester_name": "Le Hoang Anh",
+      "expected_due_date": "2026-10-23T17:00:00Z",
       "expected_explicit_deadline": true,
-      "expected_status": "TODO",
+      "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-SRCH-1055",
+        "expected_cluster_id": "cluster-SRCH-105",
         "expected_merge": true,
         "expected_anchors": [
-          "SRCH-1055"
+          "SRCH-105"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-confluence-455",
         "expected_snippet_substrings": [
-          "Cuong Dam cập nhật tiến độ liên kênh cho SRCH-1055 trước 17:00 ngày 2026-10-30."
+          "Cuong Dam cập nhật tiến độ liên kênh cho SRCH-105 trước 17:00 ngày 2026-10-23."
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -927,22 +927,22 @@
       "idempotency_key": "idemp-raw-confluence-460",
       "event_timestamp": "2026-10-15T08:40:00Z",
       "captured_at": "2026-10-15T08:40:05Z",
-      "author_external_id": "huy.nguyen@company.com",
-      "author_display_name": "Nguyen Van Huy",
+      "author_external_id": "sarah.chen@company.com",
+      "author_display_name": "Sarah Chen",
       "conversation_or_project_id": "SPACE-ENG",
       "deep_link": null,
       "raw_payload": {
-        "title": "Meeting Follow-up: Reiterate QA-1060 action items",
+        "title": "Meeting Follow-up: Reiterate QA-110 action items",
         "space": "ENG",
-        "author": "Nguyen Van Huy",
+        "author": "Sarah Chen",
         "body": {
           "storage": {
-            "value": "<p>Biên bản nhắc lại hành động cần làm:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Nhắc lại: Cuong Dam hoàn thiện task QA-1060 trước 17:00 ngày 2026-10-27.</ac:task-body></ac:task></ac:task-list>"
+            "value": "<p>Biên bản nhắc lại hành động cần làm:</p><ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>Nhắc lại: Cuong Dam hoàn thiện task QA-110 trước 17:00 ngày 2026-10-28.</ac:task-body></ac:task></ac:task-list>"
           }
         }
       },
       "payload_json": null,
-      "normalized_text": "[Confluence: Meeting Follow-up: Reiterate QA-1060 action items] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Nhắc lại: Cuong Dam hoàn thiện task QA-1060 trước 17:00 ngày 2026-10-27.",
+      "normalized_text": "[Confluence: Meeting Follow-up: Reiterate QA-110 action items] (Space: ENG)\nAction Items Extracted:\n• [Action Item (incomplete)] Nhắc lại: Cuong Dam hoàn thiện task QA-110 trước 17:00 ngày 2026-10-28.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -959,30 +959,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "QA-1060",
+        "QA-110",
         "regression"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "huy.nguyen",
-      "expected_requester_name": "Nguyen Van Huy",
-      "expected_due_date": "2026-10-27T17:00:00Z",
+      "expected_requester_id": "sarah.chen",
+      "expected_requester_name": "Sarah Chen",
+      "expected_due_date": "2026-10-28T17:00:00Z",
       "expected_explicit_deadline": true,
-      "expected_status": "TODO",
+      "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-QA-1060",
+        "expected_cluster_id": "cluster-QA-110",
         "expected_merge": true,
         "expected_anchors": [
-          "QA-1060"
+          "QA-110"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-confluence-460",
         "expected_snippet_substrings": [
-          "Nhắc lại: Cuong Dam hoàn thiện task QA-1060 trước 17:00 ngày 2026-10-27."
+          "Nhắc lại: Cuong Dam hoàn thiện task QA-110 trước 17:00 ngày 2026-10-28."
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -1468,18 +1468,18 @@
       "idempotency_key": "idemp-raw-github-365",
       "event_timestamp": "2026-10-15T13:05:00Z",
       "captured_at": "2026-10-15T13:05:05Z",
-      "author_external_id": "lead.tran@company.com",
-      "author_display_name": "Tran Van Lead",
+      "author_external_id": "anh.le@company.com",
+      "author_display_name": "Le Hoang Anh",
       "conversation_or_project_id": "repo-ptb-core",
       "deep_link": null,
       "raw_payload": {
         "type": "pull_request",
         "number": 865,
-        "title": "feat(search_indexing): resolves SRCH-865 search",
+        "title": "feat(search_indexing): resolves SRCH-105 search",
         "state": "open",
-        "body": "Resolves issue SRCH-865. Assignee: Dam Quang Cuong. Target deadline: 2026-10-27 17:00.",
+        "body": "Resolves issue SRCH-105. Assignee: Dam Quang Cuong. Target deadline: 2026-10-23 17:00.",
         "user": {
-          "login": "lead-tran-gh"
+          "login": "anh-le-gh"
         },
         "assignees": [
           {
@@ -1488,7 +1488,7 @@
         ]
       },
       "payload_json": null,
-      "normalized_text": "[GitHub Pull Request #865] feat(search_indexing): resolves SRCH-865 search\nDescription:\nResolves issue SRCH-865. Assignee: Dam Quang Cuong. Target deadline: 2026-10-27 17:00.",
+      "normalized_text": "[GitHub Pull Request #865] feat(search_indexing): resolves SRCH-105 search\nDescription:\nResolves issue SRCH-105. Assignee: Dam Quang Cuong. Target deadline: 2026-10-23 17:00.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -1505,30 +1505,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "SRCH-865",
+        "SRCH-105",
         "search"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "lead.tran",
-      "expected_requester_name": "Tran Van Lead",
-      "expected_due_date": "2026-10-27T17:00:00Z",
+      "expected_requester_id": "anh.le",
+      "expected_requester_name": "Le Hoang Anh",
+      "expected_due_date": "2026-10-23T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-SRCH-865",
+        "expected_cluster_id": "cluster-SRCH-105",
         "expected_merge": true,
         "expected_anchors": [
-          "SRCH-865"
+          "SRCH-105"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-github-365",
         "expected_snippet_substrings": [
-          "Resolves issue SRCH-865"
+          "Resolves issue SRCH-105"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -1549,18 +1549,18 @@
       "idempotency_key": "idemp-raw-github-369",
       "event_timestamp": "2026-10-15T17:09:00Z",
       "captured_at": "2026-10-15T17:09:05Z",
-      "author_external_id": "huy.nguyen@company.com",
-      "author_display_name": "Nguyen Van Huy",
+      "author_external_id": "anh.le@company.com",
+      "author_display_name": "Le Hoang Anh",
       "conversation_or_project_id": "repo-ptb-core",
       "deep_link": null,
       "raw_payload": {
         "type": "pull_request",
         "number": 869,
-        "title": "feat(analytics_export): resolves REP-869 export",
+        "title": "feat(analytics_export): resolves REP-109 export",
         "state": "open",
-        "body": "Resolves issue REP-869. Assignee: Dam Quang Cuong. Target deadline: 2026-10-22 17:00.",
+        "body": "Resolves issue REP-109. Assignee: Dam Quang Cuong. Target deadline: 2026-10-27 17:00.",
         "user": {
-          "login": "huy-nguyen-gh"
+          "login": "anh-le-gh"
         },
         "assignees": [
           {
@@ -1569,7 +1569,7 @@
         ]
       },
       "payload_json": null,
-      "normalized_text": "[GitHub Pull Request #869] feat(analytics_export): resolves REP-869 export\nDescription:\nResolves issue REP-869. Assignee: Dam Quang Cuong. Target deadline: 2026-10-22 17:00.",
+      "normalized_text": "[GitHub Pull Request #869] feat(analytics_export): resolves REP-109 export\nDescription:\nResolves issue REP-109. Assignee: Dam Quang Cuong. Target deadline: 2026-10-27 17:00.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -1586,30 +1586,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "REP-869",
+        "REP-109",
         "export"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "huy.nguyen",
-      "expected_requester_name": "Nguyen Van Huy",
-      "expected_due_date": "2026-10-22T17:00:00Z",
+      "expected_requester_id": "anh.le",
+      "expected_requester_name": "Le Hoang Anh",
+      "expected_due_date": "2026-10-27T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-REP-869",
+        "expected_cluster_id": "cluster-REP-109",
         "expected_merge": true,
         "expected_anchors": [
-          "REP-869"
+          "REP-109"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-github-369",
         "expected_snippet_substrings": [
-          "Resolves issue REP-869"
+          "Resolves issue REP-109"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -1630,18 +1630,18 @@
       "idempotency_key": "idemp-raw-github-370",
       "event_timestamp": "2026-10-15T08:10:00Z",
       "captured_at": "2026-10-15T08:10:05Z",
-      "author_external_id": "alex.miller@partner.com",
-      "author_display_name": "Alex Miller",
+      "author_external_id": "sarah.chen@company.com",
+      "author_display_name": "Sarah Chen",
       "conversation_or_project_id": "repo-ptb-core",
       "deep_link": null,
       "raw_payload": {
         "type": "pull_request",
         "number": 870,
-        "title": "feat(qa_regression): resolves QA-870 regression",
+        "title": "feat(qa_regression): resolves QA-110 regression",
         "state": "open",
-        "body": "Resolves issue QA-870. Assignee: Dam Quang Cuong. Target deadline: 2026-10-23 17:00.",
+        "body": "Resolves issue QA-110. Assignee: Dam Quang Cuong. Target deadline: 2026-10-28 17:00.",
         "user": {
-          "login": "alexmiller-gh"
+          "login": "sarahchen-gh"
         },
         "assignees": [
           {
@@ -1650,7 +1650,7 @@
         ]
       },
       "payload_json": null,
-      "normalized_text": "[GitHub Pull Request #870] feat(qa_regression): resolves QA-870 regression\nDescription:\nResolves issue QA-870. Assignee: Dam Quang Cuong. Target deadline: 2026-10-23 17:00.",
+      "normalized_text": "[GitHub Pull Request #870] feat(qa_regression): resolves QA-110 regression\nDescription:\nResolves issue QA-110. Assignee: Dam Quang Cuong. Target deadline: 2026-10-28 17:00.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -1667,30 +1667,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "QA-870",
+        "QA-110",
         "regression"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "alex.miller",
-      "expected_requester_name": "Alex Miller",
-      "expected_due_date": "2026-10-23T17:00:00Z",
+      "expected_requester_id": "sarah.chen",
+      "expected_requester_name": "Sarah Chen",
+      "expected_due_date": "2026-10-28T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-QA-870",
+        "expected_cluster_id": "cluster-QA-110",
         "expected_merge": true,
         "expected_anchors": [
-          "QA-870"
+          "QA-110"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-github-370",
         "expected_snippet_substrings": [
-          "Resolves issue QA-870"
+          "Resolves issue QA-110"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -2602,18 +2602,18 @@
       "idempotency_key": "idemp-raw-github-385",
       "event_timestamp": "2026-10-15T13:25:00Z",
       "captured_at": "2026-10-15T13:25:05Z",
-      "author_external_id": "alex.miller@partner.com",
-      "author_display_name": "Alex Miller",
+      "author_external_id": "anh.le@company.com",
+      "author_display_name": "Le Hoang Anh",
       "conversation_or_project_id": "repo-ptb-core",
       "deep_link": null,
       "raw_payload": {
         "type": "pull_request",
         "number": 885,
-        "title": "fix(search_indexing): duplicate branch patch for SRCH-885",
+        "title": "fix(search_indexing): duplicate branch patch for SRCH-105",
         "state": "open",
-        "body": "Secondary pull request for issue SRCH-885. Needs review by Dam Quang Cuong before 2026-10-29 17:00.",
+        "body": "Secondary pull request for issue SRCH-105. Needs review by Dam Quang Cuong before 2026-10-23 17:00.",
         "user": {
-          "login": "alexmiller-gh"
+          "login": "anh-le-gh"
         },
         "assignees": [
           {
@@ -2622,7 +2622,7 @@
         ]
       },
       "payload_json": null,
-      "normalized_text": "[GitHub Pull Request #885] fix(search_indexing): duplicate branch patch for SRCH-885\nDescription:\nSecondary pull request for issue SRCH-885. Needs review by Dam Quang Cuong before 2026-10-29 17:00.",
+      "normalized_text": "[GitHub Pull Request #885] fix(search_indexing): duplicate branch patch for SRCH-105\nDescription:\nSecondary pull request for issue SRCH-105. Needs review by Dam Quang Cuong before 2026-10-23 17:00.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -2639,30 +2639,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "SRCH-885",
+        "SRCH-105",
         "search"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "alex.miller",
-      "expected_requester_name": "Alex Miller",
-      "expected_due_date": "2026-10-29T17:00:00Z",
+      "expected_requester_id": "anh.le",
+      "expected_requester_name": "Le Hoang Anh",
+      "expected_due_date": "2026-10-23T17:00:00Z",
       "expected_explicit_deadline": true,
-      "expected_status": "TODO",
+      "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-SRCH-885",
+        "expected_cluster_id": "cluster-SRCH-105",
         "expected_merge": true,
         "expected_anchors": [
-          "SRCH-885"
+          "SRCH-105"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-github-385",
         "expected_snippet_substrings": [
-          "issue SRCH-885"
+          "issue SRCH-105"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -3030,36 +3030,36 @@
       "id": "raw-jira-320",
       "tenant_id": "tenant-fpt-internal",
       "source_type": "jira",
-      "external_id": "QA-720",
+      "external_id": "ext-jira-320",
       "parent_external_id": null,
       "idempotency_key": "idemp-raw-jira-320",
       "event_timestamp": "2026-10-15T08:20:00Z",
       "captured_at": "2026-10-15T08:20:05Z",
-      "author_external_id": "lan.pham@company.com",
-      "author_display_name": "Pham Thi Lan",
+      "author_external_id": "sarah.chen@company.com",
+      "author_display_name": "Sarah Chen",
       "conversation_or_project_id": "QA",
       "deep_link": null,
       "raw_payload": {
-        "key": "QA-720",
+        "key": "QA-110",
         "fields": {
-          "summary": "QA-720: Cross-source tracker for regression",
+          "summary": "QA-110: Cross-source tracker for regression",
           "description": "Main issue coordinating PR and chat discussion for bổ sung test case Playwright E2E cho quy trình đăng ký tài khoản.",
           "assignee": {
             "accountId": "cuong.dam_jira",
             "displayName": "Dam Quang Cuong"
           },
           "reporter": {
-            "accountId": "lan.pham",
-            "displayName": "Pham Thi Lan"
+            "accountId": "sarah.chen",
+            "displayName": "Sarah Chen"
           },
-          "duedate": "2026-10-21T18:00:00Z",
+          "duedate": "2026-10-28T17:00:00Z",
           "status": {
             "name": "In Progress"
           }
         }
       },
       "payload_json": null,
-      "normalized_text": "QA-720: Cross-source tracker for regression. Main issue coordinating PR and chat discussion for bổ sung test case Playwright E2E cho quy trình đăng ký tài khoản.",
+      "normalized_text": "QA-110: Cross-source tracker for regression. Main issue coordinating PR and chat discussion for bổ sung test case Playwright E2E cho quy trình đăng ký tài khoản.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -3076,30 +3076,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "QA-720",
+        "QA-110",
         "regression"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "lan.pham",
-      "expected_requester_name": "Pham Thi Lan",
-      "expected_due_date": "2026-10-21T18:00:00Z",
+      "expected_requester_id": "sarah.chen",
+      "expected_requester_name": "Sarah Chen",
+      "expected_due_date": "2026-10-28T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "IN_PROGRESS",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-QA-720",
+        "expected_cluster_id": "cluster-QA-110",
         "expected_merge": true,
         "expected_anchors": [
-          "QA-720"
+          "QA-110"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-jira-320",
         "expected_snippet_substrings": [
-          "QA-720: Cross-source tracker for regression"
+          "QA-110: Cross-source tracker for regression"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -4168,7 +4168,7 @@
       "id": "raw-jira-315",
       "tenant_id": "tenant-fpt-internal",
       "source_type": "jira",
-      "external_id": "SRCH-715",
+      "external_id": "ext-jira-315",
       "parent_external_id": null,
       "idempotency_key": "idemp-raw-jira-315",
       "event_timestamp": "2026-10-15T13:15:00Z",
@@ -4178,9 +4178,9 @@
       "conversation_or_project_id": "SRCH",
       "deep_link": null,
       "raw_payload": {
-        "key": "SRCH-715",
+        "key": "SRCH-105",
         "fields": {
-          "summary": "SRCH-715: Duplicate issue on search in ElasticsearchIndexer",
+          "summary": "SRCH-105: Duplicate issue on search in ElasticsearchIndexer",
           "description": "Identical to primary ticket SRCH-401. Merging into primary anchor.",
           "assignee": {
             "accountId": "cuong.dam_jira",
@@ -4190,14 +4190,14 @@
             "accountId": "anh.le",
             "displayName": "Le Hoang Anh"
           },
-          "duedate": "2026-10-26T18:00:00Z",
+          "duedate": "2026-10-23T17:00:00Z",
           "status": {
             "name": "To Do"
           }
         }
       },
       "payload_json": null,
-      "normalized_text": "SRCH-715: Duplicate issue on search in ElasticsearchIndexer. Identical to primary ticket SRCH-401. Merging into primary anchor.",
+      "normalized_text": "SRCH-105: Duplicate issue on search in ElasticsearchIndexer. Identical to primary ticket SRCH-401. Merging into primary anchor.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -4214,30 +4214,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "SRCH-715",
+        "SRCH-105",
         "search"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
       "expected_requester_id": "anh.le",
       "expected_requester_name": "Le Hoang Anh",
-      "expected_due_date": "2026-10-26T18:00:00Z",
+      "expected_due_date": "2026-10-23T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "TODO",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-SRCH-715",
+        "expected_cluster_id": "cluster-SRCH-105",
         "expected_merge": true,
         "expected_anchors": [
-          "SRCH-715"
+          "SRCH-105"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-jira-315",
         "expected_snippet_substrings": [
-          "SRCH-715: Duplicate issue on search in ElasticsearchIndexer"
+          "SRCH-105: Duplicate issue on search in ElasticsearchIndexer"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -5259,18 +5259,18 @@
       "idempotency_key": "idemp-raw-outlook-169",
       "event_timestamp": "2026-10-15T17:49:00Z",
       "captured_at": "2026-10-15T17:49:05Z",
-      "author_external_id": "alex.miller@partner.com",
-      "author_display_name": "Alex Miller",
+      "author_external_id": "anh.le@company.com",
+      "author_display_name": "Le Hoang Anh",
       "conversation_or_project_id": "conv-mail-thread-169",
       "deep_link": null,
       "raw_payload": {
-        "subject": "Reminder: Nhiệm vụ REP-369 cần xử lý",
+        "subject": "Reminder: Nhiệm vụ REP-109 cần xử lý",
         "body": {
-          "content": "Chào anh Cuong,\n\nEmail nhắc nhở: nhờ anh Cuong tiếp tục hoàn thành task REP-369 trước 17:00 ngày 2026-10-23.\n\nRegards,\nAlex Miller"
+          "content": "Chào anh Cuong,\n\nEmail nhắc nhở: nhờ anh Cuong tiếp tục hoàn thành task REP-109 trước 17:00 ngày 2026-10-27.\n\nRegards,\nLe Hoang Anh"
         }
       },
       "payload_json": null,
-      "normalized_text": "Reminder: Nhiệm vụ REP-369 cần xử lý: Chào anh Cuong,\n\nEmail nhắc nhở: nhờ anh Cuong tiếp tục hoàn thành task REP-369 trước 17:00 ngày 2026-10-23.\n\nRegards,\nAlex Miller",
+      "normalized_text": "Reminder: Nhiệm vụ REP-109 cần xử lý: Chào anh Cuong,\n\nEmail nhắc nhở: nhờ anh Cuong tiếp tục hoàn thành task REP-109 trước 17:00 ngày 2026-10-27.\n\nRegards,\nLe Hoang Anh",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -5287,30 +5287,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "REP-369",
+        "REP-109",
         "hoàn thành"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "alex.miller",
-      "expected_requester_name": "Alex Miller",
-      "expected_due_date": "2026-10-23T17:00:00Z",
+      "expected_requester_id": "anh.le",
+      "expected_requester_name": "Le Hoang Anh",
+      "expected_due_date": "2026-10-27T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "TODO",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-REP-369",
+        "expected_cluster_id": "cluster-REP-109",
         "expected_merge": true,
         "expected_anchors": [
-          "REP-369"
+          "REP-109"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-outlook-169",
         "expected_snippet_substrings": [
-          "task REP-369"
+          "task REP-109"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -6472,17 +6472,17 @@
       "idempotency_key": "idemp-raw-teams-063",
       "event_timestamp": "2026-10-15T11:03:00Z",
       "captured_at": "2026-10-15T11:03:05Z",
-      "author_external_id": "alex.miller@partner.com",
-      "author_display_name": "Alex Miller",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
       "conversation_or_project_id": "conv-teams-database_pool",
       "deep_link": null,
       "raw_payload": {
         "body": {
-          "content": "Nhắc lại: Cuong hỗ trợ hoàn thành task DB-163: database trước 17:00 ngày 2026-10-21."
+          "content": "Nhắc lại: Cuong hỗ trợ hoàn thành task DB-103: database trước 17:00 ngày 2026-10-21."
         }
       },
       "payload_json": null,
-      "normalized_text": "Nhắc lại: Cuong hỗ trợ hoàn thành task DB-163: database trước 17:00 ngày 2026-10-21.",
+      "normalized_text": "Nhắc lại: Cuong hỗ trợ hoàn thành task DB-103: database trước 17:00 ngày 2026-10-21.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -6499,30 +6499,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "DB-163",
+        "DB-103",
         "database"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "alex.miller",
-      "expected_requester_name": "Alex Miller",
+      "expected_requester_id": "huy.nguyen",
+      "expected_requester_name": "Nguyen Van Huy",
       "expected_due_date": "2026-10-21T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "TODO",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-DB-163",
+        "expected_cluster_id": "cluster-DB-103",
         "expected_merge": true,
         "expected_anchors": [
-          "DB-163"
+          "DB-103"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-teams-063",
         "expected_snippet_substrings": [
-          "task DB-163"
+          "task DB-103"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -7183,16 +7183,16 @@
       "idempotency_key": "idemp-raw-slack-228",
       "event_timestamp": "2026-10-15T16:48:00Z",
       "captured_at": "2026-10-15T16:48:05Z",
-      "author_external_id": "alex.miller@partner.com",
-      "author_display_name": "Alex Miller",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
       "conversation_or_project_id": "C0123-notification_service",
       "deep_link": null,
       "raw_payload": {
-        "text": "Following up on Jira NOTIF-528: <@cuong.dam> please investigate notification issue before 17:00 on 2026-10-28.",
-        "user": "alex.miller"
+        "text": "Following up on Jira NOTIF-108: <@cuong.dam> please investigate notification issue before 17:00 on 2026-10-26.",
+        "user": "huy.nguyen"
       },
       "payload_json": null,
-      "normalized_text": "Following up on Jira NOTIF-528: <@cuong.dam> please investigate notification issue before 17:00 on 2026-10-28.",
+      "normalized_text": "Following up on Jira NOTIF-108: <@cuong.dam> please investigate notification issue before 17:00 on 2026-10-26.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -7209,30 +7209,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "NOTIF-528",
+        "NOTIF-108",
         "notification"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "alex.miller",
-      "expected_requester_name": "Alex Miller",
-      "expected_due_date": "2026-10-28T17:00:00Z",
+      "expected_requester_id": "huy.nguyen",
+      "expected_requester_name": "Nguyen Van Huy",
+      "expected_due_date": "2026-10-26T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "TODO",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-NOTIF-528",
+        "expected_cluster_id": "cluster-NOTIF-108",
         "expected_merge": true,
         "expected_anchors": [
-          "NOTIF-528"
+          "NOTIF-108"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-slack-228",
         "expected_snippet_substrings": [
-          "Jira NOTIF-528"
+          "Jira NOTIF-108"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -9303,16 +9303,16 @@
       "idempotency_key": "idemp-raw-slack-223",
       "event_timestamp": "2026-10-15T11:43:00Z",
       "captured_at": "2026-10-15T11:43:05Z",
-      "author_external_id": "sarah.chen@company.com",
-      "author_display_name": "Sarah Chen",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
       "conversation_or_project_id": "C0123-database_pool",
       "deep_link": null,
       "raw_payload": {
-        "text": "<@cuong.dam> second reminder on DB-523: please finish database before 17:00 on 2026-10-23.",
-        "user": "sarah.chen"
+        "text": "<@cuong.dam> second reminder on DB-103: please finish database before 17:00 on 2026-10-21.",
+        "user": "huy.nguyen"
       },
       "payload_json": null,
-      "normalized_text": "<@cuong.dam> second reminder on DB-523: please finish database before 17:00 on 2026-10-23.",
+      "normalized_text": "<@cuong.dam> second reminder on DB-103: please finish database before 17:00 on 2026-10-21.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -9329,30 +9329,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "DB-523",
+        "DB-103",
         "database"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "sarah.chen",
-      "expected_requester_name": "Sarah Chen",
-      "expected_due_date": "2026-10-23T17:00:00Z",
+      "expected_requester_id": "huy.nguyen",
+      "expected_requester_name": "Nguyen Van Huy",
+      "expected_due_date": "2026-10-21T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "TODO",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-DB-523",
+        "expected_cluster_id": "cluster-DB-103",
         "expected_merge": true,
         "expected_anchors": [
-          "DB-523"
+          "DB-103"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-slack-223",
         "expected_snippet_substrings": [
-          "reminder on DB-523"
+          "reminder on DB-103"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -9373,16 +9373,16 @@
       "idempotency_key": "idemp-raw-slack-221",
       "event_timestamp": "2026-10-15T09:41:00Z",
       "captured_at": "2026-10-15T09:41:05Z",
-      "author_external_id": "minh.vu@company.com",
-      "author_display_name": "Vu Duc Minh",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
       "conversation_or_project_id": "C0123-payment_gateway",
       "deep_link": null,
       "raw_payload": {
-        "text": "<@cuong.dam> second reminder on PAY-521: please finish payment before 17:00 on 2026-10-21.",
-        "user": "minh.vu"
+        "text": "<@cuong.dam> second reminder on PAY-101: please finish payment before 17:00 on 2026-10-19.",
+        "user": "lead.tran"
       },
       "payload_json": null,
-      "normalized_text": "<@cuong.dam> second reminder on PAY-521: please finish payment before 17:00 on 2026-10-21.",
+      "normalized_text": "<@cuong.dam> second reminder on PAY-101: please finish payment before 17:00 on 2026-10-19.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -9399,30 +9399,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "PAY-521",
+        "PAY-101",
         "payment"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "minh.vu",
-      "expected_requester_name": "Vu Duc Minh",
-      "expected_due_date": "2026-10-21T17:00:00Z",
+      "expected_requester_id": "lead.tran",
+      "expected_requester_name": "Tran Van Lead",
+      "expected_due_date": "2026-10-19T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "TODO",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-PAY-521",
+        "expected_cluster_id": "cluster-PAY-101",
         "expected_merge": true,
         "expected_anchors": [
-          "PAY-521"
+          "PAY-101"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-slack-221",
         "expected_snippet_substrings": [
-          "reminder on PAY-521"
+          "reminder on PAY-101"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null
@@ -9443,16 +9443,16 @@
       "idempotency_key": "idemp-raw-slack-220",
       "event_timestamp": "2026-10-15T08:40:00Z",
       "captured_at": "2026-10-15T08:40:05Z",
-      "author_external_id": "lan.pham@company.com",
-      "author_display_name": "Pham Thi Lan",
+      "author_external_id": "sarah.chen@company.com",
+      "author_display_name": "Sarah Chen",
       "conversation_or_project_id": "C0123-qa_regression",
       "deep_link": null,
       "raw_payload": {
-        "text": "<@cuong.dam> second reminder on QA-520: please finish regression before 17:00 on 2026-10-20.",
-        "user": "lan.pham"
+        "text": "<@cuong.dam> second reminder on QA-110: please finish regression before 17:00 on 2026-10-28.",
+        "user": "sarah.chen"
       },
       "payload_json": null,
-      "normalized_text": "<@cuong.dam> second reminder on QA-520: please finish regression before 17:00 on 2026-10-20.",
+      "normalized_text": "<@cuong.dam> second reminder on QA-110: please finish regression before 17:00 on 2026-10-28.",
       "content_hash": null,
       "processing_status": "pending",
       "retry_count": 0,
@@ -9469,30 +9469,30 @@
       "clarity": "CLEAR",
       "control_type": "COMMITMENT",
       "expected_title_keywords": [
-        "QA-520",
+        "QA-110",
         "regression"
       ],
       "expected_owner_id": "cuong.dam",
       "expected_owner_name": "Dam Quang Cuong",
-      "expected_requester_id": "lan.pham",
-      "expected_requester_name": "Pham Thi Lan",
-      "expected_due_date": "2026-10-20T17:00:00Z",
+      "expected_requester_id": "sarah.chen",
+      "expected_requester_name": "Sarah Chen",
+      "expected_due_date": "2026-10-28T17:00:00Z",
       "expected_explicit_deadline": true,
       "expected_status": "TODO",
       "expected_inferred_status": null,
       "expected_review_status": null,
       "correlation": {
-        "expected_cluster_id": "cluster-QA-520",
+        "expected_cluster_id": "cluster-QA-110",
         "expected_merge": true,
         "expected_anchors": [
-          "QA-520"
+          "QA-110"
         ],
         "expected_cluster_events": []
       },
       "evidence": {
         "source_event_id": "raw-slack-220",
         "expected_snippet_substrings": [
-          "reminder on QA-520"
+          "reminder on QA-110"
         ],
         "expected_timestamp": null,
         "expected_evidence_type": null

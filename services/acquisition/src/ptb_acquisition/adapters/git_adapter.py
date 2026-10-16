@@ -61,6 +61,34 @@ def _build_deep_link(remote_url: Optional[str], commit_hash: str, repo_path: str
     return f"file://{repo_path}#commit={commit_hash}"
 
 
+def map_host_path_for_container(path: str) -> str:
+    """Chuyển đổi đường dẫn Windows Host sang đường dẫn mount trong container Linux nếu cần."""
+    if not path or not isinstance(path, str):
+        return path
+    if os.path.exists(path):
+        return path
+    clean = path.replace("\\", "/").strip()
+    if clean.lower().startswith("c:/users/truon"):
+        sub = clean[len("c:/users/truon"):].lstrip("/")
+        for prefix in ("/host_home", "/c/Users/truon", "/mnt/c/Users/truon"):
+            cand = f"{prefix}/{sub}" if sub else prefix
+            if os.path.exists(cand):
+                return cand
+    if clean.lower().startswith("d:/working/ptb/personal_task_board-main"):
+        sub = clean[len("d:/working/ptb/personal_task_board-main"):].lstrip("/")
+        for prefix in ("/workspace/Personal_Task_Board-main", "/project", "/app"):
+            cand = f"{prefix}/{sub}" if sub else prefix
+            if os.path.exists(cand):
+                return cand
+    if clean.lower().startswith("d:/working/ptb"):
+        sub = clean[len("d:/working/ptb"):].lstrip("/")
+        for prefix in ("/workspace", "/project", "/app"):
+            cand = f"{prefix}/{sub}" if sub else prefix
+            if os.path.exists(cand):
+                return cand
+    return path
+
+
 class GitWatcherAdapter(AcquisitionAdapter):
     """Adapter theo dõi và nạp commit log từ local git repository theo chuẩn AcquisitionAdapter."""
 
@@ -72,14 +100,61 @@ class GitWatcherAdapter(AcquisitionAdapter):
     ):
         super().__init__(source_type=SourceType.GIT, tenant_id=tenant_id)
         if repo_paths is not None:
-            self.repo_paths = [os.path.abspath(p) for p in repo_paths]
+            self.repo_paths = [map_host_path_for_container(os.path.abspath(p)) for p in repo_paths]
         else:
-            default_path = os.getcwd()
-            self.repo_paths = [default_path]
+            self.repo_paths = self.resolve_repo_paths()
         self._git_runner = git_runner
 
+    @classmethod
+    def resolve_repo_paths(cls, candidate_paths: Optional[List[str]] = None) -> List[str]:
+        """Tự động chuẩn hóa và tìm kiếm các git repositories (.git) hợp lệ trên cả Windows host và Docker."""
+        resolved: List[str] = []
+        candidates: List[str] = []
+        if candidate_paths:
+            candidates.extend(candidate_paths)
+
+        env_repos = os.getenv("PTB_GIT_REPOS")
+        if env_repos:
+            candidates.extend([p.strip() for p in env_repos.split(",") if p.strip()])
+
+        ws = os.getenv("PTB_WORKSPACE_ROOT")
+        if ws:
+            candidates.append(ws)
+
+        candidates.extend([
+            os.getcwd(),
+            "/workspace/Personal_Task_Board-main",
+            "/project",
+            "/app",
+            str(Path.cwd().parent),
+            r"d:\Working\PTB\Personal_Task_Board-main",
+            r"d:\Working\PTB",
+        ])
+
+        for cand in candidates:
+            if not cand:
+                continue
+            mapped = map_host_path_for_container(cand)
+            if os.path.isdir(mapped):
+                git_dir = os.path.join(mapped, ".git")
+                if os.path.exists(git_dir):
+                    norm = os.path.normpath(mapped)
+                    if norm not in resolved:
+                        resolved.append(norm)
+                else:
+                    try:
+                        for sub in os.listdir(mapped):
+                            sub_p = os.path.join(mapped, sub)
+                            if os.path.isdir(sub_p) and os.path.exists(os.path.join(sub_p, ".git")):
+                                norm = os.path.normpath(sub_p)
+                                if norm not in resolved:
+                                    resolved.append(norm)
+                    except Exception as scan_err:
+                        logger.debug("Failed scanning subdirectory for .git: %s", scan_err)
+        return resolved or [os.getcwd()]
+
     async def _run_git_cmd(self, args: List[str], cwd: str) -> str:
-        """Thực thi lệnh git an toàn và bất đồng bộ."""
+        """Thực thi lệnh git an toàn và bất đồng bộ, kèm -c safe.directory=* chống lỗi dubious ownership."""
         if self._git_runner:
             res = self._git_runner(args, cwd)
             if asyncio.iscoroutine(res):
@@ -87,9 +162,10 @@ class GitWatcherAdapter(AcquisitionAdapter):
             return res
 
         try:
+            safe_args = ["-c", "safe.directory=*"] + args
             proc = await asyncio.create_subprocess_exec(
                 "git",
-                *args,
+                *safe_args,
                 cwd=cwd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

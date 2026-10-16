@@ -8,6 +8,7 @@ from uuid import uuid4
 from ptb_contracts.l2_processing import (
     EvidenceRecord,
     MergeAuditRecord,
+    TaskStatus,
     UnifiedTaskCandidate,
 )
 from ptb_processing.correlation.candidate_matcher import TaskCandidateMatcher
@@ -118,6 +119,8 @@ class TaskMerger:
             merged.explicit_deadline = candidate.explicit_deadline
 
         # 5. Inferred status transition if candidate brings completion / blocker signal
+        if candidate.status and candidate.status != TaskStatus.TODO:
+            merged.status = candidate.status
         if candidate.inferred_status:
             merged.inferred_status = candidate.inferred_status
 

@@ -13,26 +13,26 @@
       --font-serif: 'Instrument Serif', 'Geist', Georgia, serif;
       --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       
-      /* OpenWebUI Dark Palette (Default) - Warm Monochrome */
+      /* OpenWebUI Dark Palette (Default) - Warm Monochrome & Emerald Accent */
       --bg-canvas: #171717;
-      --bg-surface: #1f1f1f;
+      --bg-surface: #202020;
       --bg-elevated: #262626;
-      --bg-muted: #1c1c1c;
+      --bg-muted: #1a1a1a;
       --border: #2e2e2e;
       --border-subtle: #242424;
-      --border-focus: #4a4a4a;
+      --border-focus: #10a37f;
       
       --text-primary: #ececec;
       --text-secondary: #b4b4b4;
       --text-muted: #737373;
       
-      /* Minimalist Monochromatic Controls */
-      --btn-primary-bg: #ececec;
-      --btn-primary-text: #141414;
-      --btn-primary-hover: #ffffff;
+      /* OpenWebUI Signature Emerald Controls */
+      --btn-primary-bg: #10a37f;
+      --btn-primary-text: #ffffff;
+      --btn-primary-hover: #059669;
       
-      --accent-subtle: rgba(255, 255, 255, 0.06);
-      --accent-border: #444444;
+      --accent-subtle: rgba(16, 163, 127, 0.12);
+      --accent-border: #10a37f;
       
       /* Desaturated Spot Pastels per SKILL.md */
       --pastel-green-bg: rgba(16, 185, 129, 0.12);
@@ -53,9 +53,9 @@
 
       /* Compatible variables for legacy components */
       --bg-primary: var(--bg-canvas);
-      --accent-primary: #3b82f6;
-      --accent-hover: #60a5fa;
-      --accent-text: #93c5fd;
+      --accent-primary: #10a37f;
+      --accent-hover: #059669;
+      --accent-text: #34d399;
       --success-bg: var(--pastel-green-bg);
       --success-border: var(--pastel-green-border);
       --success-text: var(--pastel-green-text);
@@ -70,9 +70,9 @@
       --info-text: var(--pastel-blue-text);
 
       /* Ultra-subtle diffuse shadows per SKILL.md */
-      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-      --card-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.06);
-      --modal-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      --card-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.35);
+      --modal-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
       
       --radius-xs: 4px;
       --radius-sm: 6px;
@@ -82,46 +82,46 @@
     }
 
     html.light, body.light {
-      --bg-canvas: #fbfbfa;
+      --bg-canvas: #ffffff;
       --bg-surface: #ffffff;
-      --bg-elevated: #f7f6f3;
-      --bg-muted: #f1f0eb;
-      --border: #eaeaea;
-      --border-subtle: #f0f0ee;
-      --border-focus: #111111;
+      --bg-elevated: #f9fafb;
+      --bg-muted: #f3f4f6;
+      --border: #e5e7eb;
+      --border-subtle: #f3f4f6;
+      --border-focus: #10a37f;
       
-      --text-primary: #111111;
-      --text-secondary: #5f5e5b;
-      --text-muted: #787774;
+      --text-primary: #111827;
+      --text-secondary: #4b5563;
+      --text-muted: #6b7280;
       
-      --btn-primary-bg: #111111;
+      --btn-primary-bg: #10a37f;
       --btn-primary-text: #ffffff;
-      --btn-primary-hover: #2f3437;
+      --btn-primary-hover: #059669;
       
-      --accent-subtle: rgba(0, 0, 0, 0.04);
-      --accent-border: #cccccc;
+      --accent-subtle: rgba(16, 163, 127, 0.08);
+      --accent-border: #10a37f;
       
       /* Light Desaturated Pastels */
-      --pastel-green-bg: #edf3ec;
-      --pastel-green-border: rgba(52, 101, 56, 0.2);
-      --pastel-green-text: #346538;
+      --pastel-green-bg: #ecfdf5;
+      --pastel-green-border: rgba(16, 185, 129, 0.3);
+      --pastel-green-text: #059669;
       
-      --pastel-blue-bg: #e1f3fe;
-      --pastel-blue-border: rgba(31, 108, 159, 0.2);
-      --pastel-blue-text: #1f6c9f;
+      --pastel-blue-bg: #eff6ff;
+      --pastel-blue-border: rgba(59, 130, 246, 0.3);
+      --pastel-blue-text: #2563eb;
       
-      --pastel-yellow-bg: #fbf3db;
-      --pastel-yellow-border: rgba(149, 100, 0, 0.2);
-      --pastel-yellow-text: #956400;
+      --pastel-yellow-bg: #fffbeb;
+      --pastel-yellow-border: rgba(245, 158, 11, 0.3);
+      --pastel-yellow-text: #d97706;
       
-      --pastel-red-bg: #fdebec;
-      --pastel-red-border: rgba(159, 47, 45, 0.2);
-      --pastel-red-text: #9f2f2d;
+      --pastel-red-bg: #fef2f2;
+      --pastel-red-border: rgba(239, 68, 68, 0.3);
+      --pastel-red-text: #dc2626;
 
       --bg-primary: var(--bg-canvas);
-      --accent-primary: #2563eb;
-      --accent-hover: #1d4ed8;
-      --accent-text: #1d4ed8;
+      --accent-primary: #10a37f;
+      --accent-hover: #059669;
+      --accent-text: #059669;
       --success-bg: var(--pastel-green-bg);
       --success-border: var(--pastel-green-border);
       --success-text: var(--pastel-green-text);
@@ -135,9 +135,9 @@
       --info-border: var(--pastel-blue-border);
       --info-text: var(--pastel-blue-text);
 
-      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-      --card-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.04);
-      --modal-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --card-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.08);
+      --modal-shadow: 0 16px 36px rgba(0, 0, 0, 0.15);
     }
 
     * {
@@ -1113,6 +1113,31 @@
       box-shadow: 0 1px 0 rgba(0,0,0,0.1);
     }
 
+    /* Platform Auth Cards */
+    .platform-auth-card {
+      background: var(--bg-muted);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 12px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+    .platform-auth-card:hover {
+      background: var(--bg-elevated);
+      border-color: var(--accent-primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .platform-auth-card:active {
+      transform: translateY(0);
+    }
+
     /* Toast Notifications */
     .toast-container {
       position: fixed;
@@ -1209,15 +1234,16 @@
           <div id="syncDropdownMenu" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 5px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--modal-shadow); z-index: 1000; min-width: 240px; padding: 6px 0;">
             <div style="padding: 6px 14px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Sync Platforms</div>
             <div class="sync-drop-item" onclick="syncPlatforms('all')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">All Platforms</div>
-            <div class="sync-drop-item" onclick="syncPlatforms('teams')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Microsoft Teams</div>
-            <div class="sync-drop-item" onclick="syncPlatforms('outlook')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Microsoft Outlook</div>
             <div class="sync-drop-item" onclick="syncPlatforms('git')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Local Git Commits</div>
             <div class="sync-drop-item" onclick="syncPlatforms('coding_agent')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Coding Agents</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('teams')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Microsoft Teams</div>
+            <div class="sync-drop-item" onclick="syncPlatforms('outlook')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Microsoft Outlook</div>
             <div class="sync-drop-item" onclick="syncPlatforms('jira')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Jira Cloud / Server</div>
             <div class="sync-drop-item" onclick="syncPlatforms('github')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">GitHub Issues & PRs</div>
             <div class="sync-drop-item" onclick="syncPlatforms('slack')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px;">Slack Workspaces</div>
             <div style="border-top: 1px solid var(--border); margin: 4px 0;"></div>
-            <div class="sync-drop-item" onclick="openCookieManagerModal()" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px; color: var(--accent-primary); font-weight: 600;">Connect Platforms...</div>
+            <div class="sync-drop-item" onclick="openCookieManagerModal('local')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px; color: #60a5fa; font-weight: 600;">Cấu hình Local Git & Agents...</div>
+            <div class="sync-drop-item" onclick="openCookieManagerModal('cloud')" style="padding: 8px 14px; cursor: pointer; font-size: 12.5px; color: var(--accent-primary); font-weight: 600;">Kết nối Cloud Platforms...</div>
           </div>
         </div>
 
@@ -1270,6 +1296,10 @@
       <div class="nav-item" onclick="switchView('health')" id="tab-health">
         <span>Sources / Health</span>
         <span class="badge-count" id="count-health">Healthy</span>
+      </div>
+      <div class="nav-item" onclick="switchView('audit')" id="tab-audit">
+        <span>AI Cost Audit</span>
+        <span class="badge-count" id="count-audit" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">$0.00</span>
       </div>
     </nav>
   </header>
@@ -1413,6 +1443,8 @@
 
         <select class="filter-select" id="filterSource" onchange="applyTaskFilters()">
           <option value="ALL">All Sources</option>
+          <option value="git">Local Git Commits</option>
+          <option value="coding_agent">Coding Agents</option>
           <option value="ms_teams">MS Teams</option>
           <option value="ms_outlook">MS Outlook</option>
           <option value="jira">Jira</option>
@@ -1586,6 +1618,28 @@
       </div>
     </section>
 
+    <!-- 9. AI COST & CALL AUDIT VIEW (Review 1 Requirement) -->
+    <section id="view-audit" class="view-container">
+      <div class="headline-card" style="border-left: 4px solid #10b981;">
+        <div class="headline-content">
+          <div>
+            <div class="headline-text">AI Cost & Call Audit Telemetry</div>
+            <div class="headline-meta">Unified tracking of LLM requests, token consumption, caching efficiency, embedding dedup, and Kev reranker.</div>
+          </div>
+        </div>
+        <div>
+          <button class="btn btn-sm btn-primary" onclick="renderAuditView()" style="display: flex; align-items: center; gap: 6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            Refresh Audit
+          </button>
+        </div>
+      </div>
+
+      <div id="auditDashboardContainer" style="display: flex; flex-direction: column; gap: 16px; margin-top: 14px;">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
   </main>
 
   <!-- 1. Create Task Modal (CRUD: Create) -->
@@ -1753,87 +1807,212 @@
     </div>
   </div>
 
-  <!-- 4. Platform Connections & Auth Modal -->
-    <!-- 4. Platform Connections & Auth Modal -->
+  <!-- 4. Platform Connections & Local Sources Modal -->
   <div class="modal-backdrop" id="cookieManagerModal">
-    <div class="modal" style="max-width: 440px; border-radius: 16px;">
+    <div class="modal" style="max-width: 680px; border-radius: 16px;">
       <div class="modal-header" style="border-bottom: 1px solid var(--border); padding: 16px 20px;">
         <div class="modal-title" style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-          Platform Authentication
+          <span id="platformModalTitle">Quản Lý Nguồn Dữ Liệu & Xác Thực</span>
         </div>
         <button class="btn btn-icon btn-sm" onclick="closeCookieManagerModal()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
       </div>
-      <div class="modal-body" style="padding: 20px;">
-        <!-- Clean Platform Icons Grid -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
-          <!-- Microsoft Teams -->
-          <div class="platform-auth-card" onclick="triggerDirectLogin('teams')" title="Authenticate or sync Microsoft Teams" style="background: var(--bg-surface); border: 1.5px solid var(--border); border-radius: 12px; padding: 18px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease;">
-            <div style="width: 52px; height: 52px; border-radius: 14px; background: rgba(98, 100, 167, 0.12); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;">
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="#6264A7"><path d="M19.5 7.5h-4.2V5.2c0-.7-.6-1.2-1.2-1.2H4c-.7 0-1.2.6-1.2 1.2v10.5c0 .7.6 1.2 1.2 1.2h2.2v3c0 .6.4 1.1 1 1.1h12.3c.7 0 1.2-.6 1.2-1.2V8.7c0-.7-.5-1.2-1.2-1.2zm-12.7 7H4.3V5.5h8.6v2H7.2c-.7 0-1.2.6-1.2 1.2v5.8zm11.2 5.2H7.7V9h10.3v10.7z"/></svg>
+
+      <!-- Tab Switcher -->
+      <div style="display: flex; border-bottom: 1px solid var(--border); background: var(--bg-surface); padding: 0 20px;">
+        <button id="tabBtnLocal" class="tab-item active" onclick="switchPlatformModalTab('local')" style="padding: 12px 18px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: var(--accent-primary); border-bottom: 2px solid var(--accent-primary); display: flex; align-items: center; gap: 8px;">
+          Nguồn Local Git & Coding Agents
+        </button>
+        <button id="tabBtnCloud" class="tab-item" onclick="switchPlatformModalTab('cloud')" style="padding: 12px 18px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: var(--text-muted); border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 8px;">
+          Nền Tảng Cloud Teams, Outlook, Jira, GitHub
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+        <!-- TAB 1: LOCAL SOURCES -->
+        <div id="tabContentLocal" style="display: block;">
+          <!-- Card 1: Local Git Repositories -->
+          <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(240, 80, 50, 0.15); display: flex; align-items: center; justify-content: center;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#f05032"><path d="M21.6 10.9L13.1 2.4c-.6-.6-1.5-.6-2.1 0L8.9 4.5l2.6 2.6c.6-.2 1.4 0 1.8.4.5.5.6 1.3.4 1.8l2.5 2.5c.6-.2 1.3-.1 1.8.4.8.8.8 2 0 2.8-.8.8-2 .8-2.8 0-.5-.5-.6-1.3-.4-1.8L12.3 10c-.2.1-.5.1-.8.1-.3 0-.6 0-.8-.1L8.1 12.6c.1.3.1.6.1.8 0 .8-.4 1.6-1.1 2.1-.8.6-2 .5-2.6-.2-.6-.8-.5-2 .2-2.6.5-.4 1.1-.5 1.7-.4l2.6-2.6V4.9L3.4 9.9c-.6.6-.6 1.5 0 2.1l8.5 8.5c.6.6 1.5.6 2.1 0l7.6-7.6c.6-.6.6-1.5 0-2z"/></svg>
+                </div>
+                <div>
+                  <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary);">Local Git Repositories</div>
+                  <div style="font-size: 11.5px; color: var(--text-secondary);">Quét trực tiếp commit log, branches và commit diffs từ thư mục ẩn .git của dự án</div>
+                </div>
+              </div>
+              <span id="gitStatusBadge" style="font-size: 11px; padding: 3px 8px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.3);">
+                ● Đã phát hiện .git
+              </span>
             </div>
-            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); margin-bottom: 4px;">Microsoft Teams</div>
-            <div style="font-size: 11.5px; color: #10b981; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Connected</div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <label style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;">Đường dẫn thư mục dự án / .git (phân cách dấu phẩy nếu nhiều repo):</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="inputLocalGitRepo" placeholder="VD: d:\Working\PTB\Personal_Task_Board-main" style="flex: 1; font-family: var(--font-mono); font-size: 12px; padding: 8px 12px; background: var(--bg-canvas); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary);">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="saveLocalGitConfig()" style="font-size: 12px; font-weight: 600; white-space: nowrap;">Lưu đường dẫn</button>
+              </div>
+              <div id="gitDetectedInfo" style="font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); background: var(--bg-canvas); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                Đường dẫn: d:\Working\PTB\Personal_Task_Board-main\.git (safe.directory=* đã bật)
+              </div>
+            </div>
+
+            <div style="margin-top: 10px; display: flex; gap: 8px;">
+              <button type="button" class="btn btn-sm btn-primary" onclick="syncLocalGit()" style="font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px;">
+                Quét Commit Git
+              </button>
+            </div>
           </div>
 
-          <!-- Microsoft Outlook -->
-          <div class="platform-auth-card" onclick="triggerDirectLogin('outlook')" title="Authenticate or sync Microsoft Outlook" style="background: var(--bg-surface); border: 1.5px solid var(--border); border-radius: 12px; padding: 18px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease;">
-            <div style="width: 52px; height: 52px; border-radius: 14px; background: rgba(0, 120, 212, 0.12); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;">
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="#0078D4"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+          <!-- Card 2: Coding Agents -->
+          <div style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                </div>
+                <div>
+                  <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary);">Coding Agents</div>
+                  <div style="font-size: 11.5px; color: var(--text-secondary);">Quét tự động toàn bộ transcript, suy nghĩ, tasks và công cụ từ các coding agent trên máy</div>
+                </div>
+              </div>
             </div>
-            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); margin-bottom: 4px;">Microsoft Outlook</div>
-            <div style="font-size: 11.5px; color: #10b981; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Connected</div>
-          </div>
 
-          <!-- Local Git Commits -->
-          <div class="platform-auth-card" onclick="syncPlatforms('git')" title="Scan local Git repositories" style="background: var(--bg-surface); border: 1.5px solid var(--border); border-radius: 12px; padding: 18px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease;">
-            <div style="width: 52px; height: 52px; border-radius: 14px; background: rgba(240, 80, 50, 0.12); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;">
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="#F05032"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
-            </div>
-            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); margin-bottom: 4px;">Local Git</div>
-            <div style="font-size: 11.5px; color: #10b981; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Active</div>
-          </div>
+            <!-- List of Agents -->
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <!-- 1. Antigravity -->
+              <div style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <div style="font-weight: 600; font-size: 12.5px; color: #60a5fa; display: flex; align-items: center; gap: 6px;">
+                    1. Google Antigravity
+                  </div>
+                  <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 600;">● Sẵn sàng</span>
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-muted); line-height: 1.4;">
+                  <div>Thư mục: <code style="font-size: 11px; color: #a5b4fc;">C:\Users\truon\.gemini\antigravity\brain\</code> & <code style="font-size: 11px; color: #a5b4fc;">antigravity-ide\brain\</code></div>
+                  <div>Định dạng: <span style="color: var(--text-secondary);">transcript.jsonl, transcript_full.jsonl, .system_generated/tasks/</span></div>
+                </div>
+              </div>
 
-          <!-- Coding Agents -->
-          <div class="platform-auth-card" onclick="syncPlatforms('coding_agent')" title="Scan Cursor, Claude & Antigravity sessions" style="background: var(--bg-surface); border: 1.5px solid var(--border); border-radius: 12px; padding: 18px 12px; text-align: center; cursor: pointer; transition: all 0.2s ease;">
-            <div style="width: 52px; height: 52px; border-radius: 14px; background: rgba(59, 130, 246, 0.12); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;">
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>
+              <!-- 2. Codex -->
+              <div style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <div style="font-weight: 600; font-size: 12.5px; color: #34d399; display: flex; align-items: center; gap: 6px;">
+                    2. OpenAI Codex Desktop
+                  </div>
+                  <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 600;">● Sẵn sàng</span>
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-muted); line-height: 1.4;">
+                  <div>Thư mục: <code style="font-size: 11px; color: #a5b4fc;">C:\Users\truon\.codex\sessions\</code></div>
+                  <div>Cơ sở dữ liệu: <span style="color: var(--text-secondary);">session_index.jsonl, thread_history_1.sqlite, logs_2.sqlite</span></div>
+                </div>
+              </div>
+
+              <!-- 3. Cursor -->
+              <div style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <div style="font-weight: 600; font-size: 12.5px; color: #a78bfa; display: flex; align-items: center; gap: 6px;">
+                    3. Cursor
+                  </div>
+                  <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 600;">● Sẵn sàng</span>
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-muted); line-height: 1.4;">
+                  <div>Thư mục: <code style="font-size: 11px; color: #a5b4fc;">C:\Users\truon\AppData\Roaming\Cursor\User\</code></div>
+                  <div>Dữ liệu: <span style="color: var(--text-secondary);">globalStorage (state.vscdb) & workspaceStorage</span></div>
+                </div>
+              </div>
+
+              <!-- 4. Claude Code -->
+              <div style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <div style="font-weight: 600; font-size: 12.5px; color: #f59e0b; display: flex; align-items: center; gap: 6px;">
+                    4. Claude Code
+                  </div>
+                  <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 600;">● Sẵn sàng</span>
+                </div>
+                <div style="font-size: 11.5px; color: var(--text-muted); line-height: 1.4;">
+                  <div>Thư mục: <code style="font-size: 11px; color: #a5b4fc;">.claude/ (project root)</code> & <code style="font-size: 11px; color: #a5b4fc;">AppData\Local\Claude\logs\</code></div>
+                  <div>Runtime: <span style="color: var(--text-secondary);">C:\Users\truon\.local\share\claude\ & .local\state\claude\</span></div>
+                </div>
+              </div>
             </div>
-            <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary); margin-bottom: 4px;">Coding Agents</div>
-            <div style="font-size: 11.5px; color: #10b981; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Active</div>
+
+            <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-sm btn-primary" onclick="syncCodingAgents()" style="font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #3b82f6, #6366f1);">
+                Quét Coding Agents
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Progress notification if browser opens -->
-        <div id="loginProgressArea" style="display: none; background: var(--bg-muted); border: 1.5px solid var(--accent-primary); border-radius: 10px; padding: 12px; text-align: center;">
-          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 13px; color: var(--accent-primary);" id="loginProgressText">
-            Opening desktop browser...
-          </div>
-          <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;" id="loginProgressSub">
-            Please complete sign-in on your desktop browser.
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border);">
-        <button class="btn btn-sm" onclick="clearStoredCookies()" style="color: var(--danger-text); border-color: var(--danger-border); font-size: 12px;">Clear Session</button>
-        <button class="btn btn-sm" onclick="closeCookieManagerModal()">Close</button>
-      </div>
-    </div>
-  </div>
+        <!-- TAB 2: CLOUD PLATFORMS (TEAMS, OUTLOOK, JIRA, GITHUB) -->
+        <div id="tabContentCloud" style="display: none;">
+          <!-- Clean Platform Icons Grid: Exactly 4 Cloud Auth Platforms -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 8px;">
+            <!-- 1. Microsoft Teams -->
+            <div class="platform-auth-card" onclick="triggerDirectLogin('teams')" title="Bấm để mở trang đăng nhập Microsoft Teams trên trình duyệt" style="cursor: pointer;">
+              <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(98, 100, 167, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="#6264A7"><path d="M19.5 7.5h-4.2V5.2c0-.7-.6-1.2-1.2-1.2H4c-.7 0-1.2.6-1.2 1.2v10.5c0 .7.6 1.2 1.2 1.2h2.2v3c0 .6.4 1.1 1 1.1h12.3c.7 0 1.2-.6 1.2-1.2V8.7c0-.7-.5-1.2-1.2-1.2zm-12.7 7H4.3V5.5h8.6v2H7.2c-.7 0-1.2.6-1.2 1.2v5.8zm11.2 5.2H7.7V9h10.3v10.7z"/></svg>
+              </div>
+              <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">Microsoft Teams</div>
+              <div id="authStatus-teams" style="font-size: 11.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 10px;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ef4444;"></span> Sign-In Required
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" style="width: 100%; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);">Đăng nhập ↗</button>
+            </div>
 
-        <!-- Live Progress Notification -->
-        <div id="loginProgressArea" style="display: none; background: var(--bg-muted); border: 1.5px solid var(--accent-primary); border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px; text-align: center;">
-          <div style="display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 13px; color: var(--accent-primary);" id="loginProgressText">
-            Opening browser window...
+            <!-- 2. Microsoft Outlook -->
+            <div class="platform-auth-card" onclick="triggerDirectLogin('outlook')" title="Bấm để mở trang đăng nhập Microsoft Outlook trên trình duyệt" style="cursor: pointer;">
+              <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(0, 120, 212, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="#0078D4"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+              </div>
+              <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">Microsoft Outlook</div>
+              <div id="authStatus-outlook" style="font-size: 11.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 10px;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ef4444;"></span> Sign-In Required
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" style="width: 100%; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);">Đăng nhập ↗</button>
+            </div>
+
+            <!-- 3. Jira Software -->
+            <div class="platform-auth-card" onclick="triggerDirectLogin('jira')" title="Bấm để mở trang đăng nhập Atlassian Jira trên trình duyệt" style="cursor: pointer;">
+              <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(0, 82, 204, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="#0052CC"><path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.74c0 2.4 1.97 4.35 4.35 4.35V2h-10.48zm-4.7 4.78c0 2.4 1.97 4.35 4.35 4.35h1.78v1.74c0 2.4 1.97 4.35 4.35 4.35V6.78H6.83zm-4.7 4.79c0 2.4 1.97 4.35 4.35 4.35h1.78v1.74c0 2.4 1.97 4.35 4.35 4.35v-10.44H2.13z"/></svg>
+              </div>
+              <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">Jira Software</div>
+              <div id="authStatus-jira" style="font-size: 11.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 10px;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ef4444;"></span> Sign-In Required
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" style="width: 100%; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);">Đăng nhập ↗</button>
+            </div>
+
+            <!-- 4. GitHub -->
+            <div class="platform-auth-card" onclick="triggerDirectLogin('github')" title="Bấm để mở trang đăng nhập GitHub trên trình duyệt" style="cursor: pointer;">
+              <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+              </div>
+              <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">GitHub</div>
+              <div id="authStatus-github" style="font-size: 11.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 10px;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ef4444;"></span> Sign-In Required
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" style="width: 100%; font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);">Đăng nhập ↗</button>
+            </div>
           </div>
-          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;" id="loginProgressSub">
-            Please complete sign-in on your desktop browser.
+
+          <!-- Progress notification if browser opens -->
+          <div id="loginProgressArea" style="display: none; background: var(--bg-muted); border: 1.5px solid var(--accent-primary); border-radius: 10px; padding: 12px; margin-top: 12px; text-align: center;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 13px; color: var(--accent-primary);" id="loginProgressText">
+              Opening desktop browser...
+            </div>
+            <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;" id="loginProgressSub">
+              Please complete sign-in on your desktop browser.
+            </div>
           </div>
         </div>
       </div>
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <button class="btn btn-sm" onclick="clearStoredCookies()" style="color: var(--danger-text); border-color: var(--danger-border); font-size: 12px;">Clear Session Cookies</button>
-        <button class="btn btn-sm" onclick="closeCookieManagerModal()">Close</button>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border);">
+        <button class="btn btn-sm" onclick="closeCookieManagerModal()">Đóng</button>
       </div>
     </div>
   </div>
@@ -1866,12 +2045,7 @@
     </div>
   </div>
 
-  
-      <div class="modal-footer">
-        <button class="btn" onclick="closeConnectorsModal()">Close</button>
-      </div>
-    </div>
-  </div>
+
 
   <!-- Toast Container -->
   <div class="toast-container" id="toastContainer"></div>
@@ -2092,6 +2266,9 @@
       const snippet = (t.primary_evidence_snippet || (t.evidences && t.evidences[0] ? t.evidences[0].snippet : "") || t.description || "").toLowerCase();
       const channel = t.channel_or_group || "";
       const rawLink = t.deep_link || t.external_url || (t.evidences && t.evidences[0] ? t.evidences[0].external_url : null);
+      const reqName = (t.requester_name || "").toLowerCase();
+      const ownName = (t.owner_name || "").toLowerCase();
+      const title = (t.title || "").toLowerCase();
 
       // 1. Microsoft Teams
       if (link.includes("teams.microsoft.com") || link.includes("teams.cloud.microsoft") || sType.includes("teams") || sType.includes("ms_teams") || channel.toLowerCase().includes("teams") || channel.toLowerCase().includes("core dev ptb")) {
@@ -2108,8 +2285,8 @@
       }
 
       // 2. Git / GitHub
-      if (link.includes("github.com") || link.includes("gitlab") || sType.includes("git") || snippet.startsWith("commit") || (t.title && (t.title.toLowerCase().startsWith("commit") || t.title.toLowerCase().startsWith("fix(") || t.title.toLowerCase().startsWith("feat(")))) {
-        let commitMatch = snippet.match(/commit\s+([a-f0-9]{7,40})/i) || link.match(/commit\/([a-f0-9]{7,40})/i);
+      if (link.includes("github.com") || link.includes("gitlab") || link.includes(".git") || sType.includes("git") || snippet.includes("commit") || title.includes("git commit") || title.startsWith("commit") || title.startsWith("fix(") || title.startsWith("feat(") || ownName.includes("git") || reqName.includes("git")) {
+        let commitMatch = snippet.match(/commit\s+([a-f0-9]{7,40})/i) || link.match(/commit\/([a-f0-9]{7,40})/i) || title.match(/commit\s+([a-f0-9]{7,40})/i) || title.match(/#([a-f0-9]{7,8})/i);
         let commitHash = commitMatch ? commitMatch[1].substring(0, 7) : null;
         let contextDetail = commitHash ? `Commit #${commitHash}` : (channel || "Git Repository");
         return {
@@ -2123,13 +2300,43 @@
         };
       }
 
-      // 3. Coding Agent (IDE) - Antigravity / Cursor / Claude Code
-      if (link.includes("antigravity") || link.includes("brain") || link.includes(".gemini") || sType.includes("agent") || sType.includes("coding_agent") || (t.requester_name && t.requester_name.toLowerCase().includes("antigravity"))) {
+      // 3. Coding Agent (IDE) - Codex / Antigravity / Cursor / Claude Code
+      const isAgent = (
+        sType.includes("agent") ||
+        sType.includes("coding_agent") ||
+        link.includes("antigravity") ||
+        link.includes("codex") ||
+        link.includes("cursor") ||
+        link.includes("claude") ||
+        link.includes("brain") ||
+        link.includes(".gemini") ||
+        reqName.includes("antigravity") ||
+        reqName.includes("codex") ||
+        reqName.includes("cursor") ||
+        reqName.includes("claude") ||
+        reqName.includes("agent") ||
+        ownName.includes("antigravity") ||
+        ownName.includes("codex") ||
+        ownName.includes("cursor") ||
+        ownName.includes("claude") ||
+        ownName.includes("agent") ||
+        channel.toLowerCase().includes("agent") ||
+        snippet.includes("antigravity") ||
+        snippet.includes("codex") ||
+        snippet.includes("cursor") ||
+        snippet.includes("claude code")
+      );
+      if (isAgent) {
+        let agentName = "Coding Agent";
+        if (reqName.includes("codex") || ownName.includes("codex") || link.includes("codex") || snippet.includes("codex")) agentName = "Codex Desktop";
+        else if (reqName.includes("antigravity") || ownName.includes("antigravity") || link.includes("antigravity") || snippet.includes("antigravity")) agentName = "Antigravity";
+        else if (reqName.includes("cursor") || ownName.includes("cursor") || link.includes("cursor") || snippet.includes("cursor")) agentName = "Cursor";
+        else if (reqName.includes("claude") || ownName.includes("claude") || link.includes("claude") || snippet.includes("claude")) agentName = "Claude Code";
         return {
           type: "agent",
           name: "Coding Agent (IDE)",
           badgeClass: "source-agent",
-          contextDetail: "Coding Agent Session",
+          contextDetail: `${agentName} Session`,
           icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>`,
           actionLabel: "Open Session Log ↗",
           link: rawLink
@@ -2545,6 +2752,44 @@
       }
     }
 
+    // --- Immediate Multi-Tab Count Refresh (Synchronized FE & BE) ---
+    let isRefreshingTabCounts = false;
+    async function refreshAllTabCounts() {
+      if (isRefreshingTabCounts) return;
+      isRefreshingTabCounts = true;
+
+      const endpoints = [
+        { id: "count-today", url: "/api/today", parse: d => (d && d.top_tasks) ? d.top_tasks.length : 0 },
+        { id: "count-review", url: "/api/review", parse: d => Array.isArray(d) ? d.length : 0 },
+        { id: "count-tasks", url: "/api/tasks", parse: d => Array.isArray(d) ? d.length : 0 },
+        { id: "count-waiting", url: "/api/waiting", parse: d => Array.isArray(d) ? d.length : 0 },
+        { id: "count-forgotten", url: "/api/forgotten", parse: d => Array.isArray(d) ? d.length : 0 },
+        { id: "count-decisions", url: "/api/knowledge?query=decision&limit=50", parse: d => (d && d.decisions) ? d.decisions.length : 0 },
+        { id: "count-lessons", url: "/api/knowledge?query=lesson&limit=50", parse: d => (d && d.lessons) ? d.lessons.length : 0 },
+        { id: "count-health", url: "/api/sources/health", parse: d => (d && d.overall_health) ? String(d.overall_health).toUpperCase() : "HEALTHY" },
+        { id: "count-audit", url: "/api/audit/cost", parse: d => (d && d.llm && d.llm.estimated_cost_usd != null) ? `$${Number(d.llm.estimated_cost_usd).toFixed(2)}` : "$0.00" }
+      ];
+
+      try {
+        await Promise.allSettled(endpoints.map(async ep => {
+          try {
+            const res = await fetch(`${CONFIG.apiBase}${ep.url}`, {
+              headers: getApiHeaders(),
+              signal: AbortSignal.timeout(3500)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const val = ep.parse(data);
+              const el = document.getElementById(ep.id);
+              if (el) el.innerText = val;
+            }
+          } catch (_) {}
+        }));
+      } finally {
+        isRefreshingTabCounts = false;
+      }
+    }
+
     // --- Tab Switching ---
     function switchView(viewName) {
       CONFIG.currentView = viewName;
@@ -2700,9 +2945,12 @@
           isReconnecting = false;
           reconnectDelay = 2000;
           if (reconnectTimer) clearTimeout(reconnectTimer);
+          const banner = document.getElementById("globalSystemBanner");
+          if (banner && !banner.innerText.includes("API AUTH REQUIRED") && !banner.innerText.includes("LOGIN REQUIRED")) {
+            hideSystemBanner();
+            updateStatusPill(true, "API Live (8000)");
+          }
         }
-        hideSystemBanner();
-        updateStatusPill(true, "API Live (8000)");
         return await res.json();
       } catch (err) {
         if (err instanceof ApiError) {
@@ -3122,7 +3370,16 @@
         if (search && !t.title.toLowerCase().includes(search) && !(t.requester_name || "").toLowerCase().includes(search)) return false;
         if (status !== "ALL" && t.status !== status) return false;
         if (project !== "ALL" && t.project_key !== project) return false;
-        if (source !== "ALL" && t.source_type !== source && !(t.source_ids || []).includes(source)) return false;
+        if (source !== "ALL") {
+          const src = getSourceInfo(t);
+          const matches = (
+            t.source_type === source ||
+            (t.source_ids || []).includes(source) ||
+            src.type === source ||
+            (source === "coding_agent" && src.type === "agent")
+          );
+          if (!matches) return false;
+        }
         if (priority === "HIGH" && (t.priority_score || 0) < 75) return false;
         if (priority === "MED" && ((t.priority_score || 0) < 40 || (t.priority_score || 0) >= 75)) return false;
         if (priority === "LOW" && (t.priority_score || 0) >= 40) return false;
@@ -3555,6 +3812,189 @@
       });
     }
 
+    // --- Layer 1 Quick Scan Helpers ---
+    async function runLayer1Scan() {
+      await syncPlatforms("local");
+    }
+
+    async function runTeamsScan() {
+      await syncPlatforms("teams");
+    }
+
+    async function runOutlookScan() {
+      await syncPlatforms("outlook");
+    }
+
+    // 9. AI COST & CALL AUDIT VIEW (Review 1 Requirement)
+    async function renderAuditView() {
+      const container = document.getElementById("auditDashboardContainer");
+      if (!container) return;
+      container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--text-muted);">Loading live AI cost audit data...</div>`;
+
+      let data = null;
+      try {
+        data = await apiFetch("/api/audit/cost");
+      } catch (err) {
+        renderErrorView("auditDashboardContainer", err.message);
+        const badge = document.getElementById("count-audit");
+        if (badge) badge.innerText = "Error";
+        return;
+      }
+
+      if (!data) {
+        container.innerHTML = `<div class="empty-state"><div>No audit data available.</div></div>`;
+        return;
+      }
+
+      const llm = data.llm || {};
+      const cache = data.cache || {};
+      const emb = data.embedding || {};
+      const kev = data.kev || {};
+      const graph = data.graphiti || {};
+      const eff = data.efficiency || {};
+
+      const costUsd = llm.estimated_cost_usd != null ? `$${Number(llm.estimated_cost_usd).toFixed(4)}` : "$0.00";
+      const badge = document.getElementById("count-audit");
+      if (badge) badge.innerText = costUsd;
+
+      const cacheHitPct = cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(1)}%` : "0.0%";
+      const avoidEmbRatio = emb.avoided_ratio != null ? `${(emb.avoided_ratio * 100).toFixed(1)}%` : "0.0%";
+
+      container.innerHTML = `
+        <!-- Top Metrics KPI Row -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
+          <div class="card" style="border-top: 3px solid #10b981; padding: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Estimated AI Cost</div>
+            <div style="font-size: 26px; font-weight: 800; color: #10b981; margin: 4px 0;">${costUsd}</div>
+            <div style="font-size: 11.5px; color: var(--text-secondary);">Cost/1k Events: <strong>$${(eff.cost_per_1000_events_usd || 0).toFixed(4)}</strong></div>
+          </div>
+
+          <div class="card" style="border-top: 3px solid #3b82f6; padding: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">LLM HTTP Requests</div>
+            <div style="font-size: 26px; font-weight: 800; color: #3b82f6; margin: 4px 0;">${llm.requests_total || 0}</div>
+            <div style="font-size: 11.5px; color: var(--text-secondary);">Logical: <strong>${llm.logical_extractions_total || 0}</strong> • Attempts: <strong>${llm.total_http_attempts || 0}</strong></div>
+          </div>
+
+          <div class="card" style="border-top: 3px solid #8b5cf6; padding: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Extraction Cache Hit Rate</div>
+            <div style="font-size: 26px; font-weight: 800; color: #8b5cf6; margin: 4px 0;">${cacheHitPct}</div>
+            <div style="font-size: 11.5px; color: var(--text-secondary);">Hits: <strong>${cache.hits || 0}</strong> • Misses: <strong>${cache.misses || 0}</strong></div>
+          </div>
+
+          <div class="card" style="border-top: 3px solid #f59e0b; padding: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Structured 0-LLM Bypass</div>
+            <div style="font-size: 26px; font-weight: 800; color: #f59e0b; margin: 4px 0;">${eff.structured_bypass_count || 0}</div>
+            <div style="font-size: 11.5px; color: var(--text-secondary);">Jira, Shortcut, GitHub, Git (0 calls)</div>
+          </div>
+        </div>
+
+        <!-- Detailed Breakdown Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <!-- LLM & Tokens Card -->
+          <div class="card" style="padding: 16px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span>LLM & Token Consumption</span>
+              <span class="tag tag-project">P0 Telemetry</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Total Input Tokens:</span>
+                <strong>${(llm.input_tokens || 0).toLocaleString()}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Total Output Tokens:</span>
+                <strong>${(llm.output_tokens || 0).toLocaleString()}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Retry Amplification:</span>
+                <strong>${(eff.retry_amplification || 1.0).toFixed(2)}x</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Raw Events Processed:</span>
+                <strong>${(eff.events_processed || 0).toLocaleString()}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Embedding & Deduplication Card -->
+          <div class="card" style="padding: 16px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span>Embedding & Deduplication</span>
+              <span class="tag" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">P1 Optimized</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Embedding Requests:</span>
+                <strong>${emb.requests_total || 0}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Texts Vectorized:</span>
+                <strong>${emb.inputs_total || 0}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Skipped Unchanged Tasks:</span>
+                <strong style="color: #10b981;">${emb.skipped_unchanged || 0} (${avoidEmbRatio})</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Vector Provider:</span>
+                <strong>Local Qwen3 (Free / $0)</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Kev Decision Reranker Card -->
+          <div class="card" style="padding: 16px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span>Kev Decision Reranker</span>
+              <span class="tag" style="background: rgba(139, 92, 246, 0.15); color: #8b5cf6;">P1 Calibration</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Total Kev Invocations:</span>
+                <strong>${kev.requests_total || 0}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Ambiguous Correlation Reranks:</span>
+                <strong>${(kev.by_type && (kev.by_type.rerank || kev.by_type.correlation_rerank)) || 0}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Urgency / Priority Calibrations:</span>
+                <strong>${(kev.by_type && kev.by_type.priority_urgency) || 0}</strong>
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                Targeted: Kev is only invoked for borderline candidates (confidence 0.45 - 0.85).
+              </div>
+            </div>
+          </div>
+
+          <!-- Graphiti Memory Sync Card -->
+          <div class="card" style="padding: 16px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span>Graphiti Semantic Memory</span>
+              <span class="tag" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6;">P2 Selective</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Episodes Synced:</span>
+                <strong>${graph.episodes_total || 0}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Graphiti Internal Calls:</span>
+                <strong>${graph.calls_total || 0}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                <span style="color: var(--text-secondary);">Calls Per Episode:</span>
+                <strong>${(graph.calls_per_episode || 0).toFixed(2)}</strong>
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                Selective Ingestion: Routine chatter bypassed, ADRs and Lessons preserved.
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     // --- Interactive Action Handlers (Real REST API Mutations Only) ---
     const pendingStatusUpdates = new Set();
 
@@ -3902,8 +4342,180 @@
       }
     }
 
+    // --- Cached Platform Auth Status & Cloud Panels ---
+    let cachedPlatformStatus = {};
+
+    async function checkAuthStatus() {
+      try {
+        const res = await apiFetch("/api/auth/session-status");
+        if (res && res.platforms) {
+          cachedPlatformStatus = res.platforms;
+        }
+        updateAuthCards(res);
+        return res;
+      } catch (err) {
+        console.debug("Could not verify session status:", err);
+        return null;
+      }
+    }
+
+    function updateAuthCards(st) {
+      const p = (st && st.platforms) ? st.platforms : cachedPlatformStatus;
+
+      // 1. Teams
+      const teamsEl = document.getElementById("authStatus-teams");
+      if (teamsEl) {
+        const isConn = p.teams ? p.teams.connected : (st && (st.status === "HEALTHY" || (st.valid_cookies && st.valid_cookies > 0)));
+        teamsEl.innerHTML = isConn 
+          ? `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Connected`
+          : `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ef4444;"></span> Sign-In Required`;
+        teamsEl.style.color = isConn ? "var(--success-text)" : "var(--danger-text)";
+      }
+
+      // 2. Outlook
+      const outlookEl = document.getElementById("authStatus-outlook");
+      if (outlookEl) {
+        const isConn = p.outlook ? p.outlook.connected : (st && (st.status === "HEALTHY" || (st.valid_cookies && st.valid_cookies > 0)));
+        outlookEl.innerHTML = isConn
+          ? `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Connected`
+          : `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ef4444;"></span> Sign-In Required`;
+        outlookEl.style.color = isConn ? "var(--success-text)" : "var(--danger-text)";
+      }
+
+      // 3. Jira
+      const jiraEl = document.getElementById("authStatus-jira");
+      if (jiraEl) {
+        const isConn = p.jira && p.jira.connected;
+        jiraEl.innerHTML = isConn
+          ? `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Connected`
+          : `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#f59e0b;"></span> Token Required`;
+        jiraEl.style.color = isConn ? "var(--success-text)" : "var(--warning-text)";
+      }
+
+      // 4. GitHub
+      const githubEl = document.getElementById("authStatus-github");
+      if (githubEl) {
+        const isConn = p.github && p.github.connected;
+        githubEl.innerHTML = isConn
+          ? `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981;"></span> Configured`
+          : `<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#f59e0b;"></span> Token Required`;
+        githubEl.style.color = isConn ? "var(--success-text)" : "var(--warning-text)";
+      }
+    }
+
+    function toggleCloudPanel(panel) {
+      const pJira = document.getElementById("panelJiraConfig");
+      const pGithub = document.getElementById("panelGithubConfig");
+      const pCookie = document.getElementById("panelPasteCookie");
+      if (pCookie) pCookie.style.display = "none";
+
+      if (panel === "jira") {
+        if (pJira) pJira.style.display = (pJira.style.display === "none" || !pJira.style.display) ? "block" : "none";
+        if (pGithub) pGithub.style.display = "none";
+      } else if (panel === "github") {
+        if (pGithub) pGithub.style.display = (pGithub.style.display === "none" || !pGithub.style.display) ? "block" : "none";
+        if (pJira) pJira.style.display = "none";
+      } else {
+        if (pJira) pJira.style.display = "none";
+        if (pGithub) pGithub.style.display = "none";
+      }
+    }
+
+    function togglePasteCookiePanel() {
+      const pJira = document.getElementById("panelJiraConfig");
+      const pGithub = document.getElementById("panelGithubConfig");
+      const pCookie = document.getElementById("panelPasteCookie");
+      if (pJira) pJira.style.display = "none";
+      if (pGithub) pGithub.style.display = "none";
+      if (pCookie) pCookie.style.display = (pCookie.style.display === "none" || !pCookie.style.display) ? "block" : "none";
+    }
+
+    async function saveJiraCredentials() {
+      const baseUrl = (document.getElementById("jiraInputBaseUrl")?.value || "").trim();
+      const token = (document.getElementById("jiraInputToken")?.value || "").trim();
+      if (!baseUrl || !token) {
+        showToast("Please enter both Jira Base URL and API Token.", "warning");
+        return;
+      }
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/auth/save-credentials`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ platform: "jira", base_url: baseUrl, api_token: token })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `HTTP ${res.status}`);
+        }
+        showToast("Jira credentials saved successfully!", "success");
+        toggleCloudPanel(null);
+        await checkAuthStatus();
+      } catch (err) {
+        showToast(`Error saving Jira config: ${err.message}`, "danger");
+      }
+    }
+
+    async function saveGithubCredentials() {
+      const token = (document.getElementById("githubInputToken")?.value || "").trim();
+      if (!token) {
+        showToast("Please enter GitHub Personal Access Token.", "warning");
+        return;
+      }
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/auth/save-credentials`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ platform: "github", api_token: token })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `HTTP ${res.status}`);
+        }
+        showToast("GitHub Personal Access Token saved successfully!", "success");
+        toggleCloudPanel(null);
+        await checkAuthStatus();
+      } catch (err) {
+        showToast(`Error saving GitHub token: ${err.message}`, "danger");
+      }
+    }
+
     // --- 1-Click Multi-Platform Auto Sync Handler ---
     async function syncPlatforms(platform = "all") {
+      const p = String(platform || "all").toLowerCase();
+
+      // Guard check for unauthenticated cloud platforms
+      if (p === "teams") {
+        const isConn = cachedPlatformStatus.teams ? cachedPlatformStatus.teams.connected : false;
+        if (!isConn && Object.keys(cachedPlatformStatus).length > 0) {
+          showToast("Microsoft Teams chưa đăng nhập. Vui lòng kết nối tài khoản.", "warning");
+          openCookieManagerModal();
+          return;
+        }
+      } else if (p === "outlook") {
+        const isConn = cachedPlatformStatus.outlook ? cachedPlatformStatus.outlook.connected : false;
+        if (!isConn && Object.keys(cachedPlatformStatus).length > 0) {
+          showToast("Microsoft Outlook chưa đăng nhập. Vui lòng kết nối tài khoản.", "warning");
+          openCookieManagerModal();
+          return;
+        }
+      } else if (p === "jira") {
+        const isConn = cachedPlatformStatus.jira ? cachedPlatformStatus.jira.connected : false;
+        if (!isConn && Object.keys(cachedPlatformStatus).length > 0) {
+          showToast("Jira chưa cấu hình URL & API Token. Vui lòng cấu hình kết nối.", "warning");
+          openCookieManagerModal();
+          toggleCloudPanel("jira");
+          return;
+        }
+      } else if (p === "github") {
+        const isConn = cachedPlatformStatus.github ? cachedPlatformStatus.github.connected : false;
+        if (!isConn && Object.keys(cachedPlatformStatus).length > 0) {
+          showToast("GitHub Personal Access Token chưa cấu hình. Vui lòng nhập Token.", "warning");
+          openCookieManagerModal();
+          toggleCloudPanel("github");
+          return;
+        }
+      }
+
       const btn = document.getElementById("btnSyncPlatforms");
       const spinner = document.getElementById("syncSpinner");
       const btnText = document.getElementById("syncBtnText");
@@ -3914,28 +4526,32 @@
       if (btnText) btnText.innerText = "Syncing...";
       if (btn) btn.disabled = true;
 
-      showToast(`Syncing data from platform: ${platform.toUpperCase()}...`, "info");
+      showToast(`Đang quét thu thập dữ liệu: ${p.toUpperCase()}...`, "info");
       try {
         const res = await fetch(`${CONFIG.apiBase}/api/ingest/sync`, {
           method: "POST",
           headers: getApiHeaders(),
-          body: JSON.stringify({ platform: platform, limit: 20 })
+          body: JSON.stringify({ platform: p, limit: 20 })
         });
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
           throw new Error(errJson.detail || `HTTP ${res.status}`);
         }
         const data = await res.json();
-        if (data.notes && data.notes.some(n => String(n).includes("Teams session not found"))) {
-          showToast("Teams session not found. Please click Connect Platforms to authenticate.", "warning");
+        if (data.auth_required || (data.notes && data.notes.some(n => String(n).includes("session not found") || String(n).includes("auth_required")))) {
+          showToast(data.message || "Yêu cầu đăng nhập. Vui lòng kết nối nền tảng.", "warning");
           openCookieManagerModal();
         } else {
-          showToast(`Sync completed: ${data.message || `Captured ${data.total_ingested || 0} new items`}`, "success");
+          showToast(`Đồng bộ hoàn tất: ${data.message || `Đã thu thập ${data.total_ingested || 0} mục mới`}`, "success");
         }
-        checkApiConnection();
-        renderCurrentView();
+        await checkApiConnection();
+        await Promise.allSettled([
+          refreshAllTabCounts(),
+          checkAuthStatus(),
+          renderCurrentView()
+        ]);
       } catch (err) {
-        showToast(`Sync error: ${err.message}`, "warning");
+        showToast(`Lỗi quét dữ liệu: ${err.message}`, "warning");
       } finally {
         if (spinner) spinner.style.display = "none";
         if (btnText) btnText.innerText = "Sync Platforms";
@@ -3960,33 +4576,113 @@
       }
     });
 
-    // --- Cookie & Session Manager Controller ---
-    async function openCookieManagerModal() {
+    // --- Platform & Local Sources Modal Controller ---
+    function switchPlatformModalTab(tab = "local") {
+      const tabLocal = document.getElementById("tabContentLocal");
+      const tabCloud = document.getElementById("tabContentCloud");
+      const btnLocal = document.getElementById("tabBtnLocal");
+      const btnCloud = document.getElementById("tabBtnCloud");
+
+      if (tab === "local") {
+        if (tabLocal) tabLocal.style.display = "block";
+        if (tabCloud) tabCloud.style.display = "none";
+        if (btnLocal) {
+          btnLocal.style.color = "var(--accent-primary)";
+          btnLocal.style.borderBottom = "2px solid var(--accent-primary)";
+        }
+        if (btnCloud) {
+          btnCloud.style.color = "var(--text-muted)";
+          btnCloud.style.borderBottom = "2px solid transparent";
+        }
+      } else {
+        if (tabLocal) tabLocal.style.display = "none";
+        if (tabCloud) tabCloud.style.display = "block";
+        if (btnCloud) {
+          btnCloud.style.color = "var(--accent-primary)";
+          btnCloud.style.borderBottom = "2px solid var(--accent-primary)";
+        }
+        if (btnLocal) {
+          btnLocal.style.color = "var(--text-muted)";
+          btnLocal.style.borderBottom = "2px solid transparent";
+        }
+      }
+    }
+
+    async function loadLocalConnectorsConfig() {
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/connectors/config`, {
+          headers: getApiHeaders()
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const connectors = data.connectors || [];
+        const gitConn = connectors.find(c => c.id === "git" || c.key === "git");
+        if (gitConn && Array.isArray(gitConn.current_paths) && gitConn.current_paths.length > 0) {
+          const input = document.getElementById("inputLocalGitRepo");
+          if (input && !input.value) {
+            input.value = gitConn.current_paths.join(", ");
+          }
+          const info = document.getElementById("gitDetectedInfo");
+          if (info) {
+            info.innerHTML = `Đường dẫn phát hiện: <strong>${escapeHtml(gitConn.current_paths.join(" • "))}</strong> (.git sẵn sàng)`;
+          }
+        }
+      } catch (e) {
+        console.debug("loadLocalConnectorsConfig error:", e);
+      }
+    }
+
+    async function saveLocalGitConfig() {
+      const input = document.getElementById("inputLocalGitRepo");
+      const repoVal = input ? input.value.trim() : "";
+      if (!repoVal) {
+        showToast("Vui lòng nhập đường dẫn thư mục dự án Git.", "warning");
+        return;
+      }
+      try {
+        const res = await fetch(`${CONFIG.apiBase}/api/connectors/config`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ connector: "git", token: repoVal })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `HTTP ${res.status}`);
+        }
+        showToast("Đã lưu cấu hình đường dẫn Git thành công!", "success");
+        await loadLocalConnectorsConfig();
+      } catch (err) {
+        showToast(`Lỗi lưu cấu hình Git: ${err.message}`, "danger");
+      }
+    }
+
+    async function syncLocalGit() {
+      closeCookieManagerModal();
+      await syncPlatforms("git");
+    }
+
+    async function syncCodingAgents() {
+      closeCookieManagerModal();
+      await syncPlatforms("coding_agent");
+    }
+
+    async function syncLocalAll() {
+      closeCookieManagerModal();
+      await syncPlatforms("all_local");
+    }
+
+    async function openCookieManagerModal(defaultTab = "local") {
       const dropdown = document.getElementById("syncDropdownMenu");
       if (dropdown) dropdown.style.display = "none";
 
       const modal = document.getElementById("cookieManagerModal");
       if (modal) modal.classList.add("active");
 
-      try {
-        const res = await apiFetch("/api/auth/session-status");
-        const badge = document.getElementById("cookieStatusBadge");
-        const details = document.getElementById("cookieStatusDetails");
-        if (badge) {
-          badge.innerText = res.status;
-          badge.className = "tag tag-status " + (res.status === "HEALTHY" || res.status === "STARTING" ? "status-DONE" : "status-BLOCKED");
-        }
-        if (details) {
-          details.innerHTML = `
-            <div>Storage file: <code>${escapeHtml(res.storage_path)}</code></div>
-            <div>Cookie count: <strong>${res.cookie_count}</strong> (${res.valid_cookies} valid)</div>
-            <div>Domains: ${escapeHtml((res.domains || []).join(", ") || "None")}</div>
-            <div style="margin-top: 4px; font-weight: 500; color: ${res.status === 'HEALTHY' || res.status === 'STARTING' ? 'var(--success-text)' : 'var(--danger-text)'};">${escapeHtml(res.message)}</div>
-          `;
-        }
-      } catch (err) {
-        console.warn("Could not check cookie status:", err);
-      }
+      switchPlatformModalTab(defaultTab);
+      await Promise.allSettled([
+        checkAuthStatus(),
+        loadLocalConnectorsConfig()
+      ]);
     }
 
     let currentTeamsSessionId = null;
@@ -4244,6 +4940,23 @@
     let loginPollingTimer = null;
 
     async function triggerDirectLogin(service = "all") {
+      const serviceNames = {
+        teams: "Microsoft Teams",
+        outlook: "Microsoft Outlook",
+        jira: "Atlassian Jira",
+        github: "GitHub",
+        all: "All Platforms"
+      };
+      const webUrls = {
+        teams: "https://teams.microsoft.com",
+        outlook: "https://outlook.office.com/mail/",
+        jira: "https://id.atlassian.com/login",
+        github: "https://github.com/login",
+        all: "https://teams.microsoft.com"
+      };
+
+      const svcTitle = serviceNames[service] || service.toUpperCase();
+      const targetWebUrl = webUrls[service] || webUrls.teams;
 
       const progressArea = document.getElementById("loginProgressArea");
       const progressText = document.getElementById("loginProgressText");
@@ -4253,10 +4966,10 @@
         progressArea.style.borderColor = "var(--accent-primary)";
       }
       if (progressText) {
-        progressText.innerText = `Opening sign-in window for ${service.toUpperCase()} on your desktop...`;
+        progressText.innerText = `Đang mở trình duyệt đăng nhập ${svcTitle}...`;
         progressText.style.color = "var(--accent-primary)";
       }
-      if (progressSub) progressSub.innerText = "A browser window is opening on your desktop. Sign in with your Microsoft account, and session cookies will be captured automatically!";
+      if (progressSub) progressSub.innerText = `Cửa sổ trình duyệt đang được mở trên màn hình để bạn đăng nhập ${svcTitle}. Phiên làm việc sẽ được tự động bắt và lưu vào hệ thống!`;
 
       // 1. Call backend API (:8000) first to route to host helper
       let hostLaunched = false;
@@ -4271,6 +4984,9 @@
           if (data.status === "LAUNCHED") {
             hostLaunched = true;
             showToast(data.message, "info");
+          } else if (data.status === "MANUAL_REQUIRED" && data.web_url) {
+            window.open(data.web_url, "_blank");
+            showToast(data.message, "info");
           }
         }
       } catch (_) {}
@@ -4278,14 +4994,16 @@
       // 2. Fallback to direct host helper (:8999) if backend is unavailable
       if (!hostLaunched) {
         const hostCandidates = [
-          `http://${window.location.hostname || "127.0.0.1"}:8999/login?service=${encodeURIComponent(service)}`,
-          `http://127.0.0.1:8999/login?service=${encodeURIComponent(service)}`,
-          `http://localhost:8999/login?service=${encodeURIComponent(service)}`
+          `http://${window.location.hostname || "127.0.0.1"}:8999/login`,
+          `http://127.0.0.1:8999/login`,
+          `http://localhost:8999/login`
         ];
         for (const hostUrl of hostCandidates) {
           try {
             const hostRes = await fetch(hostUrl, {
-              method: "GET",
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ service: service }),
               signal: AbortSignal.timeout(2000)
             });
             if (hostRes.ok) {
@@ -4301,7 +5019,9 @@
       }
 
       if (!hostLaunched) {
-        showToast("Connecting to desktop browser... Please check your desktop screen.", "info");
+        // Fallback: direct window open in current browser
+        window.open(targetWebUrl, "_blank");
+        showToast(`Đã mở trang đăng nhập ${svcTitle} trên trình duyệt của bạn.`, "info");
       }
 
       // 3. Poll for session cookies automatically
@@ -4311,24 +5031,28 @@
         pollCount++;
         try {
           const st = await apiFetch("/api/auth/session-status");
-          if (st.status === "HEALTHY" || (st.status !== "LOGIN_REQUIRED" && (st.valid_cookies >= 1 || st.has_auth))) {
+          const platStatus = (st && st.platforms && st.platforms[service]) ? st.platforms[service] : null;
+          const isServiceConnected = platStatus ? platStatus.connected : (st.status === "HEALTHY" || (st.status !== "LOGIN_REQUIRED" && (st.valid_cookies >= 1 || st.has_auth)));
+
+          if (isServiceConnected) {
             clearInterval(loginPollingTimer);
             loginPollingTimer = null;
             if (progressArea) {
               progressArea.style.borderColor = "var(--success-border)";
-              progressText.innerHTML = "Sign-in successful! Session cookies saved. Syncing data...";
+              progressText.innerHTML = `Đăng nhập ${svcTitle} thành công! Đang lưu phiên...`;
               progressText.style.color = "var(--success-text)";
-              progressSub.innerText = `Session saved (${st.cookie_count} cookies). Automatically syncing data from Microsoft Teams...`;
+              progressSub.innerText = `Đã lưu phiên làm việc an toàn (${st.cookie_count} cookies). Tự động đồng bộ dữ liệu...`;
             }
-            showToast("Sign-in successful! Auto-syncing Teams messages...", "success");
+            showToast(`Đăng nhập ${svcTitle} thành công!`, "success");
+            await checkAuthStatus();
             setTimeout(() => {
               closeCookieManagerModal();
-              syncPlatforms(service === "outlook" ? "outlook" : "teams");
+              syncPlatforms(service);
             }, 1200);
           } else if (pollCount > 150) {
             clearInterval(loginPollingTimer);
             loginPollingTimer = null;
-            if (progressText) progressText.innerText = "Sign-in timed out (5 minutes).";
+            if (progressText) progressText.innerText = "Hết thời gian chờ đăng nhập (5 phút).";
           }
         } catch (e) {
           console.debug("Polling err:", e);
@@ -4356,7 +5080,12 @@
       try {
         // Clear on Host Helper
         try {
-          await fetch("http://127.0.0.1:8999/clear", { method: "POST", signal: AbortSignal.timeout(1000) });
+          await fetch("http://127.0.0.1:8999/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: true }),
+            signal: AbortSignal.timeout(1000)
+          });
         } catch (_) {}
 
         // Clear on backend container
@@ -4676,6 +5405,7 @@
 
     // --- Master Render Router ---
     function renderCurrentView() {
+      refreshAllTabCounts();
       switch (CONFIG.currentView) {
         case "today": renderTodayView(); break;
         case "review": renderReviewView(); break;
@@ -4685,16 +5415,58 @@
         case "decisions": renderDecisionsView(); break;
         case "lessons": renderLessonsView(); break;
         case "health": renderHealthView(); break;
+        case "audit": renderAuditView(); break;
       }
     }
 
-    function refreshCurrentView() {
+    async function refreshCurrentView() {
       showToast("Refreshing board data...");
       checkApiConnection();
-      renderCurrentView();
+      await Promise.allSettled([
+        refreshAllTabCounts(),
+        checkAuthStatus(),
+        renderCurrentView()
+      ]);
     }
 
-    // --- Theme Controller ---
+    // --- Theme Controller & Seamless OpenWebUI Sync ---
+    function syncWithParentTheme() {
+      try {
+        if (window.parent && window.parent !== window && window.parent.document) {
+          const parentHtml = window.parent.document.documentElement;
+          const applyThemeFromParent = () => {
+            const isParentDark = parentHtml.classList.contains("dark") || 
+                                 parentHtml.getAttribute("data-theme") === "dark" ||
+                                 (window.parent.document.body && window.parent.document.body.classList.contains("dark"));
+            const boardHtml = document.documentElement;
+            if (isParentDark) {
+              boardHtml.classList.add("dark");
+              boardHtml.classList.remove("light");
+              const el = document.getElementById("themeText");
+              if (el) el.innerText = "Light";
+            } else {
+              boardHtml.classList.add("light");
+              boardHtml.classList.remove("dark");
+              const el = document.getElementById("themeText");
+              if (el) el.innerText = "Dark";
+            }
+          };
+
+          applyThemeFromParent();
+
+          const observer = new MutationObserver(() => {
+            applyThemeFromParent();
+          });
+          observer.observe(parentHtml, { attributes: true, attributeFilter: ["class", "data-theme"] });
+          if (window.parent.document.body) {
+            observer.observe(window.parent.document.body, { attributes: true, attributeFilter: ["class"] });
+          }
+          return true;
+        }
+      } catch (_) {}
+      return false;
+    }
+
     function toggleTheme() {
       const html = document.documentElement;
       const isLight = html.classList.toggle("light");
@@ -4709,6 +5481,9 @@
     }
 
     function initTheme() {
+      if (syncWithParentTheme()) {
+        return;
+      }
       const savedTheme = localStorage.getItem("ptb_theme");
       const html = document.documentElement;
       if (savedTheme === "light") {
@@ -4756,7 +5531,11 @@
       initTheme();
       updateApiKeyIndicator();
       await checkApiConnection();
-      renderCurrentView();
+      await Promise.allSettled([
+        refreshAllTabCounts(),
+        checkAuthStatus(),
+        renderCurrentView()
+      ]);
     }
 
     if (document.readyState === "loading") {

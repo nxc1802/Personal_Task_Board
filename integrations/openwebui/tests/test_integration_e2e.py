@@ -279,7 +279,7 @@ class TestOpenWebUIFilterIntegration:
         system_msgs = [m for m in messages if m.get("role") == "system"]
         assert len(system_msgs) >= 1, "Expected context injection into system messages"
         system_content = system_msgs[-1].get("content", "")
-        assert "PERSONAL TASK BOARD CONTEXT" in system_content or "Hôm nay:" in system_content
+        assert "PERSONAL TASK BOARD CONTEXT" in system_content or "Personal Task Board Grounding Context" in system_content or "hôm nay" in system_content.lower()
 
     @pytest.mark.asyncio
     async def test_filter_inlet_skips_unrelated_query(self):

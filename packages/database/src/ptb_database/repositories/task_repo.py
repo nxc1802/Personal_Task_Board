@@ -1,6 +1,7 @@
 """TaskDomainRepository: Repository for managing UnifiedTask, Evidence, and Person relationships in Neo4j."""
 
 from datetime import datetime, timezone
+import hashlib
 import inspect
 import logging
 from typing import Any, Dict, List, Optional
@@ -18,9 +19,17 @@ from ptb_contracts.l2_processing import (
     UnifiedTaskCandidate,
 )
 from ptb_contracts.l4_intelligence import TaskWithContext
+from ptb_contracts.telemetry import get_cost_audit_tracker
 from ptb_database.neo4j_client import Neo4jClient
 
 logger = logging.getLogger("ptb.database.repositories.task_repo")
+
+
+def compute_task_content_hash(title: str, description: Optional[str] = None, model_version: str = "default") -> str:
+    """Compute deterministic SHA-256 hash of task title, description, and embedding model version."""
+    clean_text = f"{title}. {description or ''}".strip().lower()
+    raw = f"{clean_text}:{model_version.strip().lower()}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _safe_timestamp(val: Any, default_ts: float) -> float:
@@ -157,10 +166,18 @@ class TaskDomainRepository:
                 task_text = f"{task.title}. {task.description or ''}".strip()
                 embed_fn = getattr(self.embedding_service, "embed_text", None)
                 if callable(embed_fn):
-                    vec = embed_fn(task_text)
-                    if inspect.isawaitable(vec):
-                        vec = await vec
-                    await self.set_task_embedding(task_id, vec)
+                    model_version = getattr(self.embedding_service, "model_name", "qwen3-embedding")
+                    new_hash = compute_task_content_hash(task.title, task.description, model_version)
+                    existing_hash = await self.get_task_embedding_hash(task_id)
+                    if existing_hash and existing_hash == new_hash:
+                        get_cost_audit_tracker().record_embedding_call(count=1, skipped=True)
+                        logger.debug("Skipped re-embedding for task %s (content hash unchanged)", task_id)
+                    else:
+                        vec = embed_fn(task_text)
+                        if inspect.isawaitable(vec):
+                            vec = await vec
+                        await self.set_task_embedding(task_id, vec, content_hash=new_hash)
+                        get_cost_audit_tracker().record_embedding_call(count=1, skipped=False)
             except Exception as emb_err:
                 logger.warning("Failed calculating/persisting embedding for task %s: %s", task_id, emb_err)
         return task_id
@@ -425,8 +442,8 @@ class TaskDomainRepository:
             return self._parse_task_candidate(row)
 
     async def get_active_tasks(self) -> list[UnifiedTaskCandidate]:
-        """Truy vấn nhanh các tasks đang hoạt động (TODO, IN_PROGRESS, BLOCKED) tận dụng Neo4j index."""
-        return await self.list_tasks(filters={"status": [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED]})
+        """Truy vấn nhanh các tasks đang hoạt động hoặc vừa hoàn thành tận dụng Neo4j index."""
+        return await self.list_tasks(filters={"status": [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.DONE]})
 
     async def list_tasks(self, filters: Optional[dict] = None) -> list[UnifiedTaskCandidate]:
         """Lấy danh sách tasks và lọc theo tiêu chí (status, project, customer, owner, due_range, etc.)."""
@@ -963,15 +980,36 @@ class TaskDomainRepository:
             evidences=[e.model_copy(update={"task_id": new_task_id}) for e in detached_evidences],
         )
 
-    async def set_task_embedding(self, task_id: str, embedding: List[float]) -> None:
-        """Set dense embedding vector for UnifiedTask (task_node.embedding in Neo4j)."""
+    async def set_task_embedding(
+        self,
+        task_id: str,
+        embedding: List[float],
+        content_hash: Optional[str] = None,
+    ) -> None:
+        """Set dense embedding vector and optional content hash for UnifiedTask (task_node in Neo4j)."""
         driver = self._get_driver()
         query = """
         MATCH (task_node:UnifiedTask {id: $task_id})
-        SET task_node.embedding = $embedding
+        SET task_node.embedding = $embedding,
+            task_node.embedding_content_hash = $content_hash
         """
         async with driver.session(database=self.neo4j_client.database) as session:
-            await session.run(query, {"task_id": task_id, "embedding": embedding})
+            await session.run(query, {"task_id": task_id, "embedding": embedding, "content_hash": content_hash})
+
+    async def get_task_embedding_hash(self, task_id: str) -> Optional[str]:
+        """Retrieve embedding content hash for UnifiedTask if embedding exists."""
+        driver = self._get_driver()
+        query = """
+        MATCH (task_node:UnifiedTask {id: $task_id})
+        RETURN task_node.embedding_content_hash AS content_hash,
+               (task_node.embedding IS NOT NULL) AS has_embedding
+        """
+        async with driver.session(database=self.neo4j_client.database) as session:
+            result = await session.run(query, {"task_id": task_id})
+            record = await result.single()
+            if record and record.get("has_embedding") and record.get("content_hash"):
+                return str(record["content_hash"])
+            return None
 
     async def get_task_embedding(self, task_id: str) -> Optional[List[float]]:
         """Retrieve dense embedding vector for UnifiedTask (task_node.embedding in Neo4j)."""
@@ -986,6 +1024,53 @@ class TaskDomainRepository:
             if record and record.get("embedding"):
                 return record["embedding"]
             return None
+
+    async def embed_tasks_batch(self, tasks: List[UnifiedTaskCandidate]) -> None:
+        """Batch embed multiple tasks with deduplication, skipping unchanged vectors."""
+        if not tasks or self.embedding_service is None:
+            return
+
+        model_version = getattr(self.embedding_service, "model_name", "qwen3-embedding")
+        tasks_to_embed: List[UnifiedTaskCandidate] = []
+        hashes: List[str] = []
+        texts: List[str] = []
+
+        for t in tasks:
+            t_id = t.id or ""
+            t_hash = compute_task_content_hash(t.title, t.description, model_version)
+            existing_hash = await self.get_task_embedding_hash(t_id)
+            if existing_hash and existing_hash == t_hash:
+                get_cost_audit_tracker().record_embedding_call(count=1, skipped=True)
+                continue
+            tasks_to_embed.append(t)
+            hashes.append(t_hash)
+            texts.append(f"{t.title}. {t.description or ''}".strip())
+
+        if not tasks_to_embed:
+            return
+
+        batch_fn = getattr(self.embedding_service, "embed_batch", None)
+        if callable(batch_fn):
+            vecs = batch_fn(texts)
+            if inspect.isawaitable(vecs):
+                vecs = await vecs
+        else:
+            embed_fn = getattr(self.embedding_service, "embed_text")
+            vecs = []
+            for txt in texts:
+                v = embed_fn(txt)
+                if inspect.isawaitable(v):
+                    v = await v
+                vecs.append(v)
+
+        for t, vec, h in zip(tasks_to_embed, vecs, hashes):
+            await self.set_task_embedding(t.id, vec, content_hash=h)
+
+        get_cost_audit_tracker().record_embedding_call(
+            count=len(tasks_to_embed),
+            is_batch=True,
+            skipped=False,
+        )
 
     _task_sort_key = staticmethod(_task_sort_key)
 

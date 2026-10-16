@@ -212,4 +212,48 @@ def test_connectors_config_get_and_post(mock_app_client, tmp_path):
         assert os.environ.get("GITHUB_TOKEN") == "ghp_testnewtoken1234567890abcdef"
 
 
+def test_sync_platform_api_shortcut_and_confluence_auth_required(mock_app_client):
+    """Review 2 P1: Verify Shortcut & Confluence are wired into POST /api/ingest/sync and return auth_required when unconfigured."""
+    client, _ = mock_app_client
+    with patch.dict(os.environ, {"SHORTCUT_API_TOKEN": "", "CONFLUENCE_API_TOKEN": ""}, clear=False):
+        # 1. Shortcut
+        resp_sc = client.post("/api/ingest/sync", json={"platform": "shortcut"})
+        assert resp_sc.status_code == 200
+        data_sc = resp_sc.json()
+        assert data_sc["success"] is False
+        assert data_sc["auth_required"] is True
+        assert data_sc["platform"] == "shortcut"
+        assert "ingested_count" in data_sc
+        assert "processed_count" in data_sc
+        assert "failed_count" in data_sc
+        assert "pending_count" in data_sc
 
+        # 2. Confluence
+        resp_cf = client.post("/api/ingest/sync", json={"platform": "confluence"})
+        assert resp_cf.status_code == 200
+        data_cf = resp_cf.json()
+        assert data_cf["success"] is False
+        assert data_cf["auth_required"] is True
+        assert data_cf["platform"] == "confluence"
+        assert "ingested_count" in data_cf
+        assert "processed_count" in data_cf
+        assert "failed_count" in data_cf
+        assert "pending_count" in data_cf
+
+
+def test_sync_platform_api_truthful_counts(mock_app_client):
+    """Review 2 P1: Verify truthful reporting counts in POST /api/ingest/sync."""
+    client, _ = mock_app_client
+    # Sync with no events found on git
+    resp = client.post("/api/ingest/sync", json={"platform": "git", "limit": 10})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert "ingested_count" in data
+    assert "processed_count" in data
+    assert "failed_count" in data
+    assert "pending_count" in data
+    assert isinstance(data["ingested_count"], int)
+    assert isinstance(data["processed_count"], int)
+    assert isinstance(data["failed_count"], int)
+    assert isinstance(data["pending_count"], int)

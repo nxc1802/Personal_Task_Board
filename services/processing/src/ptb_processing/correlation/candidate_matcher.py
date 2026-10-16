@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+import inspect
 import logging
 import re
 from typing import Any, List, Optional, Set
@@ -12,6 +13,7 @@ from ptb_contracts.l2_processing import (
     TaskStatus,
     UnifiedTaskCandidate,
 )
+from ptb_contracts.telemetry import get_cost_audit_tracker
 from ptb_processing.correlation.scoring import (
     CorrelationScoreResult,
     CorrelationScorer,
@@ -53,10 +55,12 @@ class TaskCandidateMatcher:
         task_repo: Optional[Any] = None,
         neo4j_client: Optional[Any] = None,
         scorer: Optional[CorrelationScorer] = None,
+        reranker: Optional[Any] = None,
     ) -> None:
         self.task_repo = task_repo
         self.neo4j_client = neo4j_client
         self.scorer = scorer or CorrelationScorer()
+        self.reranker = reranker
 
     @classmethod
     def extract_anchors_from_text(cls, text: str) -> Set[DeterministicAnchor]:
@@ -231,7 +235,7 @@ class TaskCandidateMatcher:
         """Query Neo4j for active UnifiedTasks and their evidences."""
         cypher = """
         MATCH (t:UnifiedTask)
-        WHERE t.status IN ['TODO', 'IN_PROGRESS', 'BLOCKED']
+        WHERE t.status IN ['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE']
         OPTIONAL MATCH (owner:Person)-[:ASSIGNED_TO]->(t)
         OPTIONAL MATCH (req:Person)-[:REQUESTED]->(t)
         OPTIONAL MATCH (t)-[:HAS_EVIDENCE]->(e:Evidence)
@@ -336,6 +340,38 @@ class TaskCandidateMatcher:
             # If score is non-trivial or anchors matched, record candidate match
             if score_result.correlation_confidence >= 0.10 or score_result.has_deterministic_anchor:
                 matches.append(CandidateMatch(target_task=target, score_result=score_result))
+
+        # Check for ambiguous matches (0.45 <= score < 0.85 without deterministic anchor) to rerank with Kev
+        ambiguous_matches = [
+            m for m in matches
+            if 0.45 <= m.score_result.correlation_confidence < 0.85
+            and not m.score_result.has_deterministic_anchor
+        ]
+
+        if self.reranker is not None and ambiguous_matches:
+            try:
+                query = f"{candidate.title}. {candidate.description or ''}".strip()
+                top_ambiguous = ambiguous_matches[:3]
+                docs = [f"{m.target_task.title}. {m.target_task.description or ''}".strip() for m in top_ambiguous]
+                rerank_fn = getattr(self.reranker, "rerank", None)
+                if callable(rerank_fn):
+                    ranked = rerank_fn(query, docs, top_k=len(docs))
+                    if inspect.isawaitable(ranked):
+                        ranked = await ranked
+                    get_cost_audit_tracker().record_kev_call("correlation_rerank")
+
+                    # Apply Kev calibration to the top ambiguous matches
+                    for item in ranked:
+                        idx = item.get("index")
+                        prob = float(item.get("score", 0.0))
+                        if idx is not None and idx < len(top_ambiguous):
+                            orig_m = top_ambiguous[idx]
+                            refined_conf = round((orig_m.score_result.correlation_confidence * 0.6) + (prob * 0.4), 4)
+                            orig_m.score_result.correlation_confidence = refined_conf
+                            orig_m.score_result.kev_score = prob
+                            orig_m.score_result.kev_calibrated = True
+            except Exception as e:
+                logger.warning("Kev reranking skipped due to error: %s", e)
 
         # Sort matches by correlation_confidence descending
         matches.sort(key=lambda m: m.score_result.correlation_confidence, reverse=True)

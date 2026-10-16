@@ -20,6 +20,7 @@ import yaml
 
 from ptb_contracts.l2_processing import EvidenceType, TaskStatus, UnifiedTaskCandidate
 from ptb_contracts.l4_intelligence import PriorityBreakdown, TaskWithContext
+from ptb_contracts.telemetry import get_cost_audit_tracker
 
 logger = logging.getLogger("ptb.intelligence.priority")
 
@@ -549,3 +550,59 @@ class DeterministicPriorityEngine:
         if not valid_reasons:
             return f"Score {total_score}/100: Ưu tiên bình thường."
         return f"Score {total_score}/100: " + ", ".join(valid_reasons) + "."
+
+    def resolve_ambiguous_priority_with_kev(
+        self,
+        task: Union[TaskWithContext, UnifiedTaskCandidate, Dict[str, Any]],
+        base_breakdown: PriorityBreakdown,
+        reranker: Optional[Any] = None,
+    ) -> PriorityBreakdown:
+        """Kev System 1 Urgency Calibration for ambiguous priority cases (Review 1 Kev requirement).
+
+        If base deterministic priority score falls into ambiguous middle tier (35.0 <= score <= 65.0)
+        and no explicit deadline exists, invoke KevDecisionReranker.classify_task_urgency()
+        to calibrate score and record telemetry without changing deterministic defaults.
+        """
+        if reranker is None:
+            return base_breakdown
+
+        if not (35.0 <= base_breakdown.total_score <= 65.0):
+            return base_breakdown
+
+        classify_fn = getattr(reranker, "classify_task_urgency", None)
+        if not callable(classify_fn):
+            return base_breakdown
+
+        try:
+            task_cand, _ = self._extract_task_and_context(task)
+            text = f"{task_cand.title}. {task_cand.description or ''}".strip()
+            get_cost_audit_tracker().record_kev_call(query_type="priority_urgency")
+            res = classify_fn(text)
+
+            # Map Kev urgency to a calibration delta:
+            # High -> +15.0, Medium -> 0.0, Low -> -15.0
+            p_level = res.get("priority", "Medium")
+            delta = 0.0
+            if p_level == "High":
+                delta = 15.0
+            elif p_level == "Low":
+                delta = -15.0
+
+            calibrated_score = round(max(0.0, min(100.0, base_breakdown.total_score + delta)), 1)
+            old_exp = getattr(base_breakdown, "llm_explanation", "")
+            new_explanation = f"{old_exp} | Kev Urgency Calibrated ({p_level}: {delta:+0.0f}pts)" if old_exp else f"Kev Urgency Calibrated ({p_level}: {delta:+0.0f}pts)"
+
+            return PriorityBreakdown(
+                total_score=calibrated_score,
+                deadline_score=base_breakdown.deadline_score,
+                customer_impact_score=base_breakdown.customer_impact_score,
+                production_impact_score=base_breakdown.production_impact_score,
+                commitment_weight=base_breakdown.commitment_weight,
+                stale_age_score=base_breakdown.stale_age_score,
+                waiting_penalty=base_breakdown.waiting_penalty,
+                uncertainty_deduction=base_breakdown.uncertainty_deduction,
+                llm_explanation=new_explanation,
+            )
+        except Exception as exc:
+            logger.warning("Kev priority urgency calibration skipped due to error: %s", exc)
+            return base_breakdown

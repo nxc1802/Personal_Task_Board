@@ -300,8 +300,8 @@ class AcquisitionPipeline:
                     existing = await fn(record.idempotency_key) if inspect.iscoroutinefunction(fn) else fn(record.idempotency_key)
                     if existing is not None:
                         is_dup = True
-                except Exception:
-                    pass
+                except Exception as dup_err:
+                    logger.debug("Idempotency lookup non-fatal: %s", dup_err)
 
         if is_dup:
             self._stats["deduplicated"] += 1

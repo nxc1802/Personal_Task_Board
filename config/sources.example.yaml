@@ -77,20 +77,26 @@ sources:
         enabled: true
         paths:
           - "%APPDATA%/Cursor/User/workspaceStorage"
+          - "%APPDATA%/Cursor/User/globalStorage"
+          - "~/.cursor/projects"
           - "~/Library/Application Support/Cursor/User/workspaceStorage"
           - "~/.config/Cursor/User/workspaceStorage"
 
       claude_code:
         enabled: true
         paths:
-          - "~/.claude/projects"
-          - "~/.claude/transcripts"
+          - "~/.local/share/claude"
+          - "~/.local/state/claude"
+          - "%LOCALAPPDATA%/Claude/logs"
+          - "~/.claude"
+          - ".claude"
 
       antigravity:
         enabled: true
         paths:
-          - "~/.gemini/antigravity"
-          - "~/.gemini/antigravity-ide"
+          - "~/.gemini/antigravity/brain"
+          - "~/.gemini/antigravity-ide/brain"
+          - "~/.antigravity/brain"
 
       codex:
         enabled: true

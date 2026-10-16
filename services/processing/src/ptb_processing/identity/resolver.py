@@ -179,8 +179,10 @@ class IdentityResolver:
 
         # 2. Kiểm tra EXACT MATCH trên Account ID
         if clean_account_id:
+            clean_acc_lower = clean_account_id.lower()
             for p in self._persons.values():
-                if clean_account_id in p.account_ids or (p.primary_email and clean_account_id.lower() == p.primary_email.lower()):
+                acc_lowers = {a.strip().lower() for a in p.account_ids if a}
+                if clean_account_id in p.account_ids or clean_acc_lower in acc_lowers or (p.primary_email and clean_acc_lower == p.primary_email.lower()):
                     return IdentityResolutionResult(
                         person_id=p.person_id,
                         canonical_name=p.canonical_name,
@@ -194,7 +196,8 @@ class IdentityResolver:
         # 3. Kiểm tra EXACT MATCH trên Email
         if norm_email:
             for p in self._persons.values():
-                if (p.primary_email and p.primary_email == norm_email) or norm_email in p.account_ids:
+                acc_lowers = {a.strip().lower() for a in p.account_ids if a}
+                if (p.primary_email and p.primary_email == norm_email) or norm_email in p.account_ids or norm_email in acc_lowers:
                     return IdentityResolutionResult(
                         person_id=p.person_id,
                         canonical_name=p.canonical_name,
@@ -219,9 +222,10 @@ class IdentityResolver:
                             confidence=1.0,
                         )
 
-        # 3b. Kiểm tra EXACT MATCH trên Canonical Name hoặc Aliases
+        # 3b. Kiểm tra EXACT MATCH trên Canonical Name hoặc Aliases hoặc Account ID
         if display_name:
             norm_disp = normalize_vietnamese_text(display_name)
+            disp_clean = display_name.strip().lower()
             for p in self._persons.values():
                 if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
                     continue
@@ -231,14 +235,15 @@ class IdentityResolver:
                 p_norm = normalize_vietnamese_text(p.canonical_name)
                 alias_norms = {normalize_vietnamese_text(a) for a in p.aliases}
                 id_norm = normalize_vietnamese_text(p.person_id)
-                if norm_disp == p_norm or norm_disp in alias_norms or norm_disp == id_norm:
+                acc_lowers = {a.strip().lower() for a in p.account_ids if a}
+                if norm_disp == p_norm or norm_disp in alias_norms or norm_disp == id_norm or disp_clean in acc_lowers:
                     return IdentityResolutionResult(
                         person_id=p.person_id,
                         canonical_name=p.canonical_name,
                         primary_email=p.primary_email,
                         is_exact_match=True,
                         is_candidate_signal=False,
-                        resolution_method="exact_canonical_name",
+                        resolution_method="account_id" if disp_clean in acc_lowers else "exact_canonical_name",
                         confidence=1.0,
                     )
 

@@ -68,9 +68,21 @@ services:
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_MODEL=${LLM_MODEL:-gemini-2.5-flash}
       - TENANT_ID=${TENANT_ID:-local-user}
+      - PTB_WORKSPACE_ROOT=/workspace
+      - HOST_USER_HOME=/host_home
+      - ANTIGRAVITY_BRAIN_DIR=/host_home/.gemini/antigravity/brain
+      - CODEX_SESSION_DIR=/host_home/.codex/sessions
+      - CURSOR_STORAGE_DIR=/host_home/AppData/Roaming/Cursor/User
+      - CLAUDE_LOG_DIR=/host_home/AppData/Local/Claude/logs
     volumes:
       - ./data:/app/data
       - ./config:/app/config:ro
+      - ./services:/app/services
+      - ./packages:/app/packages
+      - ./integrations:/app/integrations
+      - ${HOST_USER_HOME:-C:/Users/truon}:/host_home:ro
+      - ${HOST_WORKSPACE:-D:/Working/PTB}:/workspace:ro
+      - ./.git:/app/.git:ro
     depends_on:
       - neo4j
     networks:

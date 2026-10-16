@@ -63,3 +63,4 @@ data/
 
 # Temporary scratch & dev artifacts
 scratch/
+.agents/

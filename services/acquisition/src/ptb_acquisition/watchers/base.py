@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,25 @@ from ptb_contracts import AgentType, RawAgentSessionRecord
 from ptb_acquisition.watchers.turn_filter import AgentTurnFilter
 
 logger = logging.getLogger("ptb.acquisition.watchers")
+
+
+def resolve_raw_samples_dir() -> Optional[Path]:
+    """Tìm thư mục raw_samples linh hoạt cho fallbacks kiểm thử & mẫu data thực tế."""
+    custom = os.getenv("PTB_RAW_SAMPLES_DIR")
+    if custom and Path(custom).exists():
+        return Path(custom)
+    
+    candidates = [
+        Path("/app/raw_samples"),
+        Path.cwd() / "raw_samples",
+        Path.cwd().parent / "raw_samples",
+        Path(__file__).resolve().parents[4] / "raw_samples",
+        Path(__file__).resolve().parents[5] / "raw_samples",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_dir():
+            return p
+    return None
 
 
 class BaseAgentWatcher(ABC):
@@ -94,6 +114,15 @@ class BaseAgentWatcher(ABC):
                     os.path.join(home, ".local", "share", app),
                     os.path.join(home, f".{app.lower()}"),
                 ]
+                # Hỗ trợ container Docker quét thư mục host người dùng nếu được mount
+                for host_mount in ("/host_home", "/c/Users/truon", "/mnt/c/Users/truon"):
+                    if os.path.isdir(host_mount):
+                        candidates.extend([
+                            os.path.join(host_mount, "AppData", "Roaming", app),
+                            os.path.join(host_mount, "AppData", "Local", app),
+                            os.path.join(host_mount, f".{app.lower()}"),
+                            os.path.join(host_mount, ".gemini", app),
+                        ])
 
             for c in candidates:
                 target = os.path.join(c, sub_path) if sub_path else c
@@ -163,6 +192,9 @@ class BaseAgentWatcher(ABC):
         else:
             for app in apps:
                 paths.append(os.path.join(home, ".config", app, sub_path) if sub_path else os.path.join(home, ".config", app))
+            for host_mount in ("/host_home", "/c/Users/truon", "/mnt/c/Users/truon"):
+                if os.path.isdir(host_mount):
+                    paths.append(os.path.join(host_mount, dot_name, sub_path) if sub_path else os.path.join(host_mount, dot_name))
 
         unique_paths = list(dict.fromkeys(os.path.normpath(p) for p in paths if p))
         existing = [p for p in unique_paths if os.path.exists(p)]

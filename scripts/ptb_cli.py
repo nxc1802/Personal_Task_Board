@@ -2464,6 +2464,9 @@ async def cmd_ingest(args: argparse.Namespace) -> int:
         elif target_source == "slack":
             print("  [!] Slack chưa được cấu hình credentials (SLACK_BOT_TOKEN)")
 
+    results = []
+    total_synced = 0
+
     if target_source in ("all", "teams", "ms_teams"):
         teams_cfg = src_dict.get("ms_teams", {})
         storage_file = (
@@ -2500,9 +2503,6 @@ async def cmd_ingest(args: argparse.Namespace) -> int:
             print(f"  [!] Microsoft Teams session file không tồn tại: {expanded_storage}")
 
     print(f"\n  -> Đang quét {len(adapters_to_run)} adapters đã kích hoạt...")
-
-    total_synced = 0
-    results = []
 
     for name, adapter in adapters_to_run:
         print(f"\n  [{name}] Bắt đầu đồng bộ ({adapter.source_type.value})...")

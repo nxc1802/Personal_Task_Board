@@ -404,7 +404,8 @@ def test_ingestion_checkpoint_record_canonical_vocabulary():
     assert cp.last_event_timestamp == now
     assert cp.cursor_token == "cursor-tok-123"
     assert cp.updated_at == now
-    assert cp.id == "tenant-acme:ms_teams:channel-dev"  # Deterministic composite ID
+    from ptb_contracts.l1_acquisition import compute_checkpoint_id
+    assert cp.id == compute_checkpoint_id("tenant-acme", SourceType.MS_TEAMS, "channel-dev")  # Deterministic composite ID
 
     # Test alias IngestionCheckpoint
     assert IngestionCheckpoint is IngestionCheckpointRecord

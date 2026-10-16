@@ -12,6 +12,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ptb_contracts.logging import BugCode, log_bug
+from ptb_contracts.telemetry import get_cost_audit_tracker
 
 logger = logging.getLogger("ptb.graph_memory.sync_worker")
 
@@ -248,6 +249,28 @@ class GraphMemorySyncWorker:
             payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
         )
 
+        # Selective Graphiti Ingestion (Review 1 P2 Optimization)
+        # Ingest high-value Decisions, Lessons, and significant Evidences. Bypass minor/empty chatter.
+        if norm_type == "evidence":
+            snippet = str(call_payload.get("snippet") or "").strip()
+            conf = float(call_payload.get("confidence", call_payload.get("confidence_score", 1.0)) or 1.0)
+            if len(snippet) < 10 and conf < 0.5:
+                now_iso = datetime.now(timezone.utc).isoformat()
+                rec = self._get_or_create_record(item_type, item_id)
+                rec["status"] = GraphSyncStatus.SYNCED
+                rec["graph_synced_at"] = now_iso
+                rec["last_error"] = None
+                await self._update_neo4j_status(
+                    item_type=norm_type,
+                    item_id=item_id,
+                    status=GraphSyncStatus.SYNCED,
+                    attempts=0,
+                    synced_at=now_iso,
+                    last_error=None,
+                )
+                logger.debug("Selective Graphiti Ingestion bypassed minor evidence %s", item_id)
+                return GraphSyncStatus.SYNCED.value
+
         rec = self._get_or_create_record(item_type, item_id)
         if rec["attempts"] == 0 and "graph_sync_attempts" in call_payload:
             try:
@@ -274,6 +297,8 @@ class GraphMemorySyncWorker:
                         f"Graphiti adapter is offline or unavailable for {item_type}:{item_id}"
                     )
                 adapter.last_error = None
+
+            get_cost_audit_tracker().record_graphiti_sync(episodes=1, calls=1)
 
             if norm_type == "evidence":
                 if "id" not in call_payload and item_id:

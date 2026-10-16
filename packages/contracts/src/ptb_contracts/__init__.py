@@ -70,6 +70,10 @@ from ptb_contracts.l5_experience import (
     ReviewActionResponse,
     TaskActionResponse,
 )
+from ptb_contracts.telemetry import (
+    CostAuditTracker,
+    get_cost_audit_tracker,
+)
 
 __all__ = [
     # Bug Logging Contract
@@ -136,4 +140,7 @@ __all__ = [
     "KnowledgeSearchResponse",
     "MCPToolCallRequest",
     "MCPToolCallResult",
+    # Telemetry
+    "CostAuditTracker",
+    "get_cost_audit_tracker",
 ]

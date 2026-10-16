@@ -28,7 +28,7 @@ if sys.platform == "win32":
             curr = Path(__file__).resolve()
             repo_root = curr.parents[4]
             for p in curr.parents:
-                if (p / "packages").exists() or (p / "data").exists() or (p / "pyproject.toml").exists():
+                if (p / "packages").exists() and (p / "services").exists():
                     repo_root = p
                     break
             log_dir = repo_root / "data" / "playwright"
@@ -48,8 +48,8 @@ if sys.platform == "win32":
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         if sys.stderr and hasattr(sys.stderr, "reconfigure"):
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as reconf_err:
+        sys.stderr.write(f"Encoding reconfigure non-fatal: {reconf_err}\n")
 
 def bring_browser_to_front():
     """Forces the interactive browser window to the foreground on the Windows host desktop."""
@@ -91,8 +91,8 @@ def bring_browser_to_front():
 
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
         user32.EnumWindows(WNDENUMPROC(enum_cb), 0)
-    except Exception:
-        pass
+    except Exception as fg_err:
+        logger.debug("Bring window to front non-fatal: %s", fg_err)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stderr if sys.stderr else None)
 logger = logging.getLogger("ptb.acquisition.login")
@@ -108,6 +108,14 @@ AUTH_COOKIE_NAMES = {
     "RPSAuth",
     "WLSSC",
     "X-OWA-CANARY",
+    # Jira / Atlassian
+    "cloud.session.token",
+    "atlassian.xsrf.token",
+    "tenant.session.token",
+    # GitHub
+    "user_session",
+    "__Host-user_session_same_site",
+    "logged_in",
 }
 
 
@@ -130,6 +138,10 @@ async def wait_for_login_and_auto_capture(
         "/oauth2/",
         "/common/oauth2",
         "/authorize",
+        "id.atlassian.com/login",
+        "auth.atlassian.com",
+        "github.com/login",
+        "github.com/session",
     )
 
     start_time = asyncio.get_event_loop().time()
@@ -241,8 +253,8 @@ async def wait_for_login_and_auto_capture(
                             b.innerHTML = '🎉 ĐĂNG NHẬP THÀNH CÔNG!<br><span style="font-size:13px;font-weight:normal;opacity:0.95;">Hệ thống đã tự động lưu cookie. Cửa sổ này sẽ đóng sau 5 giây...</span>';
                             document.body.appendChild(b);
                         }""")
-                    except Exception:
-                        pass
+                    except Exception as banner_err:
+                        logger.debug("Banner injection non-fatal: %s", banner_err)
                     print("  -> Giữ cửa sổ mở 5 giây để bạn thấy thông báo xác nhận...")
                     await asyncio.sleep(5.0)
                     return True
@@ -296,8 +308,8 @@ async def run_interactive_login(
         page = await context.new_page()
         try:
             await page.bring_to_front()
-        except Exception:
-            pass
+        except Exception as btf_err:
+            logger.debug("Page bring to front non-fatal: %s", btf_err)
 
         if service in ("teams", "all"):
             print("\n[1/2] Đang mở Microsoft Teams Web (https://teams.microsoft.com)...")
@@ -338,6 +350,48 @@ async def run_interactive_login(
             )
             if captured_outlook:
                 print(f"  ✓ Đã tự động lưu phiên Outlook vào: {storage_path}")
+
+        captured_jira = False
+        if service in ("jira", "all"):
+            print("\n[3/4] Đang mở Atlassian Jira Web (https://id.atlassian.com/login)...")
+            try:
+                await page.goto("https://id.atlassian.com/login", wait_until="domcontentloaded")
+                await page.bring_to_front()
+                bring_browser_to_front()
+            except Exception as e:
+                logger.warning(f"Goto Jira: {e}")
+
+            captured_jira = await wait_for_login_and_auto_capture(
+                page=page,
+                context=context,
+                service_name="Jira Software",
+                target_domains=["atlassian.com", "atlassian.net", "jira.com"],
+                max_wait_seconds=max_wait_seconds,
+                storage_path=storage_path,
+            )
+            if captured_jira:
+                print(f"  ✓ Đã tự động lưu phiên Jira vào: {storage_path}")
+
+        captured_github = False
+        if service in ("github", "all"):
+            print("\n[4/4] Đang mở GitHub Web (https://github.com/login)...")
+            try:
+                await page.goto("https://github.com/login", wait_until="domcontentloaded")
+                await page.bring_to_front()
+                bring_browser_to_front()
+            except Exception as e:
+                logger.warning(f"Goto GitHub: {e}")
+
+            captured_github = await wait_for_login_and_auto_capture(
+                page=page,
+                context=context,
+                service_name="GitHub",
+                target_domains=["github.com"],
+                max_wait_seconds=max_wait_seconds,
+                storage_path=storage_path,
+            )
+            if captured_github:
+                print(f"  ✓ Đã tự động lưu phiên GitHub vào: {storage_path}")
 
         # Lưu session cookies và local storage từ context
         await session_mgr.save_session(context)
@@ -380,8 +434,8 @@ def import_cookie_file(input_file: str, storage_path: str = DEFAULT_STORAGE_PATH
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Đăng nhập Microsoft 365 để lấy session cookie cho Layer 1A")
-    parser.add_argument("--service", choices=["teams", "outlook", "all"], default="all", help="Dịch vụ cần đăng nhập")
+    parser = argparse.ArgumentParser(description="Đăng nhập nền tảng (Teams, Outlook, Jira, GitHub) để lấy session cookie")
+    parser.add_argument("--service", choices=["teams", "outlook", "jira", "github", "all"], default="all", help="Dịch vụ cần đăng nhập")
     parser.add_argument("--storage-path", default=DEFAULT_STORAGE_PATH, help="Đường dẫn file storage_state.json")
     parser.add_argument("--import-file", help="Nhập file JSON cookies có sẵn thay vì đăng nhập trên giao diện")
 

@@ -124,8 +124,8 @@ async def sync_teams():
                     ));
                     if (webBtn) webBtn.click();
                 }""")
-            except Exception:
-                pass
+            except Exception as click_err:
+                logger.debug("Web app click non-fatal: %s", click_err)
 
         print("[*] Đang duyệt qua các cuộc hội thoại để thu thập tin nhắn...")
         try:
