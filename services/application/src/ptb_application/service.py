@@ -99,6 +99,7 @@ class ApplicationService:
         is_local_ai_enabled = (
             os.getenv("PTB_ENABLE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
             or os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes")
+            or bool(os.getenv("EMBEDDING_BASE_URL"))
         )
         if is_local_ai_enabled:
             try:
@@ -107,6 +108,8 @@ class ApplicationService:
             except Exception as e_emb:
                 logger.debug("Qwen3 embedding service not loaded in ApplicationService: %s", e_emb)
         self.task_repo = task_repo or TaskDomainRepository(client, embedding_service=emb_svc)
+        if isinstance(self.task_repo, TaskDomainRepository) and getattr(self.task_repo, "embedding_service", None) is None and emb_svc is not None:
+            self.task_repo.embedding_service = emb_svc
         self.raw_event_repo = raw_event_repo or RawEventRepository(client)
         self.checkpoint_repo = checkpoint_repo or CheckpointRepository(client)
         self.priority_engine = priority_engine or DeterministicPriorityEngine()

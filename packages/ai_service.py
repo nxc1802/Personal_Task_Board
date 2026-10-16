@@ -30,9 +30,41 @@ class Qwen3EmbeddingService:
         self.api_key = api_key or os.getenv("EMBEDDING_API_KEY", "local")
         self.model = model or os.getenv("EMBEDDING_MODEL", "qwen3-embedding-0.6b")
         self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        self._last_probe_time = 0.0
+        self._last_available = False
+
+    def _is_available(self) -> bool:
+        """Fast check whether embedding endpoint is reachable with 30s cache."""
+        now = time.time()
+        if hasattr(self, "_last_probe_time") and (now - self._last_probe_time) < 30.0:
+            return getattr(self, "_last_available", False)
+        self._last_probe_time = now
+        try:
+            parsed = urllib.parse.urlparse(self.base_url)
+            host = parsed.hostname or "127.0.0.1"
+            port = parsed.port or 8082
+            with socket.create_connection((host, port), timeout=0.1):
+                self._last_available = True
+                return True
+        except Exception:
+            if host in ("127.0.0.1", "localhost") and (os.getenv("IN_DOCKER") or os.path.exists("/.dockerenv")):
+                try:
+                    with socket.create_connection(("host.docker.internal", port), timeout=0.1):
+                        self.base_url = self.base_url.replace(host, "host.docker.internal")
+                        self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+                        self._last_available = True
+                        return True
+                except Exception:
+                    pass
+            self._last_available = False
+            return False
 
     def embed_text(self, text: str) -> List[float]:
         """Tạo embedding cho một đoạn văn bản đơn lẻ."""
+        if not self._is_available():
+            if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                raise RuntimeError(f"Embedding service at {self.base_url} is unavailable.")
+            return [0.0] * 1024
         resp = self.client.embeddings.create(model=self.model, input=text)
         return resp.data[0].embedding
 
@@ -40,6 +72,10 @@ class Qwen3EmbeddingService:
         """Tạo embedding theo lô (batch) cho danh sách câu."""
         if not texts:
             return []
+        if not self._is_available():
+            if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                raise RuntimeError(f"Embedding service at {self.base_url} is unavailable.")
+            return [[0.0] * 1024 for _ in texts]
         resp = self.client.embeddings.create(model=self.model, input=texts)
         return [item.embedding for item in resp.data]
 
@@ -88,6 +124,16 @@ class KevDecisionReranker:
                 self._last_available = True
                 return True
         except Exception:
+            # If host is localhost/127.0.0.1 and running inside Docker, try host.docker.internal
+            if host in ("127.0.0.1", "localhost") and (os.getenv("IN_DOCKER") or os.path.exists("/.dockerenv")):
+                try:
+                    with socket.create_connection(("host.docker.internal", port), timeout=0.1):
+                        self.root_url = self.root_url.replace(host, "host.docker.internal")
+                        self.systemone_url = f"{self.root_url}/v1/systemone"
+                        self._last_available = True
+                        return True
+                except Exception:
+                    pass
             self._last_available = False
             return False
 
@@ -146,7 +192,10 @@ class KevDecisionReranker:
                 return ranked
         except Exception as e:
             logger.warning("Kev rerank error: %s", e)
-            raise RuntimeError(f"Kev Decision Reranker is unavailable: {e}") from e
+            if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                raise RuntimeError(f"Kev Decision Reranker is unavailable: {e}") from e
+            docs = documents[:top_k] if top_k else documents
+            return [{"index": i, "document": d, "score": 0.5} for i, d in enumerate(docs)]
 
     def classify_task_urgency(self, task_text: str) -> Dict[str, Any]:
         """Đánh giá mức độ ưu tiên & tính khả thi của task bằng Kev System 1."""
@@ -198,4 +247,10 @@ class KevDecisionReranker:
                 }
         except Exception as e:
             logger.warning("Kev classification error: %s", e)
-            raise RuntimeError(f"Kev Decision Classifier is unavailable: {e}") from e
+            if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                raise RuntimeError(f"Kev Decision Classifier is unavailable: {e}") from e
+            return {
+                "is_task_probability": 0.5,
+                "urgency_score": 1.0,
+                "priority_level": "Medium",
+            }

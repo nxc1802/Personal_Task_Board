@@ -99,6 +99,7 @@ class BenchmarkEnvironment:
     processing_pipeline: ProcessingPipeline
     live_infrastructure_available: bool = True
     infrastructure_error: Optional[str] = None
+    cold_cache: bool = False
     events_by_id: Dict[str, RawEventRecord] = field(default_factory=dict)
 
     def reset(self) -> None:
@@ -142,6 +143,7 @@ class EnvironmentManager:
         cls,
         dataset: Optional[BenchmarkDataset] = None,
         mode: str = "fixture",
+        cold_cache: bool = False,
     ) -> BenchmarkEnvironment:
         """Build a fresh BenchmarkEnvironment wired to REAL production extractors and pipelines."""
         events_by_id: Dict[str, RawEventRecord] = {}
@@ -184,8 +186,9 @@ class EnvironmentManager:
 
         # REAL Production Extractor: NEVER FakeDeterministicLLMExtractor
         real_llm_extractor = LLMStructuredExtractor()
-        from benchmarks.runner.extraction_cache import CachedLLMExtractor
-        llm_extractor = CachedLLMExtractor(real_llm_extractor)
+        from benchmarks.runner.extraction_cache import CachedLLMExtractor, ExtractionCache
+        cache_instance = ExtractionCache(cold_cache=cold_cache)
+        llm_extractor = CachedLLMExtractor(real_llm_extractor, cache=cache_instance)
         heuristic_filter = HeuristicCandidateFilter()
 
         # Priority & Status engines
@@ -239,5 +242,6 @@ class EnvironmentManager:
             processing_pipeline=processing_pipeline,
             live_infrastructure_available=live_available,
             infrastructure_error=infra_error,
+            cold_cache=cold_cache,
             events_by_id=events_by_id,
         )

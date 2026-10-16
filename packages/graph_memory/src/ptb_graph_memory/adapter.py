@@ -80,6 +80,14 @@ class GraphitiQwen3Embedder(EmbedderClient):
 
     async def create(self, input_data: Any) -> List[float]:
         service = self._get_service()
+        try:
+            from ptb_contracts.telemetry import get_cost_audit_tracker
+            tokens = len(input_data.split()) if isinstance(input_data, str) else sum(len(x.split()) for x in input_data if isinstance(x, str))
+            get_cost_audit_tracker().record_embedding_call(count=1, provider="graphiti_qwen3")
+            get_cost_audit_tracker().record_graphiti_subcall("embedding", tokens=tokens)
+        except Exception:
+            pass
+
         if isinstance(input_data, str):
             return await asyncio.to_thread(service.embed_text, input_data)
         elif isinstance(input_data, list) and input_data and isinstance(input_data[0], str):
@@ -89,6 +97,13 @@ class GraphitiQwen3Embedder(EmbedderClient):
 
     async def create_batch(self, input_data_list: List[str]) -> List[List[float]]:
         service = self._get_service()
+        try:
+            from ptb_contracts.telemetry import get_cost_audit_tracker
+            tokens = sum(len(x.split()) for x in input_data_list)
+            get_cost_audit_tracker().record_embedding_call(count=len(input_data_list), is_batch=True, provider="graphiti_qwen3")
+            get_cost_audit_tracker().record_graphiti_subcall("embedding_batch", tokens=tokens)
+        except Exception:
+            pass
         return await asyncio.to_thread(service.embed_batch, input_data_list)
 
 
@@ -111,6 +126,14 @@ class GraphitiKevCrossEncoder(CrossEncoderClient):
         if not passages:
             return []
         service = self._get_service()
+        try:
+            from ptb_contracts.telemetry import get_cost_audit_tracker
+            tokens = len(query.split()) + sum(len(p.split()) for p in passages)
+            get_cost_audit_tracker().record_kev_call("graphiti_cross_encode")
+            get_cost_audit_tracker().record_graphiti_subcall("cross_encoder", tokens=tokens)
+        except Exception:
+            pass
+
         try:
             results = await asyncio.to_thread(service.rerank, query, passages)
             ranked = []

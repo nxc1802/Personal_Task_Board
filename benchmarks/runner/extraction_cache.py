@@ -29,15 +29,17 @@ DEFAULT_CACHE_FILE = CACHE_DIR / "extraction_cache.json"
 
 
 class ExtractionCache:
-    """Persistent on-disk cache for benchmark LLM extractions."""
+    """Persistent on-disk cache for benchmark LLM extractions, with optional cold-cache isolation."""
 
-    def __init__(self, cache_file: Optional[Path] = None) -> None:
-        self.cache_file = cache_file or DEFAULT_CACHE_FILE
+    def __init__(self, cache_file: Optional[Path] = None, cold_cache: bool = False) -> None:
+        self.cold_cache = cold_cache
+        self.cache_file = None if cold_cache else (cache_file or DEFAULT_CACHE_FILE)
         self._entries: Dict[str, Dict[str, Any]] = {}
-        self._load()
+        if not self.cold_cache:
+            self._load()
 
     def _load(self) -> None:
-        if self.cache_file.is_file():
+        if self.cache_file and self.cache_file.is_file():
             try:
                 data = json.loads(self.cache_file.read_text(encoding="utf-8"))
                 if isinstance(data, dict):
@@ -48,6 +50,8 @@ class ExtractionCache:
                 self._entries = {}
 
     def save(self) -> None:
+        if self.cold_cache or not self.cache_file:
+            return
         try:
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(
@@ -58,6 +62,8 @@ class ExtractionCache:
             logger.warning("Failed to save extraction cache: %s", e)
 
     def get(self, sample_id: str) -> Optional[UnifiedTaskCandidate]:
+        if self.cold_cache:
+            return None
         if sample_id in self._entries:
             try:
                 raw_data = self._entries[sample_id]
@@ -74,6 +80,8 @@ class ExtractionCache:
         return len(self._entries)
 
     def contains(self, sample_id: str) -> bool:
+        if self.cold_cache:
+            return False
         return sample_id in self._entries
 
 
@@ -86,7 +94,22 @@ class CachedLLMExtractor:
         cache: Optional[ExtractionCache] = None,
     ) -> None:
         self.real_extractor = real_extractor
-        self.cache = cache or ExtractionCache()
+        self.cache = cache if cache is not None else ExtractionCache()
+        self.call_count: int = 0
+        self.cache_hits: int = 0
+        self.cache_misses: int = 0
+        self.live_calls: int = 0
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Return statistics on cache hits, misses, and live calls."""
+        return {
+            "cold_cache": getattr(self.cache, "cold_cache", False),
+            "call_count": self.call_count,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "live_calls": self.live_calls,
+            "hit_rate": round(self.cache_hits / max(1, self.call_count), 4),
+        }
 
     async def extract_async(
         self,
@@ -99,14 +122,25 @@ class CachedLLMExtractor:
         sample_id: Optional[str] = None,
     ) -> UnifiedTaskCandidate:
         cache_key = sample_id or raw_event_id
+        self.call_count += 1
 
-        # 1. Check cache
-        cached = self.cache.get(cache_key)
-        if cached is not None:
-            cand = cached.model_copy(deep=True)
-            if not cand.requester_name and parsed.actual_author_raw:
-                cand.requester_name = parsed.actual_author_raw
-            return cand
+        # 1. Check cache (skipped in cold-cache mode)
+        if not getattr(self.cache, "cold_cache", False):
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                self.cache_hits += 1
+                try:
+                    from ptb_contracts.telemetry import get_cost_audit_tracker
+                    get_cost_audit_tracker().record_cache_hit()
+                except Exception:
+                    pass
+                cand = cached.model_copy(deep=True)
+                if not cand.requester_name and parsed.actual_author_raw:
+                    cand.requester_name = parsed.actual_author_raw
+                return cand
+
+        self.cache_misses += 1
+        self.live_calls += 1
 
         # 2. Call real LLM extractor
         candidate = await self.real_extractor.extract_async(
@@ -117,7 +151,7 @@ class CachedLLMExtractor:
             project_key=project_key,
         )
 
-        # 3. Cache valid candidate
+        # 3. Cache valid candidate in session cache if available
         if candidate is not None:
             self.cache.put(cache_key, candidate)
             self.cache.save()

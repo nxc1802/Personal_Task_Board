@@ -89,6 +89,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Skip replay idempotency verification step",
     )
+    run_parser.add_argument(
+        "--cold-cache",
+        action="store_true",
+        default=False,
+        help="Execute benchmark in cold-cache mode with an empty isolated cache to verify live extractions without fixture reuse (DEV-P1-01)",
+    )
 
     # 3. 'report' subcommand
     rep_parser = subparsers.add_parser("report", help="Generate or convert benchmark reports from previous run results")
@@ -138,10 +144,11 @@ async def _run_benchmark_async(args: argparse.Namespace) -> int:
     mode = args.mode or ("live" if args.live else "fixture")
 
     print(f"[*] Starting benchmark execution:")
-    print(f"    - Dataset: {dataset_dir}")
-    print(f"    - Mode:    {mode}")
+    print(f"    - Dataset:    {dataset_dir}")
+    print(f"    - Mode:       {mode}")
+    print(f"    - Cold Cache: {'YES (Isolated, zero fixture reuse)' if args.cold_cache else 'NO (Warm cache enabled)'}")
     if args.case_id:
-        print(f"    - Filter:  Case ID '{args.case_id}'")
+        print(f"    - Filter:     Case ID '{args.case_id}'")
 
     # 1. Validate and load dataset
     try:
@@ -152,7 +159,7 @@ async def _run_benchmark_async(args: argparse.Namespace) -> int:
         return 1
 
     # 2. Setup isolated environment
-    env = EnvironmentManager.create_environment(dataset=dataset, mode=mode)
+    env = EnvironmentManager.create_environment(dataset=dataset, mode=mode, cold_cache=args.cold_cache)
     if mode == "live" and not env.live_infrastructure_available:
         print(f"[!] Warning: Live infrastructure unavailable: {env.infrastructure_error}. Cases will be marked PENDING.")
 
@@ -201,6 +208,17 @@ async def _run_benchmark_async(args: argparse.Namespace) -> int:
         status_str = "PASS" if d.passed else "FAIL"
         ci_str = f" [{d.ci.lower:.2f}, {d.ci.upper:.2f}]" if d.ci else ""
         print(f"[{status_str:4s}] Dim {d.dimension_number:2d}: {d.dimension_name:<30s} = {d.display_value}{ci_str}")
+
+    if hasattr(env.llm_extractor, "get_stats"):
+        c_stats = env.llm_extractor.get_stats()
+        print("-" * 80)
+        print("EXTRACTION EXECUTION & CACHE AUDIT:")
+        print(f"  Cold Cache Mode : {'YES' if c_stats.get('cold_cache') else 'NO'}")
+        print(f"  Total Calls     : {c_stats.get('call_count', 0)}")
+        print(f"  Cache Hits      : {c_stats.get('cache_hits', 0)}")
+        print(f"  Cache Misses    : {c_stats.get('cache_misses', 0)}")
+        print(f"  Live Calls      : {c_stats.get('live_calls', 0)}")
+        print(f"  Hit Rate        : {c_stats.get('hit_rate', 0.0) * 100:.1f}%")
     print("=" * 80 + "\n")
 
     if scorecard.failed_cases > 0:

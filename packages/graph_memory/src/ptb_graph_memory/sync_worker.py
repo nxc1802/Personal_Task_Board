@@ -300,6 +300,7 @@ class GraphMemorySyncWorker:
 
             internal_subcalls = 4 if norm_type in ("evidence", "decision", "lesson") else 2
             get_cost_audit_tracker().record_graphiti_sync(episodes=1, calls=internal_subcalls)
+            get_cost_audit_tracker().record_graphiti_subcall(f"episode_{norm_type}", tokens=len(str(call_payload).split()))
 
             if norm_type == "evidence":
                 if "id" not in call_payload and item_id:

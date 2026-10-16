@@ -53,6 +53,7 @@ class CostAuditTracker:
         self.llm_by_provider: Dict[str, int] = {}
         self.llm_by_model: Dict[str, int] = {}
         self.llm_by_subsystem: Dict[str, int] = {}
+        self.llm_tokens_by_model: Dict[str, Dict[str, int]] = {}
 
         # Cache Metrics
         self.cache_hits: int = 0
@@ -70,6 +71,8 @@ class CostAuditTracker:
         # Graphiti Metrics
         self.graphiti_episodes_total: int = 0
         self.graphiti_calls_total: int = 0
+        self.graphiti_subcalls_by_type: Dict[str, int] = {}
+        self.graphiti_tokens_total: int = 0
 
         # General Event Counter
         self.events_processed_total: int = 0
@@ -113,6 +116,11 @@ class CostAuditTracker:
             self.llm_by_model[m_key] = self.llm_by_model.get(m_key, 0) + 1
             self.llm_by_subsystem[s_key] = self.llm_by_subsystem.get(s_key, 0) + 1
 
+            if m_key not in self.llm_tokens_by_model:
+                self.llm_tokens_by_model[m_key] = {"input": 0, "output": 0}
+            self.llm_tokens_by_model[m_key]["input"] += max(0, input_tokens)
+            self.llm_tokens_by_model[m_key]["output"] += max(0, output_tokens)
+
     def record_cache_hit(self) -> None:
         """Record an extraction cache hit."""
         with self.lock:
@@ -148,6 +156,15 @@ class CostAuditTracker:
             actual_calls = calls if calls is not None else (episodes * 4)
             self.graphiti_calls_total += actual_calls
 
+    def record_graphiti_subcall(self, subcall_type: str = "general", tokens: int = 0) -> None:
+        """Record an individual Graphiti sub-call (e.g. node extract, edge extract, embedding, rerank) and tokens."""
+        with self.lock:
+            st_key = subcall_type.lower().strip() or "general"
+            self.graphiti_subcalls_by_type[st_key] = self.graphiti_subcalls_by_type.get(st_key, 0) + 1
+            self.graphiti_calls_total += 1
+            if tokens > 0:
+                self.graphiti_tokens_total += tokens
+
     def record_event_processed(self, count: int = 1) -> None:
         """Record raw events processed."""
         with self.lock:
@@ -182,10 +199,18 @@ class CostAuditTracker:
                 else 0.0
             )
 
-            # Estimated cost calculation
-            in_cost = (self.llm_input_tokens / 1_000_000.0) * ESTIMATED_RATES_PER_1M["default_llm"]["input"]
-            out_cost = (self.llm_output_tokens / 1_000_000.0) * ESTIMATED_RATES_PER_1M["default_llm"]["output"]
-            total_llm_cost_usd = round(in_cost + out_cost, 6)
+            # Accurate Per-Model Estimated Cost calculation
+            if self.llm_tokens_by_model:
+                calculated_cost = 0.0
+                for m_k, tok in self.llm_tokens_by_model.items():
+                    rates = ESTIMATED_RATES_PER_1M.get(m_k, ESTIMATED_RATES_PER_1M["default_llm"])
+                    calculated_cost += (tok["input"] / 1_000_000.0) * rates.get("input", 0.15)
+                    calculated_cost += (tok["output"] / 1_000_000.0) * rates.get("output", 0.60)
+                total_llm_cost_usd = round(calculated_cost, 6)
+            else:
+                in_cost = (self.llm_input_tokens / 1_000_000.0) * ESTIMATED_RATES_PER_1M["default_llm"]["input"]
+                out_cost = (self.llm_output_tokens / 1_000_000.0) * ESTIMATED_RATES_PER_1M["default_llm"]["output"]
+                total_llm_cost_usd = round(in_cost + out_cost, 6)
 
             cost_per_1000 = (
                 round((total_llm_cost_usd / max(1, self.events_processed_total)) * 1000.0, 4)
@@ -206,6 +231,9 @@ class CostAuditTracker:
                     "by_provider": dict(self.llm_by_provider),
                     "by_model": dict(self.llm_by_model),
                     "by_subsystem": dict(self.llm_by_subsystem),
+                    "tokens_by_model": {
+                        k: dict(v) for k, v in self.llm_tokens_by_model.items()
+                    },
                 },
                 "cache": {
                     "hits": self.cache_hits,
@@ -229,6 +257,8 @@ class CostAuditTracker:
                     "episodes_total": self.graphiti_episodes_total,
                     "calls_total": self.graphiti_calls_total,
                     "calls_per_episode": graphiti_calls_per_episode,
+                    "subcalls_by_type": dict(self.graphiti_subcalls_by_type),
+                    "tokens_total": self.graphiti_tokens_total,
                 },
                 "efficiency": {
                     "events_processed": self.events_processed_total,

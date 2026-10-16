@@ -41,6 +41,8 @@ uv run pytest -m 'not external_integration' -q
 uv run pytest tests/test_release_readiness.py -v
 uv run python -m benchmarks.cli validate --dataset-dir benchmarks/dataset/mini_smoke
 uv run python -m benchmarks.cli validate --dataset-dir benchmarks/dataset/ptb_500
+uv run python -m benchmarks.cli run --dataset-dir benchmarks/dataset/mini_smoke --cold-cache
+uv run python -m scripts.ptb_cli acceptance-report --run-checks
 docker compose -f docker-compose.prod.yml config
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml ps
