@@ -129,6 +129,32 @@ class PlaywrightOrchestrator:
             if hasattr(page, "wait_for_timeout"):
                 await page.wait_for_timeout(2000)
 
+            # 1. Click Chat tab and cycle through chat items
+            try:
+                if hasattr(page, "evaluate"):
+                    await page.evaluate("""() => {
+                        const chatRail = document.querySelector('[data-tid="app-bar-chat-btn"]') ||
+                                         document.querySelector('button[aria-label="Chat"]') ||
+                                         document.querySelector('button[aria-label="Trò chuyện"]');
+                        if (chatRail && chatRail.click) chatRail.click();
+                    }""")
+                    if hasattr(page, "wait_for_timeout"):
+                        await page.wait_for_timeout(2000)
+
+                    chat_count = await page.evaluate("""() => {
+                        const items = Array.from(document.querySelectorAll('[data-tid="chat-list-item"], div[role="listitem"]'));
+                        return items.length;
+                    }""")
+                    for idx in range(min(chat_count or 1, 5)):
+                        await page.evaluate("""(i) => {
+                            const items = Array.from(document.querySelectorAll('[data-tid="chat-list-item"], div[role="listitem"]'));
+                            if (items[i] && items[i].click) items[i].click();
+                        }""", idx)
+                        if hasattr(page, "wait_for_timeout"):
+                            await page.wait_for_timeout(2000)
+            except Exception as e:
+                logger.debug(f"Chat item click sweep error: {e}")
+
             # Các selector phổ biến của danh sách hội thoại / khung tin nhắn Teams
             container_selectors = [
                 '[data-tid="message-pane-list-viewport"]',
@@ -310,7 +336,7 @@ class PlaywrightOrchestrator:
             teams_page = await context.new_page()
             teams_page.on("response", lambda r: asyncio.create_task(self.teams_interceptor.handle_response(r)))
             logger.info("Đang điều hướng tới Teams Web...")
-            await teams_page.goto("https://teams.microsoft.com", wait_until="domcontentloaded")
+            await teams_page.goto("https://teams.cloud.microsoft", wait_until="domcontentloaded")
 
             # Mở page Outlook
             outlook_page = await context.new_page()

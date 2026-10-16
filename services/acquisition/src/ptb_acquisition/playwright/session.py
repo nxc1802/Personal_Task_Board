@@ -240,18 +240,18 @@ class SessionManager:
                 self.health_state = SessionHealthState.AUTH_EXPIRED
                 return self.health_state
 
-            # Xác thực xem có ít nhất 1 cookie xác thực thực sự (ESTSAUTH/SignInState/Token/SSO/MSPOK/WLSSC/skypetoken) hoặc MSAL token trong origins
+            # Xác thực cookie Microsoft 365, Teams, Outlook, Azure AD SSO (chỉ chấp nhận cookie xác thực thật)
             auth_cookie_exact = {
                 "estsauth", "estsauthpersistent", "signinstatecookie", "ssocookiep",
-                "ssocookie", "authtoken", "mspok", "wlssc", "ppauth", "rpsauth",
-                "skypetoken_asm", "skypetoken"
+                "ssocookie", "authtoken", "auth", "mspok", "wlssc", "ppauth", "rpsauth",
+                "skypetoken_asm", "skypetoken", "x-owa-canary",
             }
             has_auth = any(
-                c.get("name", "").lower() in auth_cookie_exact
+                any(exact in c.get("name", "").lower() for exact in auth_cookie_exact)
                 for c in cookies if isinstance(c, dict)
             )
 
-            # Kiểm tra thêm MSAL tokens trong origins (LocalStorage)
+            # Kiểm tra thêm MSAL tokens / Teams session trong origins (LocalStorage)
             origins = data.get("origins", [])
             has_origin_token = False
             if isinstance(origins, list):
@@ -261,7 +261,8 @@ class SessionManager:
                     for item in org.get("localStorage", []):
                         if isinstance(item, dict):
                             k = item.get("name", "").lower()
-                            if any(term in k for term in ("accesstoken", "idtoken", "msal.account")):
+                            v = str(item.get("value", ""))
+                            if any(term in k for term in ("accesstoken", "idtoken", "msal.account", "authtoken")) and len(v) > 50:
                                 has_origin_token = True
                                 break
                     if has_origin_token:

@@ -1,19 +1,21 @@
 @echo off
 chcp 65001 > nul
+title PTB - Dang Nhap Microsoft Teams Web
 echo ======================================================================
-echo  PERSONAL TASK BOARD - DANG NHAP MICROSOFT TEAMS & TU DONG LUU COOKIE
+echo  PERSONAL TASK BOARD - DANG NHAP MICROSOFT TEAMS VA TU DONG LUU COOKIE
 echo ======================================================================
 echo.
 echo [*] Dang khoi chay Chromium tren man hinh...
-echo [*] Vui long dang nhap tai khoan Microsoft va hoan thanh MFA tren trinh duyet.
+echo [*] Vui long dang nhap tai khoan Microsoft Teams va hoan thanh MFA tren trinh duyet.
 echo [*] He thong se TU DONG PHAT HIEN va TU DONG LUU COOKIE vao:
 echo     data\playwright\storage_state.json
 echo.
 
+cd /d "%~dp0\.."
 if exist .venv\Scripts\python.exe (
     .venv\Scripts\python.exe -m ptb_acquisition.playwright.login --service teams
 ) else (
-    uv run python -m ptb_acquisition.playwright.login --service teams
+    python -m ptb_acquisition.playwright.login --service teams
 )
 
 echo.

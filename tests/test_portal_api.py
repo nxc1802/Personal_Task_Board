@@ -163,3 +163,53 @@ def test_portal_html_enabled_when_explicit(mock_app_client):
         assert "<!DOCTYPE html>" in resp.text
 
 
+def test_ingest_message_missing_llm_key_returns_422(mock_app_client):
+    """P0.1: Verify graceful 422 validation when LLM_API_KEY is not configured."""
+    client, svc = mock_app_client
+    with patch.dict(os.environ, {"LLM_API_KEY": "", "OPENAI_API_KEY": ""}, clear=False):
+        resp = client.post(
+            "/api/ingest/message",
+            json={
+                "message": "Minh hãy hoàn thành báo cáo trước 5h chiều nay",
+                "sender": "Truong",
+            },
+        )
+        assert resp.status_code == 422
+        data = resp.json()["detail"]
+        assert data["error"] == "LLM_API_KEY_REQUIRED"
+        assert data["code"] == "PTB_LLM_001"
+        assert "LLM_API_KEY" in data["message"]
+
+
+def test_connectors_config_get_and_post(mock_app_client, tmp_path):
+    """P1.1: Verify GET and POST /api/connectors/config."""
+    client, _ = mock_app_client
+    # Test GET
+    resp = client.get("/api/connectors/config")
+    assert resp.status_code == 200
+    connectors = resp.json().get("connectors", [])
+    assert len(connectors) == 9
+    connector_ids = [c["id"] for c in connectors]
+    assert "github" in connector_ids
+    assert "jira" in connector_ids
+
+    # Test POST update connector token
+    test_env = tmp_path / ".env.test"
+    test_env.write_text("GITHUB_TOKEN=\n", encoding="utf-8")
+    with patch.dict(os.environ, {"GITHUB_TOKEN": ""}, clear=False):
+        post_resp = client.post(
+            "/api/connectors/config",
+            json={
+                "connector_id": "github",
+                "token": "ghp_testnewtoken1234567890abcdef",
+            },
+        )
+        assert post_resp.status_code == 200
+        result = post_resp.json()
+        assert result["status"] == "success"
+        assert result["configured"] is True
+        assert "ghp_te" in result["masked_token"]
+        assert os.environ.get("GITHUB_TOKEN") == "ghp_testnewtoken1234567890abcdef"
+
+
+

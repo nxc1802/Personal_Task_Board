@@ -185,14 +185,14 @@ class TodayBoardPlanner:
                 if diff_seconds < 0:
                     is_at_risk = True
                     days_over = abs(int(diff_seconds // 86400))
-                    risk_reason = f"Đã quá hạn {days_over} ngày"
+                    risk_reason = f"Overdue by {days_over} day(s)"
                 elif diff_seconds <= 86400 and candidate.status == TaskStatus.BLOCKED:
                     is_at_risk = True
-                    risk_reason = "Sát deadline (<24h) nhưng đang bị BLOCKED"
+                    risk_reason = "Near deadline (<24h) but status is BLOCKED"
             
             if not is_at_risk and ctx and ctx.days_in_current_status >= 7:
                 is_at_risk = True
-                risk_reason = f"Tồn đọng {ctx.days_in_current_status} ngày chưa cập nhật"
+                risk_reason = f"Stale for {ctx.days_in_current_status} days without update"
 
             if is_at_risk and risk_reason:
                 identified_risks.append(f"Task '{candidate.title}': {risk_reason}")
@@ -210,7 +210,7 @@ class TodayBoardPlanner:
                     title=candidate.title,
                     status=candidate.status,
                     project_key=candidate.project_key,
-                    owner_name=candidate.owner_name or "Tôi",
+                    owner_name=candidate.owner_name or "Me",
                     requester_name=candidate.requester_name,
                     due_date=candidate.due_date,
                     priority=breakdown,
@@ -247,7 +247,7 @@ class TodayBoardPlanner:
 
         for fc in forgotten_commitments:
             if fc.days_stale >= 3:
-                identified_risks.append(f"Cam kết trễ '{fc.title}': đã tồn đọng {fc.days_stale} ngày với {fc.promised_to_name}")
+                identified_risks.append(f"Overdue commitment '{fc.title}': stale for {fc.days_stale} days with {fc.promised_to_name}")
 
         # 5. Build summary headline
         summary_headline = self._generate_summary_headline(
@@ -276,19 +276,19 @@ class TodayBoardPlanner:
     ) -> str:
         parts = []
         if top_tasks_count > 0:
-            parts.append(f"{top_tasks_count} việc cần tập trung hôm nay")
+            parts.append(f"{top_tasks_count} tasks to focus on today")
         else:
-            parts.append("Không có việc tồn đọng hôm nay")
+            parts.append("No pending tasks for today")
 
         if risks_count > 0:
-            parts.append(f"{risks_count} rủi ro cần chú ý")
+            parts.append(f"{risks_count} risk(s) to review")
 
         if waiting_count > 0:
-            parts.append(f"{waiting_count} việc đang chờ người khác")
+            parts.append(f"{waiting_count} waiting on others")
 
         if forgotten_count > 0:
-            parts.append(f"{forgotten_count} cam kết cần cập nhật")
+            parts.append(f"{forgotten_count} commitments to update")
 
-        return "Hôm nay: " + ", ".join(parts) + "."
+        return "Today: " + ", ".join(parts) + "."
     
     _today_sort_key = staticmethod(_today_sort_key)

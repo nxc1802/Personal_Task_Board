@@ -234,6 +234,8 @@ class TeamsNetworkInterceptor:
                 or msg.get("imDisplayName")
                 or msg.get("displayName")
                 or msg.get("userDisplayName")
+                or f"{msg.get('fromGivenName', '')} {msg.get('fromFamilyName', '')}".strip()
+                or msg.get("fromDisplayName")
                 or props.get("imdisplayname")
                 or props.get("imDisplayName")
                 or props.get("userDisplayName")

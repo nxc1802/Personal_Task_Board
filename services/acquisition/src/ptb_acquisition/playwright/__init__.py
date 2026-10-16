@@ -11,6 +11,12 @@ from ptb_acquisition.playwright.teams_interceptor import TeamsNetworkInterceptor
 from ptb_acquisition.playwright.outlook_interceptor import OutlookNetworkInterceptor
 from ptb_acquisition.playwright.runner import PlaywrightOrchestrator
 
+from ptb_acquisition.playwright.teams_authenticator import (
+    TeamsAuthenticatorSession,
+    create_auth_session,
+    get_auth_session,
+)
+
 __all__ = [
     "DEFAULT_STORAGE_PATH",
     "SessionHealthState",
@@ -20,4 +26,8 @@ __all__ = [
     "TeamsNetworkInterceptor",
     "OutlookNetworkInterceptor",
     "PlaywrightOrchestrator",
+    "TeamsAuthenticatorSession",
+    "create_auth_session",
+    "get_auth_session",
 ]
+

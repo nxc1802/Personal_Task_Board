@@ -669,12 +669,178 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         return await service.get_sources_health()
 
     # --------------------------------------------------------------------------
+    # 14B. GET & POST /api/connectors/config (Dynamic Connector Credentials - P1)
+    # --------------------------------------------------------------------------
+    @app.get("/api/connectors/config")
+    async def get_connectors_config_api() -> Dict[str, Any]:
+        """Trả về danh sách 9 connectors cùng trạng thái cấu hình token (masked)."""
+        connectors = [
+            {
+                "id": "github",
+                "key": "github",
+                "name": "GitHub Issues & PRs",
+                "type": "cloud_api",
+                "env_key": "GITHUB_TOKEN",
+                "configured": bool(os.getenv("GITHUB_TOKEN")),
+                "masked_token": (os.getenv("GITHUB_TOKEN")[:6] + "..." + os.getenv("GITHUB_TOKEN")[-4:]) if os.getenv("GITHUB_TOKEN") else "Chưa cấu hình",
+                "instructions": "Personal Access Token (classic hoặc fine-grained với quyền repo, read:user)",
+                "placeholder": "ghp_xxxxxxxxxxxxxxxxxxxx",
+            },
+            {
+                "id": "jira",
+                "key": "jira",
+                "name": "Jira Cloud / Server",
+                "type": "cloud_api",
+                "env_key": "JIRA_API_TOKEN",
+                "configured": bool(os.getenv("JIRA_API_TOKEN")),
+                "masked_token": (os.getenv("JIRA_API_TOKEN")[:4] + "..." + os.getenv("JIRA_API_TOKEN")[-4:]) if os.getenv("JIRA_API_TOKEN") else "Chưa cấu hình",
+                "instructions": "API Token từ Atlassian Account Settings > Security",
+                "placeholder": "ATATT3xFfGF0xxxxxxxxxxxxxxxx",
+                "has_url": True,
+                "current_url": os.getenv("JIRA_URL", ""),
+                "url_placeholder": "https://your-domain.atlassian.net",
+            },
+            {
+                "id": "slack",
+                "key": "slack",
+                "name": "Slack Workspaces",
+                "type": "cloud_api",
+                "env_key": "SLACK_BOT_TOKEN",
+                "configured": bool(os.getenv("SLACK_BOT_TOKEN")),
+                "masked_token": (os.getenv("SLACK_BOT_TOKEN")[:8] + "...") if os.getenv("SLACK_BOT_TOKEN") else "Chưa cấu hình",
+                "instructions": "Bot User OAuth Token từ Slack App Dashboard (xoxb-...)",
+                "placeholder": "xoxb-xxxxxxxxxxxxxxxx",
+            },
+            {
+                "id": "shortcut",
+                "key": "shortcut",
+                "name": "Shortcut Stories",
+                "type": "cloud_api",
+                "env_key": "SHORTCUT_API_TOKEN",
+                "configured": bool(os.getenv("SHORTCUT_API_TOKEN")),
+                "masked_token": (os.getenv("SHORTCUT_API_TOKEN")[:4] + "...") if os.getenv("SHORTCUT_API_TOKEN") else "Chưa cấu hình",
+                "instructions": "API Token từ Shortcut Settings > API Tokens",
+                "placeholder": "64xxxxxxxxxxxxxxxx",
+            },
+            {
+                "id": "confluence",
+                "key": "confluence",
+                "name": "Confluence Spaces",
+                "type": "cloud_api",
+                "env_key": "CONFLUENCE_API_TOKEN",
+                "configured": bool(os.getenv("CONFLUENCE_API_TOKEN")),
+                "masked_token": (os.getenv("CONFLUENCE_API_TOKEN")[:4] + "...") if os.getenv("CONFLUENCE_API_TOKEN") else "Chưa cấu hình",
+                "instructions": "Atlassian API Token kết nối Confluence wiki",
+                "placeholder": "ATATT3xFfGF0xxxxxxxxxxxxxxxx",
+                "has_url": True,
+                "current_url": os.getenv("CONFLUENCE_URL", ""),
+                "url_placeholder": "https://your-domain.atlassian.net/wiki",
+            },
+            {
+                "id": "ms_teams",
+                "key": "ms_teams",
+                "name": "Microsoft Teams",
+                "type": "local_cookie",
+                "configured": True,
+                "instructions": "Tự động thu thập qua Chromium (Playwright storage_state.json)",
+            },
+            {
+                "id": "ms_outlook",
+                "key": "ms_outlook",
+                "name": "Microsoft Outlook",
+                "type": "local_cookie",
+                "configured": True,
+                "instructions": "Tự động thu thập qua Chromium (Playwright storage_state.json)",
+            },
+            {
+                "id": "git",
+                "key": "git",
+                "name": "Local Git Watcher",
+                "type": "local_disk",
+                "configured": True,
+                "instructions": "Quét commit log & diff cục bộ trong workspace",
+            },
+            {
+                "id": "coding_agent",
+                "key": "coding_agent",
+                "name": "Coding Agent Watcher",
+                "type": "local_disk",
+                "configured": True,
+                "instructions": "Theo dõi phiên làm việc Antigravity / Cursor / Claude Code",
+            },
+        ]
+        return {"status": "success", "connectors": connectors}
+
+    class ConnectorConfigUpdate(BaseModel):
+        connector: Optional[str] = None
+        connector_id: Optional[str] = None
+        token: str
+        extra_url: Optional[str] = None
+
+    @app.post("/api/connectors/config")
+    async def update_connector_config_api(req: ConnectorConfigUpdate) -> Dict[str, Any]:
+        """Cập nhật runtime token cho connector mà không cần khởi động lại container (P1)."""
+        key = (req.connector or req.connector_id or "").lower().strip()
+        token = req.token.strip()
+
+        env_map = {
+            "github": "GITHUB_TOKEN",
+            "jira": "JIRA_API_TOKEN",
+            "slack": "SLACK_BOT_TOKEN",
+            "shortcut": "SHORTCUT_API_TOKEN",
+            "confluence": "CONFLUENCE_API_TOKEN",
+        }
+        env_var = env_map.get(key)
+        if not env_var:
+            raise HTTPException(status_code=400, detail=f"Connector '{key}' không hỗ trợ cập nhật token qua API này.")
+
+        # Update in-memory environment immediately for current container process
+        os.environ[env_var] = token
+        if req.extra_url:
+            if key == "jira":
+                os.environ["JIRA_URL"] = req.extra_url.strip()
+            elif key == "confluence":
+                os.environ["CONFLUENCE_URL"] = req.extra_url.strip()
+
+        # Persist to .env file if available
+        env_file_paths = [
+            Path(".env"),
+            Path(__file__).resolve().parents[4] / ".env",
+            Path("/app/.env"),
+        ]
+        import re
+        for p in env_file_paths:
+            if p.exists() and p.is_file():
+                try:
+                    content = p.read_text(encoding="utf-8")
+                    if f"{env_var}=" in content:
+                        content = re.sub(rf"^{env_var}=.*$", f"{env_var}={token}", content, flags=re.MULTILINE)
+                    else:
+                        content += f"\n{env_var}={token}\n"
+                    p.write_text(content, encoding="utf-8")
+                except Exception as e:
+                    logger.warning("Could not persist to %s: %s", p, e)
+
+        return {
+            "status": "success",
+            "connector": key,
+            "message": f"Đã lưu và kích hoạt token cho {key.upper()} tức thì (không cần restart container)!",
+            "configured": bool(token),
+            "masked_token": (token[:6] + "..." + token[-4:]) if token else "Chưa cấu hình",
+        }
+
+    # --------------------------------------------------------------------------
     # 15. Web Control Center & Portal UI (Root & /portal)
     # --------------------------------------------------------------------------
-    @app.get("/", response_class=HTMLResponse)
+    @app.get("/")
+    async def get_root():
+        """Chuyển hướng người dùng tới giao diện chính thức Personal Task Board trong OpenWebUI (cổng 3000)."""
+        from starlette.responses import RedirectResponse
+        return RedirectResponse(url="http://localhost:3000/workspace#board", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
     @app.get("/portal", response_class=HTMLResponse)
     async def get_portal():
-        """Phục vụ giao diện Web Control Center để quản trị và nạp dữ liệu cá nhân trực quan."""
+        """Phục vụ giao diện Web Control Center để quản trị và nạp dữ liệu cá nhân trực quan (DEV only)."""
         if os.getenv("PTB_DEV_PORTAL", "false").lower() not in ("true", "1", "yes"):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -779,7 +945,34 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
         if proc_pipe is None:
             proc_pipe = ProcessingPipeline(task_repo=service.task_repo, intelligence_lifecycle=service.lifecycle)
 
-        result = await proc_pipe.process(raw_event)
+        # P0.1 Kiểm tra cấu hình LLM_API_KEY trước khi gọi mô hình
+        llm_api_key = (os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+        if not llm_api_key or llm_api_key.lower() in ("placeholder", "none", "your-api-key-here"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "LLM_API_KEY_REQUIRED",
+                    "code": "PTB_LLM_001",
+                    "message": "Chưa cấu hình biến môi trường LLM_API_KEY. Vui lòng cung cấp khóa API (Google Gemini / OpenAI) trong cấu hình môi trường hoặc giao diện Cấu hình để kích hoạt tính năng trích xuất công việc qua AI.",
+                    "status": "pending_configuration"
+                }
+            )
+
+        try:
+            result = await proc_pipe.process(raw_event)
+        except Exception as proc_err:
+            err_str = str(proc_err).lower()
+            if any(term in err_str for term in ("api key", "unauthorized", "invalid_api_key", "llm", "401", "authenticationerror", "api_key")):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "LLM_API_KEY_REQUIRED",
+                        "code": "PTB_LLM_001",
+                        "message": f"Lỗi gọi LLM API ({proc_err}). Vui lòng kiểm tra lại LLM_API_KEY.",
+                        "status": "pending_configuration"
+                    }
+                )
+            raise
 
         if result.candidate:
             c = result.candidate
@@ -959,44 +1152,74 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                 page.on("response", lambda r: asyncio.create_task(on_teams_resp(r)))
 
                 try:
-                    await page.goto("https://teams.microsoft.com/v2/", wait_until="domcontentloaded", timeout=30000)
+                    target_url = "https://teams.cloud.microsoft"
+                    await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
 
                     # Chờ SSO redirect ổn định nếu đang trao đổi token tự động
-                    if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
-                        for _ in range(6):
+                    for _ in range(12):
+                        if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
                             await asyncio.sleep(1)
-                            if ("teams.microsoft.com" in page.url or "teams.cloud.microsoft" in page.url) and "login" not in page.url:
-                                break
+                        else:
+                            break
 
                     if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
                         await browser.close()
                         raise HTTPException(
                             status_code=401,
-                            detail="Phiên đăng nhập Microsoft Teams đã hết hạn (AUTH_EXPIRED). Vui lòng bấm 'Đăng Nhập Microsoft Teams' để xác thực lại.",
+                            detail="Phiên đăng nhập Microsoft Teams đã hết hạn (AUTH_EXPIRED). Vui lòng bấm 'Mở Cửa Sổ Trình Duyệt Teams' để xác thực lại.",
                         )
 
-                    # Kích hoạt tải tin nhắn: chọn hội thoại đầu tiên nếu có
+                    # Bỏ qua nút 'Use the web app instead' nếu có
                     try:
                         await page.evaluate("""() => {
-                            const chatItem = document.querySelector('[data-tid="chat-list-item"]') || 
-                                             document.querySelector('div[role="listitem"]');
-                            if (chatItem && chatItem.click) chatItem.click();
+                            const btns = Array.from(document.querySelectorAll('a, button'));
+                            const webBtn = btns.find(el => el.innerText && (
+                                el.innerText.includes('Use the web app') || 
+                                el.innerText.includes('Sử dụng ứng dụng web')
+                            ));
+                            if (webBtn) webBtn.click();
                         }""")
-                    except Exception as click_err:
-                        logger.warning("Teams first chat item click ignored or failed: %s", click_err)
+                    except Exception:
+                        pass
 
-                    await asyncio.sleep(10)
+                    # Chờ giao diện chính Teams tải và các gói tin bắt đầu nạp
+                    await asyncio.sleep(8)
+
+                    # Sweep: Kích hoạt tải lịch sử các cuộc hội thoại
                     try:
                         await page.evaluate("""() => {
-                            const el = document.querySelector('[data-tid="message-pane-list-viewport"]') || 
-                                       document.querySelector('div[role="feed"]') || 
-                                       document.querySelector('div[role="region"]') || 
-                                       window;
-                            if (el.scrollBy) el.scrollBy(0, -500);
+                            const chatRail = document.querySelector('[data-tid="app-bar-chat-btn"]') ||
+                                             document.querySelector('button[aria-label="Chat"]') ||
+                                             document.querySelector('button[aria-label="Trò chuyện"]');
+                            if (chatRail && chatRail.click) chatRail.click();
                         }""")
-                        await asyncio.sleep(3)
-                    except Exception as scroll_err:
-                        logger.debug("Teams scroll evaluation ignored: %s", scroll_err)
+                        await asyncio.sleep(2)
+
+                        chat_count = await page.evaluate("""() => {
+                            const items = Array.from(document.querySelectorAll('[data-tid="chat-list-item"], div[role="listitem"]'));
+                            return items.length;
+                        }""")
+                        logger.info("Found %s chat items in Teams UI to sweep", chat_count)
+
+                        for idx in range(min(chat_count or 1, 6)):
+                            await page.evaluate("""(i) => {
+                                const items = Array.from(document.querySelectorAll('[data-tid="chat-list-item"], div[role="listitem"]'));
+                                if (items[i] && items[i].click) items[i].click();
+                            }""", idx)
+                            await asyncio.sleep(2.5)
+
+                            await page.evaluate("""() => {
+                                const el = document.querySelector('[data-tid="message-pane-list-viewport"]') || 
+                                           document.querySelector('div[role="feed"]') || 
+                                           document.querySelector('div[role="region"]') || 
+                                           window;
+                                if (el.scrollBy) el.scrollBy(0, -600);
+                            }""")
+                            await asyncio.sleep(1)
+                    except Exception as sweep_err:
+                        logger.warning("Teams sweep evaluation warning: %s", sweep_err)
+
+                    await asyncio.sleep(3)
                 except HTTPException:
                     raise
                 except Exception as nav_err:
@@ -1017,17 +1240,19 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             proc_pipe = ProcessingPipeline(task_repo=task_repo, intelligence_lifecycle=service.lifecycle)
 
         worker = ProcessingWorker(raw_event_repo=raw_repo, pipeline=proc_pipe, max_retries=2)
-        asyncio.create_task(worker.process_batch(limit=25))
+        extracted_tasks = await worker.process_batch(limit=50)
+        task_count = len(extracted_tasks) if isinstance(extracted_tasks, list) else len(captured_records)
 
         msg_summary = (
-            f"Đã quét và bắt {len(captured_records)} sự kiện Teams thực tế, tiến trình bóc tách công việc đang chạy ngầm."
+            f"Đã quét và bắt {len(captured_records)} sự kiện Teams thực tế, trích xuất thành công {task_count} công việc vào bảng."
             if captured_records
             else "Đã kết nối Teams Web thành công. Hiện tại chưa có tin nhắn chat mới cần xử lý."
         )
         return {
             "status": "success",
             "captured_teams": len(captured_records),
-            "processed_tasks": len(captured_records),
+            "captured_events": len(captured_records),
+            "processed_tasks": task_count,
             "message": msg_summary,
         }
 
@@ -1075,7 +1300,7 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
 
         async def on_outlook_resp(response: Response):
             url = response.url
-            if response.status == 200 and any(d in url for d in ["outlook.office.com", "outlook.live.com", "substrate.office.com", "service.svc"]):
+            if response.status == 200 and any(d in url for d in ["outlook.cloud.microsoft", "outlook.office.com", "outlook.live.com", "substrate.office.com", "service.svc"]):
                 try:
                     recs = await outlook_interceptor.handle_response(response)
                     if recs:
@@ -1088,25 +1313,26 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             async with async_playwright() as p:
                 browser = await p.chromium.launch(
                     headless=True,
-                    args=["--disable-blink-features=AutomationControlled"]
+                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
                 )
                 context = await browser.new_context(
                     storage_state=str(storage_path),
-                    viewport={"width": 1280, "height": 800},
+                    viewport={"width": 1400, "height": 900},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
                 )
                 page = await context.new_page()
                 page.on("response", lambda r: asyncio.create_task(on_outlook_resp(r)))
 
                 try:
-                    await page.goto("https://outlook.office.com/mail/", wait_until="domcontentloaded", timeout=35000)
+                    target_url = "https://outlook.cloud.microsoft/mail/"
+                    await page.goto(target_url, wait_until="domcontentloaded", timeout=40000)
 
                     # Chờ SSO redirect ổn định
-                    if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
-                        for _ in range(6):
+                    for _ in range(8):
+                        if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
                             await asyncio.sleep(1)
-                            if "outlook.office.com" in page.url and "login" not in page.url:
-                                break
+                        else:
+                            break
 
                     if "login.microsoftonline.com" in page.url or "login.live.com" in page.url:
                         await browser.close()
@@ -1115,18 +1341,29 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                             detail="Phiên đăng nhập Microsoft Outlook đã hết hạn (AUTH_EXPIRED). Vui lòng xác thực lại.",
                         )
 
-                    await asyncio.sleep(8)
+                    await asyncio.sleep(10)
                     try:
+                        items_count = await page.evaluate("""() => {
+                            const items = Array.from(document.querySelectorAll('div[role="option"], div[role="listitem"], [data-convid]'));
+                            return items.length;
+                        }""")
+                        for idx in range(min(items_count or 1, 8)):
+                            await page.evaluate("""(i) => {
+                                const items = Array.from(document.querySelectorAll('div[role="option"], div[role="listitem"], [data-convid]'));
+                                if (items[i] && items[i].click) items[i].click();
+                            }""", idx)
+                            await asyncio.sleep(2.0)
+
                         await page.evaluate("""() => {
                             const mailList = document.querySelector('div[role="listbox"]') ||
                                              document.querySelector('div[role="feed"]') ||
                                              document.querySelector('div[data-app-section="ItemListView"]') ||
                                              window;
-                            if (mailList.scrollBy) mailList.scrollBy(0, 400);
+                            if (mailList.scrollBy) mailList.scrollBy(0, 500);
                         }""")
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(2)
                     except Exception as scroll_err:
-                        logger.debug("Outlook scroll evaluation ignored: %s", scroll_err)
+                        logger.debug("Outlook sweep evaluation ignored: %s", scroll_err)
                 except HTTPException:
                     raise
                 except Exception as nav_err:
@@ -1433,6 +1670,39 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
             "cookie_count": len(data.get('cookies', []))
         }
 
+    # --------------------------------------------------------------------------
+    # 17E2. POST /api/auth/clear-cookies & DELETE /api/auth/cookies
+    # --------------------------------------------------------------------------
+    @app.post("/api/auth/clear-cookies")
+    @app.delete("/api/auth/cookies")
+    async def clear_cookies_api() -> Dict[str, Any]:
+        """Xóa sạch toàn bộ cookie và reset file storage_state.json về rỗng."""
+        custom_env = os.getenv("PTB_STORAGE_STATE")
+        possible_paths = [
+            Path(custom_env) if custom_env else None,
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        target_path = next((p for p in possible_paths if p is not None), Path("data/playwright/storage_state.json"))
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(target_path, "w", encoding="utf-8") as f:
+            json.dump({"cookies": [], "origins": []}, f, indent=2)
+
+        # Clear host helper cookies if reachable
+        try:
+            import urllib.request
+            with urllib.request.urlopen("http://host.docker.internal:8999/clear", timeout=1.0) as _:
+                pass
+        except Exception:
+            pass
+
+        return {
+            "status": "success",
+            "message": "Đã xóa sạch toàn bộ cookie và phiên làm việc!",
+            "cookie_count": 0
+        }
+
     class StartLoginRequest(BaseModel):
         service: str = Field(default="all", description="Dịch vụ cần đăng nhập: 'teams', 'outlook', hoặc 'all'")
 
@@ -1495,6 +1765,33 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                     "--service", svc,
                     "--storage-path", target_path
                 ]
+                # Kiểm tra nếu đang chạy trong máy ảo Docker container (Linux headless)
+                is_in_docker = os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER") == "true" or sys.platform != "win32"
+                if is_in_docker:
+                    # Thử kết nối tới Host Auth Helper trên máy chính qua host.docker.internal:8999
+                    try:
+                        import urllib.request
+                        host_url = f"http://host.docker.internal:8999/login?service={svc}"
+                        with urllib.request.urlopen(host_url, timeout=1.5) as hresp:
+                            if hresp.status == 200:
+                                hdata = json.loads(hresp.read().decode("utf-8"))
+                                return {
+                                    "status": "LAUNCHED",
+                                    "service": svc,
+                                    "message": f"Đã mở cửa sổ trình duyệt đăng nhập {svc.upper()} trên màn hình máy chính của bạn! Vui lòng hoàn thành đăng nhập trên cửa sổ vừa mở.",
+                                    "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
+                                }
+                    except Exception as host_err:
+                        logger.debug("Host helper not reachable at host.docker.internal:8999: %s", host_err)
+
+                    return {
+                        "status": "MANUAL_REQUIRED",
+                        "service": svc,
+                        "message": f"Hệ thống đang chạy trong môi trường Docker container (máy ảo headless) nên không thể mở trực tiếp cửa sổ trên màn hình máy chính. Vui lòng mở tệp 'scripts/login_teams.bat' trên máy tính của bạn hoặc chạy lệnh sau trên PowerShell/CMD:",
+                        "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
+                    }
+
+                # Chạy trực tiếp trên máy chính Windows (Bare-metal)
                 global _active_login_process
                 if _active_login_process is not None and _active_login_process.poll() is None:
                     try:
@@ -1502,36 +1799,89 @@ def create_app(application_service: Optional[ApplicationService] = None) -> Fast
                     except Exception as term_err:
                         logger.warning("Failed to terminate active login process: %s", term_err)
 
-                if sys.platform == "win32":
-                    ps_cmd = f'Start-Process -FilePath "{py_exec}" -ArgumentList "-m", "ptb_acquisition.playwright.login", "--service", "{svc}", "--storage-path", "{target_path}" -WorkingDirectory "{ROOT_DIR}" -WindowStyle Hidden'
-                    _active_login_process = subprocess.Popen(
-                        ["powershell", "-NoProfile", "-Command", ps_cmd],
-                        cwd=str(ROOT_DIR),
-                        env=env
-                    )
-                else:
-                    _active_login_process = subprocess.Popen(
-                        cmd,
-                        cwd=str(ROOT_DIR),
-                        env=env,
-                        stdout=log_file,
-                        stderr=log_file
-                    )
+                _active_login_process = subprocess.Popen(
+                    cmd,
+                    cwd=str(ROOT_DIR),
+                    env=env,
+                    stdout=log_file,
+                    stderr=log_file
+                )
 
             return {
                 "status": "LAUNCHED",
                 "service": svc,
                 "message": f"Đã mở cửa sổ trình duyệt đăng nhập {svc.upper()} trên màn hình máy tính của bạn. Vui lòng đăng nhập tài khoản Microsoft trên cửa sổ vừa mở!",
-                "command": f"uv run python -m ptb_acquisition.playwright.login --service {svc}"
+                "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
             }
         except Exception as e:
             logger.warning(f"Could not launch browser directly: {e}")
             return {
                 "status": "MANUAL_REQUIRED",
                 "service": svc,
-                "message": f"Không thể mở trực tiếp trình duyệt ({e}). Vui lòng chạy lệnh:",
-                "command": f"uv run python -m ptb_acquisition.playwright.login --service {svc}"
+                "message": f"Không thể mở trực tiếp trình duyệt ({e}). Vui lòng mở 'scripts/login_teams.bat' hoặc chạy lệnh:",
+                "command": f".venv\\Scripts\\python.exe -m ptb_acquisition.playwright.login --service {svc}"
             }
+
+    class TeamsLoginStartRequest(BaseModel):
+        email: str
+        password: str
+
+    class TeamsOtpSubmitRequest(BaseModel):
+        session_id: str
+        otp: str
+
+    # --------------------------------------------------------------------------
+    # 17G. In-App Automated Microsoft Teams Authentication
+    # --------------------------------------------------------------------------
+    @app.post("/api/auth/teams/login-start")
+    async def start_teams_automated_login_api(req: TeamsLoginStartRequest) -> Dict[str, Any]:
+        """Bắt đầu phiên đăng nhập tự động Microsoft Teams không cần thao tác ngoài giao diện."""
+        from ptb_acquisition.playwright.teams_authenticator import create_auth_session
+
+        email = req.email.strip()
+        pwd = req.password.strip()
+        if not email or not pwd:
+            raise HTTPException(status_code=400, detail="Vui lòng nhập đầy đủ Email và Mật khẩu.")
+
+        possible_paths = [
+            Path("data/playwright/storage_state.json"),
+            Path(__file__).resolve().parents[4] / "data" / "playwright" / "storage_state.json",
+            Path.cwd() / "data" / "playwright" / "storage_state.json",
+        ]
+        target_path = str(possible_paths[0].resolve())
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+        session = create_auth_session(storage_path=target_path)
+        session._task = asyncio.create_task(session.run(email=email, password=pwd))
+        return session.to_dict()
+
+    @app.get("/api/auth/teams/login-status")
+    async def get_teams_login_status_api(session_id: str = Query(..., min_length=1)) -> Dict[str, Any]:
+        """Truy vấn tiến độ đăng nhập Microsoft Teams trong thời gian thực."""
+        from ptb_acquisition.playwright.teams_authenticator import get_auth_session
+        session = get_auth_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Phiên đăng nhập không tồn tại hoặc đã hết hạn.")
+        return session.to_dict()
+
+    @app.post("/api/auth/teams/login-otp")
+    async def submit_teams_login_otp_api(req: TeamsOtpSubmitRequest) -> Dict[str, Any]:
+        """Gửi mã OTP (SMS/Email) cho phiên đăng nhập Microsoft Teams đang chờ."""
+        from ptb_acquisition.playwright.teams_authenticator import get_auth_session
+        session = get_auth_session(req.session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Phiên đăng nhập không tồn tại.")
+        await session.submit_otp(req.otp)
+        return session.to_dict()
+
+    @app.post("/api/auth/teams/login-cancel")
+    async def cancel_teams_login_api(session_id: str = Query(..., min_length=1)) -> Dict[str, Any]:
+        """Hủy phiên đăng nhập Microsoft Teams và giải phóng tài nguyên Chromium."""
+        from ptb_acquisition.playwright.teams_authenticator import get_auth_session
+        session = get_auth_session(session_id)
+        if session:
+            await session.cancel()
+        return {"status": "CANCELLED", "session_id": session_id}
 
     # --------------------------------------------------------------------------
     # 18. POST /api/database/init (Initialize Constraints & Schema)

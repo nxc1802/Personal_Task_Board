@@ -78,10 +78,9 @@ Màn hình sẽ hiển thị trạng thái sẵn sàng:
 
 | Dịch Vụ / Giao Diện | Địa Chỉ Truy Cập | Mục Đích |
 |---|---|---|
-| 🌐 **OpenWebUI (Chat & Workspace)** | [http://localhost:3000](http://localhost:3000) | Giao diện Chat AI, Workspace quản lý Model, Tools, Prompts. |
-| 📋 **OpenWebUI Task Board Trực Tiếp** | [http://localhost:3000/board](http://localhost:3000/board) | Giao diện kéo-thả Kanban Task Board tích hợp trực tiếp trên cổng 3000 của WebOpenUI (có Tab trong Workspace/Sidebar). |
-| 📊 **PTB Dev Control Portal** | [http://localhost:8000/portal](http://localhost:8000/portal) | Bảng điều khiển kỹ thuật DEV: xem tasks thô, trigger đồng bộ, kiểm tra trạng thái worker. |
-| 🔌 **API Health Check** | [http://localhost:8000/health](http://localhost:8000/health) | Kiểm tra nhanh tình trạng sống của backend. |
+| 🌐 **Giao Diện Duy Nhất: OpenWebUI** | [http://localhost:3000](http://localhost:3000) | Giao diện Chat AI, Workspace quản lý Model, Tools, Prompts. |
+| 📋 **PTB Task Board (Tab Trong OpenWebUI)** | [http://localhost:3000/workspace#board](http://localhost:3000/workspace#board) | Bảng điều hành Task Board tích hợp dưới dạng 1 Tab trong Workspace & Sidebar của OpenWebUI (cổng 3000). |
+| 🔌 **PTB Backend REST API (Headless)** | [http://localhost:8000/health](http://localhost:8000/health) | Dịch vụ Backend REST API & Ingestion (Truy cập root tự động chuyển hướng về OpenWebUI). |
 | 🤖 **FastMCP SSE Endpoint** | `http://localhost:8001/sse` | URL gắn vào Cursor IDE / Antigravity IDE để AI Coding Agent tương tác với Task Board. |
 | 🗄️ **Neo4j Graph Browser** | [http://localhost:7474](http://localhost:7474) | Tra cứu trực tiếp đồ thị tri thức (Username: `neo4j`, Password: đã đặt trong `.env`). |
 

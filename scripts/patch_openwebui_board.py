@@ -75,9 +75,17 @@ def patch_index_html():
 
     # The seamless in-app Workspace Task Board injection script
     injection_script = """
-		<!-- PTB_WORKSPACE_NATIVE_TAB_V4 -->
+		<!-- PTB_WORKSPACE_NATIVE_TAB_V5 -->
 		<style>
-			#ptb-workspace-tab { display: none !important; }
+			#ptb-workspace-tab.active {
+				background: rgba(255, 255, 255, 0.1) !important;
+				color: #ffffff !important;
+				font-weight: 600 !important;
+			}
+			html.light #ptb-workspace-tab.active {
+				background: rgba(0, 0, 0, 0.08) !important;
+				color: #111111 !important;
+			}
 		</style>
 		<script>
 		(() => {
@@ -108,6 +116,12 @@ def patch_index_html():
 
 				isBoardActive = true;
 
+				// Highlight top tab in Workspace
+				const topTab = document.getElementById("ptb-workspace-tab");
+				if (topTab) {
+					topTab.classList.add("active");
+				}
+
 				// Highlight sidebar Task Board item
 				const sidebarBtn = document.getElementById("ptb-sidebar-tab");
 				if (sidebarBtn) {
@@ -124,7 +138,7 @@ def patch_index_html():
 					iframe.id = "ptb-board-iframe";
 					iframe.src = "/board";
 					iframe.title = "Personal Task Board";
-					iframe.style.cssText = "width: 100%; height: calc(100vh - 65px); min-height: 520px; border: none; border-radius: 12px; display: block; background: transparent;";
+					iframe.style.cssText = "width: 100%; height: calc(100vh - 65px); min-height: 520px; border: none; border-radius: 8px; display: block; background: transparent;";
 					wsContainer.appendChild(iframe);
 				} else {
 					iframe.style.display = "block";
@@ -141,6 +155,10 @@ def patch_index_html():
 			function hideTaskBoard() {
 				isBoardActive = false;
 				window.location.hash = "";
+				const topTab = document.getElementById("ptb-workspace-tab");
+				if (topTab) {
+					topTab.classList.remove("active");
+				}
 				const iframe = document.getElementById("ptb-board-iframe");
 				if (iframe) {
 					iframe.style.display = "none";
@@ -165,20 +183,29 @@ def patch_index_html():
 
 			function injectNavElements() {
 				try {
-					// 1. Clean up duplicate top toolbar tab (per user request)
-					const oldTab = document.getElementById("ptb-workspace-tab");
-					if (oldTab) oldTab.remove();
+					const wsTabs = document.querySelectorAll('a[href^="/workspace/"]');
 
-					// Also remove any element in header/nav containing Task Board that is not the sidebar item
-					const topItems = document.querySelectorAll('header button, nav button, div[role="tablist"] button, div[role="tablist"] a');
-					topItems.forEach(el => {
-						if (el.id === "ptb-workspace-tab" || (el.innerText && el.innerText.includes("Task Board") && el.id !== "ptb-sidebar-tab")) {
-							el.remove();
+					// 1. Native Workspace Tab alongside Models, Knowledge, Prompts, Tools
+					if (wsTabs.length > 0 && !document.getElementById("ptb-workspace-tab")) {
+						const lastTab = wsTabs[wsTabs.length - 1];
+						const parentNav = lastTab.parentElement;
+						if (parentNav) {
+							const tabBtn = document.createElement("a");
+							tabBtn.id = "ptb-workspace-tab";
+							tabBtn.href = "/workspace#board";
+							tabBtn.className = lastTab.className || "px-3 py-1.5 text-sm font-medium rounded-lg transition";
+							tabBtn.style.cssText = "cursor: pointer; display: inline-flex; align-items: center; gap: 6px; user-select: none;";
+							tabBtn.innerHTML = `<span>Task Board</span>`;
+							tabBtn.title = "Personal Task Board";
+							tabBtn.onclick = (e) => {
+								e.preventDefault();
+								showTaskBoard();
+							};
+							parentNav.appendChild(tabBtn);
 						}
-					});
+					}
 
 					// Listen for clicks on Workspace top tabs (Models, Knowledge, Prompts, Tools) to switch away from board
-					const wsTabs = document.querySelectorAll('a[href^="/workspace/"]');
 					wsTabs.forEach(t => {
 						if (!t._ptbListener) {
 							t._ptbListener = true;
@@ -197,8 +224,8 @@ def patch_index_html():
 						btn.style.cssText = `
 							display: flex; align-items: center; justify-content: flex-start;
 							width: calc(100% - 16px); margin: 3px 8px;
-							padding: 7px 12px; border-radius: 8px;
-							font-size: 13.5px; font-weight: 500;
+							padding: 7px 12px; border-radius: 6px;
+							font-size: 13px; font-weight: 500;
 							color: #10b981; background: rgba(16, 185, 129, 0.08);
 							border: 1px solid rgba(16, 185, 129, 0.25);
 							cursor: pointer; transition: all 0.15s ease;
