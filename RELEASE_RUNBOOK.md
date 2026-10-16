@@ -5,7 +5,7 @@
 | Component | Container Name | Bind Address / Port | Purpose | Default Security Profile |
 |:---|:---|:---|:---|:---|
 | **Neo4j Single-Store** | `ptb_neo4j_prod` | `127.0.0.1:7687`, `127.0.0.1:7474` | Authoritative entity store & temporal graph memory | Non-root, password authentication, APOC restricted |
-| **PTB Application Service** | `ptb_app_prod` | `127.0.0.1:8000` | REST API (14 business + 6 control endpoints) | Non-root `ptbuser`, CORS origin restricted, API key optional |
+| **PTB Application Service** | `ptb_app_prod` | `127.0.0.1:8000` | REST API (14 business + 6 control endpoints) | Non-root `ptbuser`, CORS origin restricted, PTB_API_KEY mandatory |
 | **FastMCP Server** | `ptb_app_prod` | `127.0.0.1:8001` | SSE & stdio protocol for Coding Agents | Read-only mode default (10 tools); write mode (19 tools) with RBAC |
 | **OpenWebUI Frontend** | `ptb_openwebui_prod` | `127.0.0.1:3000` | Local web chat, tools & embedded Kanban board | `WEBUI_AUTH=True` in production |
 
@@ -13,7 +13,7 @@
 
 ## 2. Pre-Flight Verification & Release Gates
 
-Before deploying or declaring release readiness, execute the automated release readiness suite:
+Before deploying or declaring release readiness, execute the automated release readiness suite. All five gates also require evidence on the **same commit SHA**; see [Release Acceptance & Dev Handoff](docs/RELEASE_ACCEPTANCE_HANDOFF.md).
 
 ```bash
 # 1. Run 14 Behavioral Release Gates
@@ -41,6 +41,7 @@ All commands must exit with code `0`. Any failure blocks deployment.
 2. Configure mandatory production parameters in `.env`:
    ```ini
    NEO4J_PASSWORD=<SECURE_RANDOM_PASSWORD>
+   PTB_API_KEY=<SECURE_RANDOM_API_KEY>
    TENANT_ID=production-tenant
    CURRENT_USER_NAME=Production User
    WEBUI_AUTH=True
@@ -144,7 +145,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 | `PTB-CKPT-001` | Ingestion checkpoint error | Check Neo4j `IngestionCheckpoint` nodes | Run `python scripts/ptb_cli.py doctor` to verify checkpoint composite keys. |
 | `PTB-L1-001` | Microsoft session expired | Status reported as `AUTH_EXPIRED` | Execute re-authentication: `docker compose exec ptb-app ptb login microsoft`. |
 | `PTB-L2-001` | Raw event processing failure | Event state marked `RETRY` | Verify LLM provider connectivity and payload formatting. |
-| `PTB-LLM-001` | LLM API unavailable | Extraction enters fallback mode | Verify `LLM_API_KEY`, quota, and proxy endpoints. |
+| `PTB-LLM-001` | LLM API unavailable | Extraction fails closed; event retries or is marked failed (no fake extraction) | Verify `LLM_API_KEY`, quota, and proxy endpoints. |
 | `PTB-GRAPH-001` | Graphiti sync failure | Tasks saved to Neo4j; sync `RETRY` | Background worker will retry; trigger manual rebuild via `ptb graph rebuild` if persistent. |
 | `PTB-OWUI-001` | OpenWebUI cannot reach backend | Browser shows "APPLICATION SERVICE OFFLINE" | Check if `ptb-app` port 8000 is running and `PTB_CORS_ORIGINS` includes UI origin. |
 

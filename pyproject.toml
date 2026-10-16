@@ -13,9 +13,16 @@ dependencies = [
 ptb = "scripts.ptb_cli:main"
 
 [tool.uv.workspace]
+# Explicit packages: prevent services/data (runtime cache) from becoming a uv member.
 members = [
-    "packages/*",
-    "services/*",
+    "packages/contracts",
+    "packages/database",
+    "packages/graph_memory",
+    "services/acquisition",
+    "services/processing",
+    "services/intelligence",
+    "services/application",
+    "services/mcp",
 ]
 
 [tool.pytest.ini_options]

@@ -10,6 +10,8 @@
 ![OpenWebUI Board](https://img.shields.io/badge/OpenWebUI-Port%203000-orange)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
+> **Release acceptance:** fixture benchmark PASS is not production sign-off. Check the latest CI on the release SHA, independently evaluate a cold-cache held-out dataset, and complete real-service E2E acceptance using [Dev Handoff & Release Gates](docs/RELEASE_ACCEPTANCE_HANDOFF.md).
+
 > 🚀 **Bắt đầu nhanh?** Xem ngay [**HƯỚNG DẪN SETUP (SETUP.md)**](./SETUP.md) và [**HƯỚNG DẪN CHẠY & VẬN HÀNH (RUN_GUIDE.md)**](./RUN_GUIDE.md) — Khởi chạy hệ thống trong 1 phút bằng Docker Compose hoặc Python UV.
 
 ---

@@ -59,6 +59,8 @@ out/
 
 # Local data & Playwright sessions
 data/
+# Guard against stale runtime cache from older releases.
+services/data/
 *.db
 
 # Temporary scratch & dev artifacts

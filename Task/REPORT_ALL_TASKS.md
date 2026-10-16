@@ -1,4 +1,6 @@
 # BÁO CÁO TOÀN DIỆN CÁC TÁC VỤ DỰ ÁN PERSONAL TASK BOARD (PTB)
+> **Release evidence update (16/10/2026):** Các tuyên bố `GO` phía dưới là kết quả tự báo cáo, **không phải** sign-off production. [GitHub CI run #38925823188](https://github.com/nxc1802/Personal_Task_Board/actions/runs/38925823188) tại `424f557` FAIL do runtime `services/data` bị uv workspace nhận thành package. Việc xác nhận GO phải dựa vào CI xanh và real-service acceptance tại **cùng commit** theo [Release Acceptance & Dev Handoff](../docs/RELEASE_ACCEPTANCE_HANDOFF.md). Benchmark fixture 500/500 PASS không chứng minh cold-cache LLM hay production E2E.
+
 **Ngày báo cáo:** 16/10/2026  
 **Nhánh:** `main` | **Repository:** `nxc1802/Personal_Task_Board`  
 **Phiên bản:** v1.3 (Ready-to-Deploy) | **Scorecard:** PTB-BENCH-500 (100% PASS - 500/500 Cases)
@@ -373,4 +375,4 @@ Dự án Personal Task Board (PTB) đã hoàn thành toàn diện 100% các yêu
 | **Gate 4 — Security & Portability** | Dynamic paths, Docker volumes, Token auth, 0600 permissions | Host portability đạt chuẩn, không hardcode máy dev | **GO** |
 | **Gate 5 — Release Package** | Tài liệu đồng bộ, Runbook, Backup/Restore, Checklist | Đồng bộ 100% Task report, Scorecard & Config | **GO** |
 
-**PHÁN QUYẾT CUỐI CÙNG: OFFICIAL GO FOR PRODUCTION RELEASE (v1.3)**
+**RELEASE-ACCEPTANCE STATUS: PENDING / NO-GO FOR PRODUCTION** cho đến khi CI + benchmark độc lập + real-service E2E + security/portability + release package có bằng chứng đạt tại cùng một commit. Xem [Dev Handoff Protocol](../docs/RELEASE_ACCEPTANCE_HANDOFF.md).
