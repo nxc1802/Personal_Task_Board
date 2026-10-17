@@ -113,3 +113,75 @@ async def test_export_uses_atomic_private_file(tmp_path: Path) -> None:
     assert _valid_snapshot()["sha256"] != json.loads(target.read_text())["sha256"]
     if os.name != "nt":
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+@pytest.mark.unit
+def test_snapshot_supports_canonical_ontology_keys() -> None:
+    data = {
+        "format_version": "1.0",
+        "nodes": {
+            "UnifiedTask": [{"id": "ut-101", "title": "Refactor Backup"}],
+            "Person": [{"canonical_id": "lead.tran", "canonical_name": "Tran Van Lead"}],
+            "Project": [{"project_key": "PTB", "name": "Personal Task Board"}],
+            "Decision": [{"decision_id": "dec-01", "topic": "Neo4j 5.26"}],
+        },
+        "relationships": [
+            {
+                "from_labels": ["UnifiedTask"],
+                "from_id": "ut-101",
+                "rel_type": "ASSIGNED_TO",
+                "rel_props": {},
+                "to_labels": ["Person"],
+                "to_id": "lead.tran",
+            }
+        ],
+    }
+    data["sha256"] = hashlib.sha256(
+        json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    # Must validate with 0 exceptions
+    _validate_snapshot_payload(data)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_restore_maps_non_id_primary_keys(tmp_path: Path) -> None:
+    data = {
+        "format_version": "1.0",
+        "nodes": {
+            "Person": [{"canonical_id": "cuong.dam", "canonical_name": "Dam Quang Cuong"}],
+            "Project": [{"project_key": "SEC", "name": "Security Module"}],
+        },
+        "relationships": [],
+    }
+    data["sha256"] = hashlib.sha256(
+        json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    snapshot_file = tmp_path / "valid_ontology.json"
+    snapshot_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    session = MagicMock()
+    executed_queries = []
+
+    async def fake_run(query, **kwargs):
+        executed_queries.append((query, kwargs))
+        result = MagicMock()
+        return result
+
+    session.run = AsyncMock(side_effect=fake_run)
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    driver = MagicMock()
+    driver.session.return_value = session
+    cli = MagicMock()
+    cli.database = "neo4j"
+    cli.get_driver.return_value = driver
+
+    res = await restore_database_snapshot(snapshot_file, client=cli)
+    assert res["restored_nodes"] == 2
+    # Verify Person used canonical_id in MERGE and Project used project_key
+    cypher_text = "\n".join(q[0] for q in executed_queries)
+    assert "MERGE (n:Person {canonical_id: item.canonical_id})" in cypher_text
+    assert "MERGE (n:Project {project_key: item.project_key})" in cypher_text
+

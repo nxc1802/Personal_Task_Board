@@ -120,6 +120,16 @@ class IdentityResolver:
                 if alias:
                     person.aliases.add(alias.strip())
 
+    def get_lead_person(self, tenant_id: Optional[str] = None) -> Optional[KnownPersonRecord]:
+        """Find the lead or supervisor person registered for a tenant."""
+        for p in self._persons.values():
+            if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
+                continue
+            p_id = p.person_id.lower()
+            if "lead" in p_id or any("lead" in a.lower() for a in p.aliases) or "lead" in p.canonical_name.lower():
+                return p
+        return None
+
     def resolve(
         self,
         *,

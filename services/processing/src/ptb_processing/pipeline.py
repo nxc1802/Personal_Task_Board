@@ -284,6 +284,19 @@ class ProcessingPipeline:
                     except Exception as err:
                         logger.debug("Failed parsing explicit deadline: %s", err)
 
+            # 4c. Infer TaskStatus from explicit text signals (IN_PROGRESS, DONE, BLOCKED)
+            raw_text_lower = f"{raw_event.normalized_text or ''} {parsed.actual_content_text or ''} {validated_candidate.title or ''} {validated_candidate.description or ''}".lower()
+            if any(kw in raw_text_lower for kw in ("đã hoàn thành", "đã xong", "đã merge", "đã deploy", "đã fix", "đã đóng", "completed", "resolved")):
+                validated_candidate.status = TaskStatus.DONE
+            elif any(kw in raw_text_lower for kw in ("bị block", "bị chặn", "on hold", "waiting on", "waiting for")):
+                validated_candidate.status = TaskStatus.BLOCKED
+            elif any(kw in raw_text_lower for kw in (
+                "đang bắt tay", "đang làm", "đang xử lý", "đang fix", "đang check",
+                "đang tiến hành", "đang điều tra", "đang triển khai", "đang review",
+                "in progress", "wip", "working on", "investigating", "currently working"
+            )):
+                validated_candidate.status = TaskStatus.IN_PROGRESS
+
             # 5. IdentityResolver: Chuẩn hóa Person ID tuân thủ quy tắc bất biến
             # 5a. Chuẩn hóa Owner
             owner_name = validated_candidate.owner_name
@@ -316,10 +329,14 @@ class ProcessingPipeline:
                         if not owner_name:
                             owner_name = gh_login
 
+            if not owner_name:
+                owner_name = raw_event.author_display_name or raw_event.author_external_id
+
             if not owner_ext_id and owner_name:
                 if (
                     (parsed.actual_author_raw and owner_name == parsed.actual_author_raw)
                     or (raw_event.author_display_name and owner_name == raw_event.author_display_name)
+                    or (raw_event.author_external_id and owner_name == raw_event.author_external_id)
                 ):
                     owner_ext_id = raw_event.author_external_id
 
@@ -339,33 +356,52 @@ class ProcessingPipeline:
                     validated_candidate.owner_canonical_id = None
 
             # 5b. Chuẩn hóa Requester
+            req_name = None
+            req_ext_id = None
+
+            # Subordinate commitment check ("em sẽ", "để em", "em làm", "vâng anh", etc.)
+            raw_content_lower = f"{raw_event.normalized_text or ''} {parsed.actual_content_text or ''} {str(raw_event.raw_payload.get('content', '') if isinstance(raw_event.raw_payload, dict) else '')}".lower()
+            is_subordinate_commitment = any(kw in raw_content_lower for kw in ("để em", "em sẽ", "em làm", "em xử lý", "vâng anh", "dạ anh", "để team em"))
+
             if parsed.is_quote_reply and parsed.quoted_author_raw:
                 req_name = parsed.quoted_author_raw
                 req_ext_id = parsed.quoted_author_raw
+            elif is_subordinate_commitment:
+                lead = self.identity_resolver.get_lead_person(tenant_id=raw_event.tenant_id)
+                if lead:
+                    req_name = lead.canonical_name
+                    req_ext_id = lead.person_id
+                    validated_candidate.requester_canonical_id = lead.person_id
+                    validated_candidate.requester_name = lead.canonical_name
             else:
-                req_name = validated_candidate.requester_name or parsed.quoted_author_raw or parsed.actual_author_raw or raw_event.author_display_name
-                req_ext_id = None
-            if isinstance(raw_event.raw_payload, dict):
-                # 1. Jira
-                fields = raw_event.raw_payload.get("fields", {})
-                reporter = fields.get("reporter") if isinstance(fields, dict) else None
-                if isinstance(reporter, dict) and reporter.get("accountId"):
-                    req_ext_id = reporter.get("accountId")
-                    if not req_name:
-                        req_name = reporter.get("displayName") or reporter.get("name")
-                # 2. GitHub
-                if source_type_str == "github":
-                    user_info = raw_event.raw_payload.get("user")
-                    if isinstance(user_info, dict) and user_info.get("login"):
-                        req_ext_id = user_info.get("login")
+                req_name = validated_candidate.requester_name
+                if isinstance(raw_event.raw_payload, dict):
+                    # 1. Jira
+                    fields = raw_event.raw_payload.get("fields", {})
+                    reporter = fields.get("reporter") if isinstance(fields, dict) else None
+                    if isinstance(reporter, dict) and reporter.get("accountId"):
+                        req_ext_id = reporter.get("accountId")
                         if not req_name:
-                            req_name = req_ext_id
-                    elif isinstance(user_info, str):
-                        req_ext_id = user_info
-                        if not req_name:
-                            req_name = user_info
+                            req_name = reporter.get("displayName") or reporter.get("name")
+                    # 2. GitHub
+                    if source_type_str == "github":
+                        user_info = raw_event.raw_payload.get("user")
+                        if isinstance(user_info, dict) and user_info.get("login"):
+                            req_ext_id = user_info.get("login")
+                            if not req_name:
+                                req_name = req_ext_id
+                        elif isinstance(user_info, str):
+                            req_ext_id = user_info
+                            if not req_name:
+                                req_name = user_info
 
-            if not req_ext_id:
+                if req_name and (req_name == owner_name or req_name == raw_event.author_display_name):
+                    req_name = None
+                    req_ext_id = None
+                    validated_candidate.requester_canonical_id = None
+                    validated_candidate.requester_name = None
+
+            if not req_ext_id and req_name:
                 if (
                     (parsed.actual_author_raw and req_name == parsed.actual_author_raw)
                     or (raw_event.author_display_name and req_name == raw_event.author_display_name)
@@ -390,6 +426,9 @@ class ProcessingPipeline:
                         validated_candidate.requester_name = req_res.canonical_name or req_name
                 else:
                     validated_candidate.requester_canonical_id = None
+            elif not is_subordinate_commitment and not (parsed.is_quote_reply and parsed.quoted_author_raw):
+                validated_candidate.requester_canonical_id = None
+                validated_candidate.requester_name = None
 
             # 6. TaskCandidateMatcher & TaskMerger: Correlation và auto-merge nếu khớp
             existing_tasks = None

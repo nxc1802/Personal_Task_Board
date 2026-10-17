@@ -53,6 +53,10 @@ class HeuristicCandidateFilter:
         "mình lo",
         "nhận task",
         "chốt task",
+        "chốt",
+        "chốt phương án",
+        "thống nhất",
+        "quyết định",
         "hứa sẽ",
         "cam kết",
     ]
@@ -120,6 +124,9 @@ class HeuristicCandidateFilter:
         "looking into",
         "working on it",
         "handling it",
+        "decided to",
+        "decision:",
+        "we decided",
     ]
 
     # 4. Từ khóa yêu cầu hành động tiếng Anh

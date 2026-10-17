@@ -80,14 +80,18 @@ class DeterministicStructuredExtractor:
 
     def _extract_jira(self, raw_event: RawEventRecord, payload: Dict[str, Any]) -> UnifiedTaskCandidate:
         fields = payload.get("fields", {}) if isinstance(payload, dict) else {}
-        key = str(payload.get("key") or raw_event.external_id or "JIRA-TASK")
-        summary = str(fields.get("summary") or "").strip()
-
-        # Fallback to normalized text if payload fields are sparse
+        summary = str(fields.get("summary") or payload.get("content") or "").strip()
         if not summary and raw_event.normalized_text:
             lines = raw_event.normalized_text.splitlines()
             if lines:
                 summary = lines[0].strip()
+
+        payload_key = payload.get("key") if isinstance(payload, dict) else None
+        if payload_key:
+            key = str(payload_key)
+        else:
+            anchor_match = re.search(r"\b([A-Z]+-\d+)\b", summary or raw_event.normalized_text or "")
+            key = anchor_match.group(1) if anchor_match else str(raw_event.external_id or "JIRA-TASK")
 
         title = f"[{key}] {summary}" if summary and not summary.startswith(f"[{key}]") else (summary or key)
         raw_desc = fields.get("description")
@@ -97,22 +101,22 @@ class DeterministicStructuredExtractor:
         status_name = status_info.get("name") if isinstance(status_info, dict) else str(status_info)
         task_status = _map_jira_status(status_name)
 
-        assignee_info = fields.get("assignee") or {}
-        assignee_name = (
-            assignee_info.get("displayName") or assignee_info.get("name")
-            if isinstance(assignee_info, dict)
-            else (raw_event.author_display_name or None)
-        )
+        assignee_info = fields.get("assignee") if isinstance(fields, dict) else None
+        assignee_name = None
+        if isinstance(assignee_info, dict):
+            assignee_name = assignee_info.get("displayName") or assignee_info.get("name")
+        if not assignee_name:
+            assignee_name = raw_event.author_display_name or raw_event.author_external_id
 
-        creator_info = fields.get("creator") or fields.get("reporter") or {}
-        creator_name = (
-            creator_info.get("displayName") or creator_info.get("name")
-            if isinstance(creator_info, dict)
-            else (raw_event.author_display_name or None)
-        )
+        creator_info = (fields.get("creator") or fields.get("reporter")) if isinstance(fields, dict) else None
+        creator_name = None
+        if isinstance(creator_info, dict):
+            creator_name = creator_info.get("displayName") or creator_info.get("name")
 
         due_date = None
-        due_str = fields.get("duedate")
+        due_str = fields.get("duedate") if isinstance(fields, dict) else None
+        if not due_str and isinstance(payload, dict):
+            due_str = payload.get("duedate") or payload.get("due_date")
         if due_str:
             try:
                 due_date = datetime.fromisoformat(str(due_str).replace("Z", "+00:00"))
@@ -120,6 +124,20 @@ class DeterministicStructuredExtractor:
                     due_date = due_date.replace(tzinfo=timezone.utc)
             except Exception:
                 due_date = None
+
+        if not due_date and (desc or raw_event.normalized_text or (payload.get("content") if isinstance(payload, dict) else None)):
+            text_for_date = f"{desc} {raw_event.normalized_text or ''} {payload.get('content', '') if isinstance(payload, dict) else ''}"
+            d_match = re.search(r"(\d{4}-\d{2}-\d{2})", text_for_date)
+            if d_match:
+                d_str = d_match.group(1)
+                t_match = re.search(r"(?:at|before|truoc|trước|lúc|on)?\s*(\d{1,2}:\d{2})", text_for_date, re.IGNORECASE)
+                t_str = f"{t_match.group(1)}:00" if t_match else "18:00:00"
+                if len(t_str) == 7:
+                    t_str = f"0{t_str}"
+                try:
+                    due_date = datetime.fromisoformat(f"{d_str}T{t_str}+00:00")
+                except Exception:
+                    due_date = None
 
         task_id = str(uuid4())
         ev_id = str(uuid4())
@@ -137,6 +155,8 @@ class DeterministicStructuredExtractor:
             extraction_version="v1.0-deterministic",
         )
 
+        proj_key = (key.split("-")[0] if "-" in key else None) or (raw_event.stream_id if raw_event.stream_id and raw_event.stream_id != "default" else "JIRA")
+
         return UnifiedTaskCandidate(
             id=task_id,
             title=title,
@@ -144,7 +164,7 @@ class DeterministicStructuredExtractor:
             status=task_status,
             owner_name=assignee_name,
             requester_name=creator_name,
-            project_key=raw_event.stream_id or (key.split("-")[0] if "-" in key else "JIRA"),
+            project_key=proj_key,
             due_date=due_date,
             explicit_deadline=bool(due_date),
             extraction_confidence=1.0,
@@ -208,9 +228,11 @@ class DeterministicStructuredExtractor:
 
     def _extract_github(self, raw_event: RawEventRecord, payload: Dict[str, Any]) -> UnifiedTaskCandidate:
         title = str(payload.get("title") or "").strip()
+        body = str(payload.get("body") or payload.get("content") or raw_event.normalized_text or "").strip()
         if not title and raw_event.normalized_text:
             title = raw_event.normalized_text.splitlines()[0].strip()
-        body = str(payload.get("body") or raw_event.normalized_text or "").strip()
+        if not title and body:
+            title = body.splitlines()[0].strip()
 
         is_active_pr = (
             "resolves" in str(title).lower()
@@ -219,19 +241,26 @@ class DeterministicStructuredExtractor:
             or "active" in str(title).lower()
         )
         state = payload.get("state")
-        task_status = _map_github_state(state, is_active_pr=is_active_pr)
+        lower_text = f"{title} {body}".lower()
+        if any(kw in lower_text for kw in ("đã hoàn thành", "đã xong", "merged", "deploy lên cluster", "deploy production", "closed")):
+            task_status = TaskStatus.DONE
+        elif is_active_pr or any(kw in lower_text for kw in ("wip", "in progress", "đang")):
+            task_status = TaskStatus.IN_PROGRESS
+        else:
+            task_status = _map_github_state(state, is_active_pr=is_active_pr)
 
-        user_info = payload.get("user") or {}
-        creator_name = (
-            user_info.get("login")
-            if isinstance(user_info, dict)
-            else raw_event.author_display_name
-        )
+        user_info = payload.get("user") if isinstance(payload, dict) else None
+        creator_name = None
+        if isinstance(user_info, dict):
+            creator_name = user_info.get("login") or user_info.get("name")
 
-        assignees = payload.get("assignees") or []
+        assignees = payload.get("assignees") if isinstance(payload, dict) else None
         assignee_name = None
         if assignees and isinstance(assignees, list) and isinstance(assignees[0], dict):
-            assignee_name = assignees[0].get("login")
+            assignee_name = assignees[0].get("login") or assignees[0].get("name")
+
+        owner_name = assignee_name or creator_name or raw_event.author_display_name or raw_event.author_external_id
+        requester_name = creator_name if (creator_name and assignee_name and creator_name != assignee_name) else None
 
         task_id = str(uuid4())
         ev_id = str(uuid4())
@@ -252,8 +281,8 @@ class DeterministicStructuredExtractor:
             d_match = re.search(r"(\d{4}-\d{2}-\d{2})", text_for_date)
             if d_match:
                 d_str = d_match.group(1)
-                t_match = re.search(r"(?:at|before|truoc|on)?\s*(\d{1,2}:\d{2})", text_for_date, re.IGNORECASE)
-                t_str = f"{t_match.group(1)}:00" if t_match else "17:00:00"
+                t_match = re.search(r"(?:at|before|truoc|trước|lúc|on)?\s*(\d{1,2}:\d{2})", text_for_date, re.IGNORECASE)
+                t_str = f"{t_match.group(1)}:00" if t_match else "18:00:00"
                 if len(t_str) == 7:
                     t_str = f"0{t_str}"
                 try:
@@ -273,7 +302,7 @@ class DeterministicStructuredExtractor:
             evidence_type=EvidenceType.GITHUB_PR,
             source_type="github",
             external_url=raw_event.deep_link,
-            author_canonical_name=creator_name or assignee_name,
+            author_canonical_name=creator_name or assignee_name or raw_event.author_display_name,
             timestamp=raw_event.event_timestamp or datetime.now(timezone.utc),
             snippet=title,
             confidence=1.0,
@@ -285,8 +314,8 @@ class DeterministicStructuredExtractor:
             title=title,
             description=body,
             status=task_status,
-            owner_name=assignee_name or creator_name,
-            requester_name=creator_name,
+            owner_name=owner_name,
+            requester_name=requester_name,
             project_key=proj_key,
             due_date=due_date,
             explicit_deadline=bool(due_date),
