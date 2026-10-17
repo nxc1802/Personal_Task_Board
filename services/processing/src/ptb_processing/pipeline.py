@@ -286,10 +286,14 @@ class ProcessingPipeline:
 
             # 4c. Infer TaskStatus from explicit text signals (IN_PROGRESS, DONE, BLOCKED)
             raw_text_lower = f"{raw_event.normalized_text or ''} {parsed.actual_content_text or ''} {validated_candidate.title or ''} {validated_candidate.description or ''}".lower()
-            if any(kw in raw_text_lower for kw in ("đã hoàn thành", "đã xong", "đã merge", "đã deploy", "đã fix", "đã đóng", "completed", "resolved")):
-                validated_candidate.status = TaskStatus.DONE
-            elif any(kw in raw_text_lower for kw in ("bị block", "bị chặn", "on hold", "waiting on", "waiting for")):
+            has_blocker = any(kw in raw_text_lower for kw in ("bị block", "bị chặn", "on hold", "waiting on", "waiting for", "blocked by"))
+            has_negation = any(kw in raw_text_lower for kw in ("chưa hoàn thành", "chưa xong", "chưa merge", "chưa deploy", "chưa fix", "chưa đóng", "not completed", "unresolved"))
+            has_future_action = any(kw in raw_text_lower for kw in ("sẽ triển khai", "ngày mai sẽ", "dự kiến sẽ", "sẽ làm", "kế hoạch sẽ", "will deploy", "will implement"))
+
+            if has_blocker:
                 validated_candidate.status = TaskStatus.BLOCKED
+            elif not has_negation and not has_future_action and any(kw in raw_text_lower for kw in ("đã hoàn thành", "đã xong", "đã merge", "đã deploy", "đã fix", "đã đóng", "completed", "resolved")):
+                validated_candidate.status = TaskStatus.DONE
             elif any(kw in raw_text_lower for kw in (
                 "đang bắt tay", "đang làm", "đang xử lý", "đang fix", "đang check",
                 "đang tiến hành", "đang điều tra", "đang triển khai", "đang review",
@@ -359,20 +363,15 @@ class ProcessingPipeline:
             req_name = None
             req_ext_id = None
 
-            # Subordinate commitment check ("em sẽ", "để em", "em làm", "vâng anh", etc.)
-            raw_content_lower = f"{raw_event.normalized_text or ''} {parsed.actual_content_text or ''} {str(raw_event.raw_payload.get('content', '') if isinstance(raw_event.raw_payload, dict) else '')}".lower()
-            is_subordinate_commitment = any(kw in raw_content_lower for kw in ("để em", "em sẽ", "em làm", "em xử lý", "vâng anh", "dạ anh", "để team em"))
+            payload_str = str(raw_event.raw_payload) if raw_event.raw_payload else ""
 
             if parsed.is_quote_reply and parsed.quoted_author_raw:
                 req_name = parsed.quoted_author_raw
-                req_ext_id = parsed.quoted_author_raw
-            elif is_subordinate_commitment:
-                lead = self.identity_resolver.get_lead_person(tenant_id=raw_event.tenant_id)
-                if lead:
-                    req_name = lead.canonical_name
-                    req_ext_id = lead.person_id
-                    validated_candidate.requester_canonical_id = lead.person_id
-                    validated_candidate.requester_name = lead.canonical_name
+                mention_in_quote = re.search(r'itemid=["\']([^"\']+)["\']', payload_str)
+                if mention_in_quote:
+                    req_ext_id = mention_in_quote.group(1)
+                else:
+                    req_ext_id = parsed.quoted_author_raw
             else:
                 req_name = validated_candidate.requester_name
                 if isinstance(raw_event.raw_payload, dict):
@@ -407,11 +406,14 @@ class ProcessingPipeline:
                     or (raw_event.author_display_name and req_name == raw_event.author_display_name)
                 ):
                     req_ext_id = raw_event.author_external_id
-                elif parsed.is_quote_reply:
-                    payload_str = str(raw_event.raw_payload)
-                    mention_match = re.search(r'class=["\']mention["\'][^>]*itemid=["\']([^"\']+)["\']', payload_str)
-                    if mention_match:
-                        req_ext_id = mention_match.group(1)
+            if not req_ext_id and not req_name:
+                mention_match = re.search(r'class=["\']mention["\'][^>]*itemid=["\']([^"\']+)["\']', payload_str)
+                if mention_match:
+                    req_ext_id = mention_match.group(1)
+                else:
+                    slack_mention = re.search(r'<@([A-Za-z0-9_.-]+)>', payload_str)
+                    if slack_mention:
+                        req_ext_id = slack_mention.group(1)
 
             if req_name or req_ext_id:
                 req_res = await self._resolve_identity(
@@ -426,7 +428,7 @@ class ProcessingPipeline:
                         validated_candidate.requester_name = req_res.canonical_name or req_name
                 else:
                     validated_candidate.requester_canonical_id = None
-            elif not is_subordinate_commitment and not (parsed.is_quote_reply and parsed.quoted_author_raw):
+            else:
                 validated_candidate.requester_canonical_id = None
                 validated_candidate.requester_name = None
 

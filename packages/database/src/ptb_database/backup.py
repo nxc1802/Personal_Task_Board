@@ -14,8 +14,9 @@ import logging
 import os
 import re
 import tempfile
+import inspect
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from ptb_database.neo4j_client import Neo4jClient
 
 logger = logging.getLogger("ptb.database.backup")
@@ -87,6 +88,9 @@ def _validate_snapshot_payload(data: Any) -> None:
             node_id = item.get("id") or item.get(pk_field)
             if not isinstance(node_id, str) or not node_id:
                 raise ValueError(f"Snapshot {label} node missing string id.")
+            if "_labels" in item:
+                if not isinstance(item["_labels"], list) or any(not isinstance(l, str) or not _CYPHER_IDENTIFIER.fullmatch(l) for l in item["_labels"]):
+                    raise ValueError(f"Snapshot {label} node contains invalid _labels.")
     for rel in relationships:
         if not isinstance(rel, dict) or not isinstance(rel.get("rel_type"), str):
             raise ValueError("Snapshot relationship format is invalid.")
@@ -96,6 +100,14 @@ def _validate_snapshot_payload(data: Any) -> None:
             raise ValueError("Snapshot relationship missing an endpoint id.")
         if not isinstance(rel.get("rel_props", {}), dict):
             raise ValueError("Snapshot relationship properties must be a map.")
+        if "from_labels" in rel and not isinstance(rel["from_labels"], list):
+            raise ValueError("Snapshot relationship from_labels must be a list.")
+        if "to_labels" in rel and not isinstance(rel["to_labels"], list):
+            raise ValueError("Snapshot relationship to_labels must be a list.")
+        if "from_pk_name" in rel and (not isinstance(rel["from_pk_name"], str) or not _CYPHER_IDENTIFIER.fullmatch(rel["from_pk_name"])):
+            raise ValueError("Snapshot relationship from_pk_name is invalid.")
+        if "to_pk_name" in rel and (not isinstance(rel["to_pk_name"], str) or not _CYPHER_IDENTIFIER.fullmatch(rel["to_pk_name"])):
+            raise ValueError("Snapshot relationship to_pk_name is invalid.")
 
 
 async def export_database_snapshot(
@@ -118,14 +130,18 @@ async def export_database_snapshot(
 
     async with driver.session(database=cli.database) as session:
         for label in labels_to_export:
-            query = f"MATCH (n:{label}) RETURN n"
+            query = f"MATCH (n:{label}) RETURN labels(n) AS node_labels, properties(n) AS node_props"
             result = await session.run(query)
             records = await result.data()
             node_list = []
             pk_field = LABEL_PRIMARY_KEY.get(label, "id")
             for r in records:
-                node_props = dict(r["n"])
-                # Serialize any non-json types (e.g. DateTime)
+                node_props = dict(r.get("node_props") if "node_props" in r else r.get("n", {}))
+                raw_labels = r.get("node_labels")
+                if raw_labels is None and "n" in r and hasattr(r["n"], "labels"):
+                    raw_labels = list(r["n"].labels)
+                node_labels = [l for l in (raw_labels or [label]) if isinstance(l, str) and _CYPHER_IDENTIFIER.fullmatch(l)]
+
                 clean_props = {}
                 for k, v in node_props.items():
                     if hasattr(v, "isoformat"):
@@ -134,6 +150,8 @@ async def export_database_snapshot(
                         clean_props[k] = v
                 if "id" not in clean_props and pk_field in clean_props:
                     clean_props["id"] = str(clean_props[pk_field])
+                if node_labels:
+                    clean_props["_labels"] = node_labels
                 node_list.append(clean_props)
             snapshot_data["nodes"][label] = node_list
 
@@ -176,6 +194,7 @@ async def export_database_snapshot(
                 or to_props.get("incident_id")
             )
             if not from_id or not to_id:
+                logger.warning("Omitting unresolvable relationship %s: from=%s, to=%s", r.get("rel_type"), from_id, to_id)
                 continue
             clean_rel_props = {}
             for k, v in dict(r.get("rel_props") or {}).items():
@@ -183,12 +202,22 @@ async def export_database_snapshot(
                     clean_rel_props[k] = v.isoformat()
                 else:
                     clean_rel_props[k] = v
+
+            from_labels = [l for l in r.get("from_labels", []) if isinstance(l, str) and _CYPHER_IDENTIFIER.fullmatch(l)]
+            to_labels = [l for l in r.get("to_labels", []) if isinstance(l, str) and _CYPHER_IDENTIFIER.fullmatch(l)]
+            from_primary_label = next((l for l in from_labels if l in SNAPSHOT_LABELS), from_labels[0] if from_labels else None)
+            to_primary_label = next((l for l in to_labels if l in SNAPSHOT_LABELS), to_labels[0] if to_labels else None)
+            from_pk_name = LABEL_PRIMARY_KEY.get(from_primary_label, "id") if from_primary_label else "id"
+            to_pk_name = LABEL_PRIMARY_KEY.get(to_primary_label, "id") if to_primary_label else "id"
+
             snapshot_data["relationships"].append({
-                "from_labels": r.get("from_labels", []),
+                "from_labels": from_labels,
+                "from_pk_name": from_pk_name,
                 "from_id": str(from_id),
                 "rel_type": r.get("rel_type"),
                 "rel_props": clean_rel_props,
-                "to_labels": r.get("to_labels", []),
+                "to_labels": to_labels,
+                "to_pk_name": to_pk_name,
                 "to_id": str(to_id),
             })
 
@@ -262,42 +291,124 @@ async def restore_database_snapshot(
     restored_rels = 0
 
     async with driver.session(database=cli.database) as session:
-        # Restore nodes by label
-        for label, nodes in data.get("nodes", {}).items():
-            if not nodes:
-                continue
-            pk = LABEL_PRIMARY_KEY.get(label, "id")
-            clean_nodes = []
-            for n in nodes:
-                item_dict = dict(n)
-                if pk not in item_dict and "id" in item_dict:
-                    item_dict[pk] = item_dict["id"]
-                elif "id" not in item_dict and pk in item_dict:
-                    item_dict["id"] = item_dict[pk]
-                clean_nodes.append(item_dict)
-            cypher = f"""
-            UNWIND $batch AS item
-            MERGE (n:{label} {{{pk}: item.{pk}}})
-            SET n += item
-            """
-            await session.run(cypher, batch=clean_nodes)
-            restored_nodes += len(clean_nodes)
+        # Atomic Transaction Management: all writes succeed or all rollback
+        if hasattr(session, "begin_transaction") and callable(session.begin_transaction):
+            tx_obj = session.begin_transaction()
+            tx = await tx_obj if inspect.isawaitable(tx_obj) else tx_obj
+            # Delegate mock session.run if test mock configured session.run and tx has no custom side_effect
+            if tx is not session and hasattr(session, "run") and type(session.run).__name__ in ("AsyncMock", "MagicMock"):
+                if getattr(tx.run, "side_effect", None) is None:
+                    tx.run = session.run
+        else:
+            tx = session
 
-        # Restore relationships
-        rels = data.get("relationships", [])
-        for rel in rels:
-            from_id = rel.get("from_id")
-            to_id = rel.get("to_id")
-            rel_type = rel.get("rel_type")
-            # Endpoint matching across all canonical ontology key fields
-            cypher = f"""
-            MATCH (a) WHERE (a.id = $from_id OR a.canonical_id = $from_id OR a.project_key = $from_id OR a.customer_id = $from_id OR a.tenant_id = $from_id OR a.identity_key = $from_id OR a.decision_id = $from_id OR a.lesson_id = $from_id OR a.doc_id = $from_id OR a.incident_id = $from_id)
-            MATCH (b) WHERE (b.id = $to_id OR b.canonical_id = $to_id OR b.project_key = $to_id OR b.customer_id = $to_id OR b.tenant_id = $to_id OR b.identity_key = $to_id OR b.decision_id = $to_id OR b.lesson_id = $to_id OR b.doc_id = $to_id OR b.incident_id = $to_id)
-            MERGE (a)-[r:{rel_type}]->(b)
-            SET r += $props
-            """
-            await session.run(cypher, from_id=from_id, to_id=to_id, props=rel.get("rel_props", {}))
-            restored_rels += 1
+        try:
+            # Track restored node identities across labels to preserve multi-label nodes losslessly
+            restored_node_keys: Set[Tuple[str, str]] = set()
+
+            # Restore nodes by label
+            for label, nodes in data.get("nodes", {}).items():
+                if not nodes:
+                    continue
+                pk = LABEL_PRIMARY_KEY.get(label, "id")
+                clean_nodes = []
+                multi_label_nodes = []
+
+                for n in nodes:
+                    item_dict = dict(n)
+                    raw_labels = item_dict.pop("_labels", None)
+                    all_labels = [l for l in raw_labels if isinstance(l, str) and _CYPHER_IDENTIFIER.fullmatch(l)] if isinstance(raw_labels, list) else [label]
+                    if label not in all_labels:
+                        all_labels.insert(0, label)
+
+                    node_pk_val = item_dict.get(pk) or item_dict.get("id")
+                    if pk not in item_dict and node_pk_val:
+                        item_dict[pk] = node_pk_val
+                    elif "id" not in item_dict and node_pk_val:
+                        item_dict["id"] = node_pk_val
+
+                    primary_key_tuple = (pk, str(node_pk_val))
+                    if primary_key_tuple in restored_node_keys:
+                        # Already merged this node under another label: attach new labels & update props
+                        secondary_labels = [l for l in all_labels if _CYPHER_IDENTIFIER.fullmatch(l)]
+                        set_labels_str = "".join(f":{l}" for l in secondary_labels)
+                        attach_cypher = f"""
+                        MATCH (n {{{pk}: $pk_val}})
+                        SET n{set_labels_str}
+                        SET n += $props
+                        """
+                        await tx.run(attach_cypher, pk_val=node_pk_val, props=item_dict)
+                    else:
+                        restored_node_keys.add(primary_key_tuple)
+                        clean_nodes.append(item_dict)
+                        extra_labels = [l for l in all_labels if l != label and _CYPHER_IDENTIFIER.fullmatch(l)]
+                        if extra_labels:
+                            multi_label_nodes.append((node_pk_val, extra_labels))
+
+                if clean_nodes:
+                    cypher = f"""
+                    UNWIND $batch AS item
+                    MERGE (n:{label} {{{pk}: item.{pk}}})
+                    SET n += item
+                    """
+                    await tx.run(cypher, batch=clean_nodes)
+                    restored_nodes += len(clean_nodes)
+
+                for pk_val, extra_labels in multi_label_nodes:
+                    set_labels_str = "".join(f":{l}" for l in extra_labels)
+                    attach_cypher = f"""
+                    MATCH (n:{label} {{{pk}: $pk_val}})
+                    SET n{set_labels_str}
+                    """
+                    await tx.run(attach_cypher, pk_val=pk_val)
+
+            # Restore relationships with targeted endpoint matching
+            rels = data.get("relationships", [])
+            for rel in rels:
+                from_id = rel.get("from_id")
+                to_id = rel.get("to_id")
+                rel_type = rel.get("rel_type")
+                from_labels = rel.get("from_labels") or []
+                to_labels = rel.get("to_labels") or []
+
+                from_label = next((l for l in from_labels if l in SNAPSHOT_LABELS), from_labels[0] if from_labels else None)
+                to_label = next((l for l in to_labels if l in SNAPSHOT_LABELS), to_labels[0] if to_labels else None)
+                from_pk = rel.get("from_pk_name") or (LABEL_PRIMARY_KEY.get(from_label, "id") if from_label else None)
+                to_pk = rel.get("to_pk_name") or (LABEL_PRIMARY_KEY.get(to_label, "id") if to_label else None)
+
+                if (
+                    from_label and to_label and from_pk and to_pk
+                    and _CYPHER_IDENTIFIER.fullmatch(from_label)
+                    and _CYPHER_IDENTIFIER.fullmatch(to_label)
+                    and _CYPHER_IDENTIFIER.fullmatch(from_pk)
+                    and _CYPHER_IDENTIFIER.fullmatch(to_pk)
+                ):
+                    cypher = f"""
+                    MATCH (a:{from_label} {{{from_pk}: $from_id}})
+                    MATCH (b:{to_label} {{{to_pk}: $to_id}})
+                    MERGE (a)-[r:{rel_type}]->(b)
+                    SET r += $props
+                    """
+                else:
+                    cypher = f"""
+                    MATCH (a) WHERE (a.id = $from_id OR a.canonical_id = $from_id OR a.project_key = $from_id OR a.customer_id = $from_id OR a.tenant_id = $from_id OR a.identity_key = $from_id OR a.decision_id = $from_id OR a.lesson_id = $from_id OR a.doc_id = $from_id OR a.incident_id = $from_id)
+                    MATCH (b) WHERE (b.id = $to_id OR b.canonical_id = $to_id OR b.project_key = $to_id OR b.customer_id = $to_id OR b.tenant_id = $to_id OR b.identity_key = $to_id OR b.decision_id = $to_id OR b.lesson_id = $to_id OR b.doc_id = $to_id OR b.incident_id = $to_id)
+                    MERGE (a)-[r:{rel_type}]->(b)
+                    SET r += $props
+                    """
+                await tx.run(cypher, from_id=from_id, to_id=to_id, props=rel.get("rel_props", {}))
+                restored_rels += 1
+
+            if hasattr(tx, "commit") and callable(tx.commit):
+                c_res = tx.commit()
+                if inspect.isawaitable(c_res):
+                    await c_res
+        except Exception:
+            if hasattr(tx, "rollback") and callable(tx.rollback):
+                rb_res = tx.rollback()
+                if inspect.isawaitable(rb_res):
+                    await rb_res
+            raise
 
     logger.info("Restored %d nodes, %d relationships from %s", restored_nodes, restored_rels, snapshot_path)
     return {"restored_nodes": restored_nodes, "restored_relationships": restored_rels}

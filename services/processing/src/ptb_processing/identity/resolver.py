@@ -120,15 +120,6 @@ class IdentityResolver:
                 if alias:
                     person.aliases.add(alias.strip())
 
-    def get_lead_person(self, tenant_id: Optional[str] = None) -> Optional[KnownPersonRecord]:
-        """Find the lead or supervisor person registered for a tenant."""
-        for p in self._persons.values():
-            if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
-                continue
-            p_id = p.person_id.lower()
-            if "lead" in p_id or any("lead" in a.lower() for a in p.aliases) or "lead" in p.canonical_name.lower():
-                return p
-        return None
 
     def resolve(
         self,
@@ -162,6 +153,8 @@ class IdentityResolver:
             if candidate_id:
                 cand_lower = candidate_id.lower()
                 for p in self._persons.values():
+                    if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
+                        continue
                     if cand_lower == p.person_id.lower():
                         return IdentityResolutionResult(
                             person_id=p.person_id,
@@ -176,6 +169,8 @@ class IdentityResolver:
         # 1. Kiểm tra EXACT MATCH trên AAD Object ID
         if clean_aad_id:
             for p in self._persons.values():
+                if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
+                    continue
                 if clean_aad_id in p.aad_object_ids:
                     return IdentityResolutionResult(
                         person_id=p.person_id,
@@ -191,6 +186,8 @@ class IdentityResolver:
         if clean_account_id:
             clean_acc_lower = clean_account_id.lower()
             for p in self._persons.values():
+                if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
+                    continue
                 acc_lowers = {a.strip().lower() for a in p.account_ids if a}
                 if clean_account_id in p.account_ids or clean_acc_lower in acc_lowers or (p.primary_email and clean_acc_lower == p.primary_email.lower()):
                     return IdentityResolutionResult(
@@ -206,6 +203,8 @@ class IdentityResolver:
         # 3. Kiểm tra EXACT MATCH trên Email
         if norm_email:
             for p in self._persons.values():
+                if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
+                    continue
                 acc_lowers = {a.strip().lower() for a in p.account_ids if a}
                 if (p.primary_email and p.primary_email == norm_email) or norm_email in p.account_ids or norm_email in acc_lowers:
                     return IdentityResolutionResult(
@@ -221,6 +220,8 @@ class IdentityResolver:
             if "@" in norm_email:
                 prefix = norm_email.split("@")[0].strip()
                 for p in self._persons.values():
+                    if tenant_id and p.tenant_ids and tenant_id not in p.tenant_ids:
+                        continue
                     if prefix == p.person_id.lower():
                         return IdentityResolutionResult(
                             person_id=p.person_id,

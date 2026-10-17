@@ -107,8 +107,33 @@ def test_github_structured_extractor_date_and_completion() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_teams_subordinate_commitment_assigns_lead_requester(pipeline: ProcessingPipeline) -> None:
-    """Subordinate commitment phrasing ('em sẽ') in team channel assigns registered lead as requester."""
+async def test_teams_explicit_quote_assigns_requester(pipeline: ProcessingPipeline) -> None:
+    """Explicit quote/reply assigning task must attribute quoted person as requester."""
+    raw = RawEventRecord(
+        id="raw-test-teams-quoted",
+        tenant_id="tenant-fpt-internal",
+        source_type=SourceType.MS_TEAMS,
+        external_id="ext-teams-quote-1",
+        conversation_or_project_id="conv-teams-main",
+        event_timestamp=datetime(2026, 10, 17, 8, 0, tzinfo=timezone.utc),
+        author_display_name="Mai Le",
+        author_external_id="mai.le@company.com",
+        raw_payload={
+            "content": "<blockquote><span itemid=\"lead.tran\">Tran Van Lead</span>: Nhờ Mai chạy suite nhé</blockquote>Vâng anh, để em chạy benchmark suite trước 14:00 ngày 2026-11-25 nhé."
+        },
+        normalized_text="Để em chạy benchmark suite trước 14:00 ngày 2026-11-25.",
+        idempotency_key="idemp-test-quote-1",
+    )
+    result = await pipeline.process_raw_event(raw)
+    assert result.candidate is not None
+    assert result.candidate.owner_canonical_id == "mai.le"
+    assert result.candidate.requester_canonical_id == "lead.tran"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_subordinate_commitment_without_evidence_keeps_requester_none(pipeline: ProcessingPipeline) -> None:
+    """Subordinate phrasing ('em sẽ', 'để em') without explicit quote or mention must keep requester as None."""
     raw = RawEventRecord(
         id="raw-test-teams-subordinate",
         tenant_id="tenant-fpt-internal",
@@ -125,7 +150,76 @@ async def test_teams_subordinate_commitment_assigns_lead_requester(pipeline: Pro
     result = await pipeline.process_raw_event(raw)
     assert result.candidate is not None
     assert result.candidate.owner_canonical_id == "mai.le"
-    assert result.candidate.requester_canonical_id == "lead.tran"
+    assert result.candidate.requester_canonical_id is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_multiple_leads_same_tenant_never_guesses_requester(identity_resolver: IdentityResolver) -> None:
+    """Having multiple leads in the registry must never cause arbitrary guessing of requester."""
+    identity_resolver.register_person(
+        person_id="lead.nguyen",
+        canonical_name="Nguyen Van Lead 2",
+        primary_email="lead.nguyen@company.com",
+        tenant_id="tenant-fpt-internal",
+        aliases=["Lead 2", "anh Lead 2"],
+    )
+    from tests.support.test_doubles import FakeDeterministicLLMExtractor
+    pipe = ProcessingPipeline(
+        identity_resolver=identity_resolver,
+        heuristic_filter=HeuristicCandidateFilter(),
+        structured_extractor=DeterministicStructuredExtractor(),
+        llm_extractor=FakeDeterministicLLMExtractor(),
+    )
+    raw = RawEventRecord(
+        id="raw-test-multi-lead",
+        tenant_id="tenant-fpt-internal",
+        source_type=SourceType.MS_TEAMS,
+        external_id="ext-teams-multilead-1",
+        conversation_or_project_id="conv-teams-main",
+        event_timestamp=datetime(2026, 10, 17, 8, 0, tzinfo=timezone.utc),
+        author_display_name="Mai Le",
+        author_external_id="mai.le@company.com",
+        raw_payload={"content": "Em sẽ kiểm tra hiệu năng hệ thống trước 17:00 ngày 2026-11-26."},
+        normalized_text="Em sẽ kiểm tra hiệu năng hệ thống trước 17:00 ngày 2026-11-26.",
+        idempotency_key="idemp-test-multilead-1",
+    )
+    result = await pipe.process_raw_event(raw)
+    assert result.candidate is not None
+    assert result.candidate.requester_canonical_id is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_cross_tenant_mention_rejected(identity_resolver: IdentityResolver) -> None:
+    """Mentioning a user belonging to another tenant must not resolve as a local member."""
+    identity_resolver.register_person(
+        person_id="external.boss",
+        canonical_name="External Boss",
+        primary_email="boss@othercorp.com",
+        tenant_id="tenant-other-corp",
+    )
+    from tests.support.test_doubles import FakeDeterministicLLMExtractor
+    pipe = ProcessingPipeline(
+        identity_resolver=identity_resolver,
+        heuristic_filter=HeuristicCandidateFilter(),
+        structured_extractor=DeterministicStructuredExtractor(),
+        llm_extractor=FakeDeterministicLLMExtractor(),
+    )
+    raw = RawEventRecord(
+        id="raw-test-cross-tenant",
+        tenant_id="tenant-fpt-internal",
+        source_type=SourceType.MS_TEAMS,
+        external_id="ext-cross-1",
+        author_display_name="Dam Quang Cuong",
+        author_external_id="cuong.dam@company.com",
+        raw_payload={"content": "<span class=\"mention\" itemid=\"external.boss\">External Boss</span>: Nhờ Cường kiểm tra hệ thống trước 18:00."},
+        normalized_text="Nhờ Cường kiểm tra hệ thống trước 18:00.",
+        idempotency_key="idemp-test-cross-1",
+    )
+    result = await pipe.process_raw_event(raw)
+    assert result.candidate is not None
+    assert result.candidate.requester_canonical_id is None
 
 
 @pytest.mark.unit
@@ -171,6 +265,66 @@ async def test_slack_in_progress_status_inference(pipeline: ProcessingPipeline) 
     result = await pipeline.process_raw_event(raw)
     assert result.candidate is not None
     assert result.candidate.status == TaskStatus.IN_PROGRESS
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_future_planning_after_completed_stage_is_todo(pipeline: ProcessingPipeline) -> None:
+    """Future planning after dependent completed phase must remain TODO, not DONE."""
+    raw = RawEventRecord(
+        id="raw-test-future-deploy",
+        tenant_id="tenant-fpt-internal",
+        source_type=SourceType.SLACK,
+        external_id="ext-slack-future-1",
+        author_display_name="Nguyen Van Huy",
+        author_external_id="huy.nguyen@company.com",
+        raw_payload={"content": "Sau khi đã deploy staging, ngày mai mình sẽ triển khai production."},
+        normalized_text="Sau khi đã deploy staging, ngày mai mình sẽ triển khai production.",
+        idempotency_key="idemp-test-future-1",
+    )
+    result = await pipeline.process_raw_event(raw)
+    assert result.candidate is not None
+    assert result.candidate.status == TaskStatus.TODO
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_negated_completion_is_not_done(pipeline: ProcessingPipeline) -> None:
+    """Phrasing containing 'chưa hoàn thành' must never be marked as DONE."""
+    raw = RawEventRecord(
+        id="raw-test-negation-done",
+        tenant_id="tenant-fpt-internal",
+        source_type=SourceType.MS_TEAMS,
+        external_id="ext-teams-neg-1",
+        author_display_name="Mai Le",
+        author_external_id="mai.le@company.com",
+        raw_payload={"content": "Module export này em đang xử lý nhưng chưa hoàn thành trước 17:00."},
+        normalized_text="Module export này em đang xử lý nhưng chưa hoàn thành trước 17:00.",
+        idempotency_key="idemp-test-neg-1",
+    )
+    result = await pipeline.process_raw_event(raw)
+    assert result.candidate is not None
+    assert result.candidate.status != TaskStatus.DONE
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_blocked_status_overrides_in_progress(pipeline: ProcessingPipeline) -> None:
+    """Active work blocked by dependencies must resolve to BLOCKED."""
+    raw = RawEventRecord(
+        id="raw-test-blocked-override",
+        tenant_id="tenant-fpt-internal",
+        source_type=SourceType.MS_TEAMS,
+        external_id="ext-teams-block-1",
+        author_display_name="Mai Le",
+        author_external_id="mai.le@company.com",
+        raw_payload={"content": "Đang xử lý bug hiệu năng nhưng bị block bởi phía hạ tầng mạng."},
+        normalized_text="Đang xử lý bug hiệu năng nhưng bị block bởi phía hạ tầng mạng.",
+        idempotency_key="idemp-test-block-1",
+    )
+    result = await pipeline.process_raw_event(raw)
+    assert result.candidate is not None
+    assert result.candidate.status == TaskStatus.BLOCKED
 
 
 @pytest.mark.unit

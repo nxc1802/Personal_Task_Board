@@ -185,3 +185,134 @@ async def test_restore_maps_non_id_primary_keys(tmp_path: Path) -> None:
     assert "MERGE (n:Person {canonical_id: item.canonical_id})" in cypher_text
     assert "MERGE (n:Project {project_key: item.project_key})" in cypher_text
 
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_restore_preserves_multi_label_nodes(tmp_path: Path) -> None:
+    """Multi-label node (UnifiedTask:Task) must be restored as one node with both labels attached."""
+    data = {
+        "format_version": "1.0",
+        "nodes": {
+            "UnifiedTask": [{
+                "id": "ut-99",
+                "title": "Multi Label Task",
+                "_labels": ["UnifiedTask", "Task"],
+            }],
+        },
+        "relationships": [],
+    }
+    data["sha256"] = hashlib.sha256(
+        json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    snapshot_file = tmp_path / "multi_label.json"
+    snapshot_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    session = MagicMock()
+    executed_queries = []
+
+    async def fake_run(query, **kwargs):
+        executed_queries.append((query, kwargs))
+        return MagicMock()
+
+    session.run = AsyncMock(side_effect=fake_run)
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    driver = MagicMock()
+    driver.session.return_value = session
+    cli = MagicMock()
+    cli.database = "neo4j"
+    cli.get_driver.return_value = driver
+
+    res = await restore_database_snapshot(snapshot_file, client=cli)
+    assert res["restored_nodes"] == 1
+    cypher_text = "\n".join(q[0] for q in executed_queries)
+    assert "MERGE (n:UnifiedTask {id: item.id})" in cypher_text
+    assert "SET n:Task" in cypher_text
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_restore_uses_targeted_endpoint_matching(tmp_path: Path) -> None:
+    """Relationship restore with label metadata must target exact endpoints to prevent cross-type collisions."""
+    data = {
+        "format_version": "1.0",
+        "nodes": {
+            "UnifiedTask": [{"id": "ut-100", "title": "Targeted Endpoints"}],
+            "Person": [{"canonical_id": "lead.tran", "canonical_name": "Tran Van Lead"}],
+        },
+        "relationships": [
+            {
+                "from_labels": ["UnifiedTask"],
+                "from_pk_name": "id",
+                "from_id": "ut-100",
+                "rel_type": "ASSIGNED_TO",
+                "rel_props": {},
+                "to_labels": ["Person"],
+                "to_pk_name": "canonical_id",
+                "to_id": "lead.tran",
+            }
+        ],
+    }
+    data["sha256"] = hashlib.sha256(
+        json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    snapshot_file = tmp_path / "targeted_rel.json"
+    snapshot_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    session = MagicMock()
+    executed_queries = []
+
+    async def fake_run(query, **kwargs):
+        executed_queries.append((query, kwargs))
+        return MagicMock()
+
+    session.run = AsyncMock(side_effect=fake_run)
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    driver = MagicMock()
+    driver.session.return_value = session
+    cli = MagicMock()
+    cli.database = "neo4j"
+    cli.get_driver.return_value = driver
+
+    res = await restore_database_snapshot(snapshot_file, client=cli)
+    assert res["restored_relationships"] == 1
+    rel_query = executed_queries[-1][0]
+    assert "MATCH (a:UnifiedTask {id: $from_id})" in rel_query
+    assert "MATCH (b:Person {canonical_id: $to_id})" in rel_query
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_restore_atomic_rollback_on_failure(tmp_path: Path) -> None:
+    """Failure mid-restore must roll back the transaction."""
+    data = {
+        "format_version": "1.0",
+        "nodes": {
+            "UnifiedTask": [{"id": "ut-fail", "title": "Fail Task"}],
+        },
+        "relationships": [],
+    }
+    data["sha256"] = hashlib.sha256(
+        json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    snapshot_file = tmp_path / "fail.json"
+    snapshot_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    session = MagicMock()
+    tx = MagicMock()
+    tx.run = AsyncMock(side_effect=RuntimeError("Database constraint failure"))
+    tx.rollback = AsyncMock()
+    session.begin_transaction = MagicMock(return_value=tx)
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    driver = MagicMock()
+    driver.session.return_value = session
+    cli = MagicMock()
+    cli.database = "neo4j"
+    cli.get_driver.return_value = driver
+
+    with pytest.raises(RuntimeError, match="Database constraint failure"):
+        await restore_database_snapshot(snapshot_file, client=cli)
+    tx.rollback.assert_awaited_once()
+
