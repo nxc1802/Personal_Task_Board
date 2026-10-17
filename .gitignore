@@ -63,6 +63,10 @@ data/
 services/data/
 *.db
 
+# Never commit sensitive JSON snapshots of task data.
+backups/
+**/ptb_snapshot_*.json
+
 # Temporary scratch & dev artifacts
 scratch/
 .agents/

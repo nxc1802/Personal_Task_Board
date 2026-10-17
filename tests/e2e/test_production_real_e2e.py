@@ -59,6 +59,13 @@ from ptb_processing.worker import ProcessingWorker
 # INFRASTRUCTURE READINESS HELPERS
 # ==============================================================================
 
+def _skip_unavailable(reason: str) -> None:
+    """Production acceptance mode must FAIL rather than silently SKIP."""
+    if os.getenv("PTB_REQUIRE_PRODUCTION_E2E", "").strip().lower() in {"1", "true", "yes"}:
+        pytest.fail(reason)
+    pytest.skip(reason)
+
+
 def check_live_neo4j() -> bool:
     """Check if Neo4j is reachable on configured URI."""
     import socket
@@ -76,7 +83,8 @@ def check_live_neo4j() -> bool:
 
 def check_live_llm() -> bool:
     """Check if live LLM provider endpoint is responding."""
-    base_url = os.getenv("DECISION_BASE_URL") or os.getenv("LLM_BASE_URL") or "http://127.0.0.1:8080/v1"
+    # LLM extraction is not served by DECISION_BASE_URL (Kev System 1).
+    base_url = os.getenv("LLM_BASE_URL") or "http://127.0.0.1:8080/v1"
     models_url = f"{base_url.rstrip('/')}/models"
     try:
         req = urllib.request.Request(models_url)
@@ -92,11 +100,17 @@ def check_live_llm() -> bool:
 def check_live_kev() -> bool:
     """Check if Kev System 1 reranker service is responding."""
     kev_url = os.getenv("KEV_RERANKER_URL") or os.getenv("DECISION_BASE_URL") or "http://127.0.0.1:8080/v1"
+    # SystemOne endpoints need not provide OpenAI-compatible /models.
+    from urllib.parse import urlparse
+    import socket
+    parsed = urlparse(kev_url)
+    if not parsed.hostname:
+        return False
     try:
-        req = urllib.request.Request(f"{kev_url.rstrip('/')}/models")
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            return resp.status == 200
-    except Exception:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with socket.create_connection((parsed.hostname, port), timeout=1.0):
+            return True
+    except OSError:
         return False
 
 
@@ -121,9 +135,9 @@ def check_live_graphiti() -> bool:
 async def test_e2e_01_explicit_work_commitment_extraction():
     """E2E-01: Ingest explicit commitment -> Real LLM extracts candidate -> Persisted in Neo4j."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
     if not check_live_llm():
-        pytest.skip("Prerequisite missing: Live LLM inference service is offline.")
+        _skip_unavailable("Prerequisite missing: Live LLM inference service is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -160,7 +174,7 @@ async def test_e2e_01_explicit_work_commitment_extraction():
 async def test_e2e_02_non_work_chitchat_filter():
     """E2E-02: Casual chitchat / noise filtered out with 100% precision (0 tasks created)."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -196,9 +210,9 @@ async def test_e2e_02_non_work_chitchat_filter():
 async def test_e2e_03_quote_reply_multiturn_attribution():
     """E2E-03: Quote-reply accurately attributes owner (assignee) and requester (quoted author)."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
     if not check_live_llm():
-        pytest.skip("Prerequisite missing: Live LLM inference service is offline.")
+        _skip_unavailable("Prerequisite missing: Live LLM inference service is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -236,9 +250,9 @@ async def test_e2e_03_quote_reply_multiturn_attribution():
 async def test_e2e_04_relative_deadline_normalization():
     """E2E-04: Relative deadlines correctly normalize to ISO-8601 UTC timestamp."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
     if not check_live_llm():
-        pytest.skip("Prerequisite missing: Live LLM inference service is offline.")
+        _skip_unavailable("Prerequisite missing: Live LLM inference service is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -271,7 +285,7 @@ async def test_e2e_04_relative_deadline_normalization():
 async def test_e2e_05_progress_update_transition_audit():
     """E2E-05: Progress update transitions status and logs immutable audit record in Neo4j."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -300,7 +314,7 @@ async def test_e2e_05_progress_update_transition_audit():
 async def test_e2e_06_duplicate_event_replay_idempotency():
     """E2E-06: Ingesting duplicate raw event replay produces 0 duplicate tasks."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -334,7 +348,7 @@ async def test_e2e_06_duplicate_event_replay_idempotency():
 async def test_e2e_07_structured_source_jira_github_preservation():
     """E2E-07: Structured Jira/GitHub issues processed without LLM and preserve metadata."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -380,7 +394,7 @@ async def test_e2e_07_structured_source_jira_github_preservation():
 async def test_e2e_08_ambiguous_priority_kev_rerank():
     """E2E-08: Task in ambiguous priority zone triggers Kev System 1 reranker."""
     if not check_live_kev():
-        pytest.skip("Prerequisite missing: Kev System 1 reranker service is offline.")
+        _skip_unavailable("Prerequisite missing: Kev System 1 reranker service is offline.")
 
     from packages.ai_service import KevDecisionReranker
     reranker = KevDecisionReranker()
@@ -390,7 +404,10 @@ async def test_e2e_08_ambiguous_priority_kev_rerank():
     ]
     ranked = reranker.rerank("Critical production defect blocking all users", docs)
     assert len(ranked) == 2
-    assert ranked[0][1] >= ranked[1][1]
+    # KevDecisionReranker returns dictionaries, not (document, score) tuples.
+    assert reranker.last_call_status == "success", "Kev fallback is not real inference"
+    assert all(isinstance(item.get("score"), (int, float)) for item in ranked)
+    assert ranked[0]["score"] >= ranked[1]["score"]
 
 
 @pytest.mark.production_e2e
@@ -398,21 +415,30 @@ async def test_e2e_08_ambiguous_priority_kev_rerank():
 async def test_e2e_09_graphiti_semantic_memory_sync_and_query():
     """E2E-09: Episodic memory syncs to Graphiti and retrieves via semantic search."""
     if not check_live_graphiti():
-        pytest.skip("Prerequisite missing: Graphiti temporal memory client is offline.")
+        _skip_unavailable("Prerequisite missing: Graphiti temporal memory client is offline.")
 
     from ptb_graph_memory.client import GraphitiMemoryClient
     g_client = GraphitiMemoryClient()
-    query = "Q3 financial report submission"
-    results = await g_client.search_episodes(query=query, limit=5)
-    assert isinstance(results, list)
+    from uuid import uuid4
+    evidence_id = f"e2e-evidence-{uuid4().hex}"
+    marker = f"ptb-e2e-marker-{uuid4().hex}"
+    written_id = await g_client.add_evidence_episode({
+        "id": evidence_id,
+        "snippet": marker,
+        "source_type": "MS_TEAMS",
+    })
+    assert written_id == evidence_id
+    # Verifies persisted temporal evidence search, not derived Graphiti semantics.
+    results = await g_client.search_context(query=marker, limit=5)
+    assert any(row.get("id") == evidence_id for row in results)
 
 
 @pytest.mark.production_e2e
 @pytest.mark.asyncio
-async def test_e2e_10_rest_and_mcp_query_consistency():
-    """E2E-10: REST API /api/tasks and FastMCP get_tasks query authoritative Neo4j identically."""
+async def test_e2e_10_rest_query_authoritative_neo4j():
+    """E2E-10: Embedded REST TestClient reads tasks from real Neo4j (not MCP)."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -434,10 +460,10 @@ async def test_e2e_10_rest_and_mcp_query_consistency():
 
 @pytest.mark.production_e2e
 @pytest.mark.asyncio
-async def test_e2e_11_ui_status_mutation_durability():
-    """E2E-11: UI mutation via PATCH /api/tasks/{id} commits durably to Neo4j."""
+async def test_e2e_11_rest_status_mutation_durability():
+    """E2E-11: REST TestClient PATCH persists status to Neo4j (not browser UI)."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)
@@ -475,9 +501,9 @@ async def test_e2e_11_ui_status_mutation_durability():
 @pytest.mark.production_e2e
 @pytest.mark.asyncio
 async def test_e2e_12_llm_interruption_safe_retry():
-    """E2E-12: LLM disruption during extraction keeps RawEvent in RETRY without data loss."""
+    """E2E-12: Injected LLM failure keeps RawEvent in RETRY in real Neo4j."""
     if not check_live_neo4j():
-        pytest.skip("Prerequisite missing: Live Neo4j instance is offline.")
+        _skip_unavailable("Prerequisite missing: Live Neo4j instance is offline.")
 
     client = Neo4jClient()
     task_repo = TaskDomainRepository(client)

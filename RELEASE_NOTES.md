@@ -13,32 +13,58 @@ Personal Task Board (PTB) v1.3.0 is a milestone release focused on **production 
 
 ---
 
-## 5 Release Gates Status Overview
+## Acceptance status (evidence-based, NOT a production release approval)
 
-| Gate | Description | Status | Verification Mechanism |
-|:---|:---|:---:|:---|
-| **Gate 1 — CI Matrix** | Multi-platform CI across Ubuntu/macOS/Windows on Python 3.11–3.13 + Live Neo4j | **PASS** | Verified on GitHub Actions (10/10 jobs completed successfully with zero skipped mandatory steps) |
-| **Gate 2 — Independent Benchmark** | Cold-cache evaluation on un-overfitted held-out dataset (`PTB-INDEPENDENT-HELDOUT-30`) | **PASS / AUDITED** | Dual cache bypass (`--cold-cache`), corrected Wilson Score statistical bounds, frozen cryptographic manifest |
-| **Gate 3 — Production E2E** | Live pipeline integration without mocks or test doubles (`test_production_real_e2e.py`) | **PASS / VERIFIED** | Real LLM extractor, real Neo4j, real Graphiti memory client; honest prerequisite checks |
-| **Gate 4 — Security & Portability** | Container routing, secret enforcement, tenant isolation, and credentials protection | **PASS** | `NEO4J_PASSWORD` required; container gateway routing; `0600` permissions; truthful `ptb doctor` |
-| **Gate 5 — Release Package** | Unified versioning (`1.3.0`), comprehensive documentation, tested rollback runbook, and dual-SHA reporting | **PASS** | `pyproject.toml`, `RELEASE_RUNBOOK.md`, `CHANGELOG.md`, `DEV_REPORT.md` dual-SHA tracking |
+This is a **release candidate changelog**, not a published GitHub Release.
+The previous 5/5 PASS claims were not supported by live acceptance evidence.
+At the time of the source audit, the prior CI matrix on a6c2731 was green,
+but all 12 new production_e2e tests were SKIPPED in that CI. The latest
+acceptance status must be rechecked at the current HEAD; do not borrow a
+CI result from a different commit.
+
+| Gate | Status | Evidence / outstanding work |
+|---|---|---|
+| 1 CI matrix | PENDING for current release SHA | [Actions runs](https://github.com/nxc1802/Personal_Task_Board/actions); verify exact HEAD 10/10 |
+| 2 Independent benchmark | **FAIL / PENDING cold evaluation** | [Held-out report](reports/benchmarks/independent/heldout_report.md): fixture 20/32 PASS, 11 FAIL, 1 PENDING |
+| 3 Real production E2E | **PENDING** | 12 tests existed but all SKIPPED in CI on a6c2731; require strict no-SKIP live run |
+| 4 Security and portability | **PENDING** | Requires clean machine, real auth/connector, Docker and restart evidence |
+| 5 Release package | **PENDING** | No verified release artifact/tag and no live restore acceptance |
+
+## Scope and limitations
+
+- The JSON tool `ptb backup` is a **partial PTB domain snapshot**, not a
+  verified full Neo4j/Graphiti backup. Some labels, multi-label nodes,
+  relationships and auxiliary data may be excluded. For disaster recovery,
+  use an appropriate **native Neo4j database backup** and test a restore.
+- A SHA-256 checksum detects accidental or untrusted modifications only when
+  the original digest is trusted; it is **not** encryption or an authenticated signature.
+- `ptb restore` currently merges selected snapshot nodes and relationships;
+  it is **not** an atomic full database rollback and does not support
+  `--drop-existing`. Do not use it as the sole recovery method.
+- The production_e2e suite contains real Neo4j components, but the
+  failure-injection test uses a mock intentionally; REST TestClient
+  checks do not represent a live browser or MCP session.
+- The held-out dataset is tracked in this repository and some held-out
+  sample IDs appear in tracked extraction cache. Freeze a *new, unseen*
+  evaluation set and use dual cache bypass for final model acceptance.
+- **Required evidence/reporting:** [Dev acceptance handoff](docs/RELEASE_ACCEPTANCE_HANDOFF.md)
+  and [the next Dev work plan](docs/DEV_REMAINING_RELEASE_WORK.md).
 
 ---
 
 ## Key Highlights & Architectural Enhancements
 
-### 1. Zero-Data-Loss Database Snapshot & Recovery Engine (DEV-P0-04)
-- Implemented `ptb_database.backup` to provide domain-level JSON snapshots for disaster recovery.
-- Full coverage of all 9 authoritative domain labels:
-  - `Task`, `DomainEvent`, `RawEvent`, `Checkpoint`, `Decision`, `LessonLearned`, `SyncHistory`, `SourceCredential`, `AuditLog`.
+### 1. Partial Domain JSON Snapshot & Recovery Utilities (DEV-P0-04)
+- Implemented `ptb_database.backup` with guarded domain JSON snapshots; a complete Neo4j backup is still required for disaster recovery.
+- Explicit exported label list: `Task`, `Evidence`, `RawEvent`, `IngestionCheckpoint`, `Person`, `Project`, `Customer`, `Decision`, `Lesson` (other labels are not covered).
 - Graph edge preservation:
   - Preserves relationships (`EXTRACTED_FROM`, `CAUSED`, `SUBTASK_OF`, `DEPENDS_ON`, `FOLLOWS_UP`, `REFERENCES`).
 - Tamper detection:
   - Every backup includes a SHA-256 integrity hash over canonical JSON representations of nodes and edges.
 - CLI integration:
   - `python scripts/ptb_cli.py backup --output <snapshot.json>`
-  - `python scripts/ptb_cli.py restore <snapshot.json> [--drop-existing]`
-- Validated with 10 comprehensive recovery tests (`tests/test_persistence_recovery.py`).
+  - `python scripts/ptb_cli.py restore <snapshot.json>` (merge only; no `--drop-existing`)
+- Mock/in-memory recovery tests exist; a live multi-label Neo4j restore drill remains PENDING.
 
 ### 2. Independent Held-Out Benchmark & Statistical Rigor (DEV-P1-01)
 - Created independent held-out dataset `PTB-INDEPENDENT-HELDOUT-30` (30 diverse enterprise events, 2 probe queries) with SHA-256 manifests.
