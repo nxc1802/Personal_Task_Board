@@ -112,6 +112,7 @@ class KevDecisionReranker:
         self.model = model or os.getenv("DECISION_MODEL", "kev-0.8b")
         self._last_probe_time = 0.0
         self._last_available = False
+        self.last_usage_tokens: Optional[int] = None
 
     def _is_available(self) -> bool:
         """Fast check whether Kev service endpoint is reachable with 30s cache."""
@@ -179,6 +180,8 @@ class KevDecisionReranker:
         try:
             with urllib.request.urlopen(req, timeout=10) as response:
                 result = json.loads(response.read().decode("utf-8"))
+                usage = result.get("usage", {})
+                self.last_usage_tokens = usage.get("total_tokens") or usage.get("prompt_tokens")
                 probs = result["answers"]["relevance"]["probabilities"]
                 
                 ranked = []

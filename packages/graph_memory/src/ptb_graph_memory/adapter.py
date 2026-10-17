@@ -134,23 +134,27 @@ class GraphitiKevCrossEncoder(CrossEncoderClient):
         if not passages:
             return []
         service = self._get_service()
-        try:
-            from ptb_contracts.telemetry import get_cost_audit_tracker
-            tokens = len(query.split()) + sum(len(p.split()) for p in passages)
-            get_cost_audit_tracker().record_kev_call("graphiti_cross_encode")
-            get_cost_audit_tracker().record_graphiti_subcall("cross_encoder", tokens=tokens)
-        except Exception as telem_exc:
-            logger.debug("Telemetry recording error in rank: %s", telem_exc)
 
         try:
             results = await asyncio.to_thread(service.rerank, query, passages)
             ranked = []
             for item in results:
                 ranked.append((item.get("document", ""), float(item.get("score", 0.0))))
-            return sorted(ranked, key=lambda x: x[1], reverse=True)
+            ranked_sorted = sorted(ranked, key=lambda x: x[1], reverse=True)
         except Exception as exc:
             logger.error("Kev cross-encoder ranking failed: %s", exc)
             raise RuntimeError(f"Kev cross-encoder ranking failed: {exc}") from exc
+
+        try:
+            from ptb_contracts.telemetry import get_cost_audit_tracker
+            actual_tok = getattr(service, "last_usage_tokens", None)
+            tokens = actual_tok if actual_tok is not None else (len(query.split()) + sum(len(p.split()) for p in passages))
+            get_cost_audit_tracker().record_kev_call("graphiti_cross_encode")
+            get_cost_audit_tracker().record_graphiti_subcall("cross_encoder", tokens=tokens)
+        except Exception as telem_exc:
+            logger.debug("Telemetry recording error in rank: %s", telem_exc)
+
+        return ranked_sorted
 
 
 def _is_bolt_port_open(uri: str, timeout: float = 0.2) -> bool:

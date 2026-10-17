@@ -1,6 +1,6 @@
 [project]
 name = "ptb-intelligence"
-version = "0.1.0"
+version = "1.3.0"
 description = "Layer 4: Deterministic Priority, Status Inference, and Anomaly Detection for Personal Task Board"
 readme = "README.md"
 requires-python = ">=3.11"

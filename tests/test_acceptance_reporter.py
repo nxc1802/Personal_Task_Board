@@ -42,3 +42,16 @@ def test_acceptance_report_with_commands(tmp_path: Path):
     content = target.read_text(encoding="utf-8")
     assert "`pytest tests/test_cold_cache_benchmark.py (Exit 0)`" in content
     assert "Dual cache isolated; live benchmark pending" in content
+
+
+@pytest.mark.unit
+def test_run_verification_checks_with_ci_run():
+    from scripts.generate_acceptance_report import run_verification_checks
+    statuses, commands, evidences = run_verification_checks(ci_run="38944067496")
+    assert statuses.get("DEV-P0-01") == "PASS"
+    assert "38944067496" in commands.get("DEV-P0-01", "")
+    assert "10/10" in evidences.get("DEV-P0-01", "")
+    # Ensure tasks requiring live production are kept PENDING
+    assert statuses.get("DEV-P1-01") == "PENDING"
+    assert statuses.get("DEV-P1-03") == "PENDING"
+    assert statuses.get("DEV-P1-04") == "PENDING"
