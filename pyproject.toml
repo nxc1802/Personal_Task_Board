@@ -36,6 +36,7 @@ markers = [
     "runtime_smoke: Process supervisor and server runtime smoke tests with injected test repositories",
     "external_integration: Integration tests requiring live external Docker/Neo4j/OpenWebUI infrastructure",
     "e2e: Live end-to-end integration tests requiring external services",
+    "production_e2e: Live production end-to-end acceptance tests requiring real services",
 ]
 
 [dependency-groups]

@@ -164,6 +164,8 @@ class GraphitiKevCrossEncoder(CrossEncoderClient):
                 tokens = actual_tok if actual_tok is not None else (len(query.split()) + sum(len(p.split()) for p in passages))
                 tracker.record_kev_call("graphiti_cross_encode")
                 tracker.record_graphiti_subcall("cross_encoder", tokens=tokens)
+            elif call_status == "bypass":
+                tracker.record_bypass("graphiti_cross_encode")
             else:
                 tracker.record_kev_fallback("graphiti_cross_encode")
         except Exception as telem_exc:

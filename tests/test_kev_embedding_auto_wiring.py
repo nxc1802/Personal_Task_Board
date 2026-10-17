@@ -74,3 +74,37 @@ def test_kev_priority_urgency_calibration_ambiguous_range():
     # 50.0 + 15.0 delta = 65.0
     assert calibrated.total_score == 65.0
     assert "Kev Urgency Calibrated (High: +15pts)" in calibrated.llm_explanation
+
+
+@pytest.mark.unit
+def test_kev_rerank_single_document_marked_bypass():
+    reranker = KevDecisionReranker(base_url="http://127.0.0.1:8081/v1")
+    res = reranker.rerank(query="Deploy build", documents=["Single build log document"])
+    assert len(res) == 1
+    assert res[0]["score"] == 1.0
+    assert reranker.last_call_status == "bypass"
+    assert reranker.last_usage_tokens == 0
+
+
+@pytest.mark.unit
+def test_qwen3_is_valid_embedding():
+    # Valid 1024-dim finite vector
+    valid_vec = [0.1] * 1024
+    assert Qwen3EmbeddingService.is_valid_embedding(valid_vec)
+
+    # All zeros fallback vector should be flagged as invalid
+    zeros_vec = [0.0] * 1024
+    assert not Qwen3EmbeddingService.is_valid_embedding(zeros_vec)
+
+    # Wrong dimension
+    wrong_dim = [0.1] * 512
+    assert not Qwen3EmbeddingService.is_valid_embedding(wrong_dim)
+
+    # Contains NaN or Inf
+    nan_vec = [0.1] * 1024
+    nan_vec[10] = float("nan")
+    assert not Qwen3EmbeddingService.is_valid_embedding(nan_vec)
+
+    inf_vec = [0.1] * 1024
+    inf_vec[20] = float("inf")
+    assert not Qwen3EmbeddingService.is_valid_embedding(inf_vec)

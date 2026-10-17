@@ -108,6 +108,16 @@ class Qwen3EmbeddingService:
             self.last_usage_tokens = None
             return [[0.0] * 1024 for _ in texts]
 
+    @staticmethod
+    def is_valid_embedding(vec: List[float], expected_dim: int = 1024) -> bool:
+        """Kiểm tra vector embedding có đúng số chiều, hữu hạn và không phải vector toàn 0."""
+        import math
+        if not isinstance(vec, (list, tuple)) or len(vec) != expected_dim:
+            return False
+        if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in vec):
+            return False
+        return any(abs(x) > 1e-9 for x in vec)
+
     def compute_similarity(self, query_vec: List[float], doc_vecs: List[List[float]]) -> List[float]:
         """Tính cosine similarity giữa query và tập documents."""
         q = np.array(query_vec)
@@ -174,7 +184,8 @@ class KevDecisionReranker:
         if not documents:
             return []
         if len(documents) == 1:
-            self.last_call_status = "success"
+            self.last_call_status = "bypass"
+            self.last_usage_tokens = 0
             return [{"index": 0, "document": documents[0], "score": 1.0}]
         if not self._is_available():
             self.last_call_status = "fallback"

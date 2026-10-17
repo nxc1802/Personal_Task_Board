@@ -2849,6 +2849,56 @@ async def cmd_mcp(args: argparse.Namespace) -> int:
         return 1
 
 
+async def cmd_backup(args: argparse.Namespace) -> int:
+    """Sao lưu toàn bộ domain state trong Neo4j ra snapshot file (JSON + SHA256 checksum)."""
+    from ptb_database.neo4j_client import Neo4jClient
+    from ptb_database.backup import export_database_snapshot
+
+    client = Neo4jClient()
+    try:
+        if not await client.verify_connectivity():
+            print("  [!] Không thể kết nối tới Neo4j để sao lưu.")
+            return 1
+        output_path = Path(args.output) if getattr(args, "output", None) else None
+        print(">>> Đang xuất snapshot toàn bộ dữ liệu Neo4j...")
+        target = await export_database_snapshot(client=client, output_path=output_path)
+        print(f"  [+] Snapshot đã lưu thành công tại: {target}")
+        return 0
+    except Exception as e:
+        logger.error("Lỗi sao lưu database: %s", e)
+        print(f"  [-] Lỗi sao lưu: {e}")
+        return 1
+    finally:
+        await client.close()
+
+
+async def cmd_restore(args: argparse.Namespace) -> int:
+    """Khôi phục dữ liệu Neo4j từ snapshot file được xác minh checksum."""
+    from ptb_database.neo4j_client import Neo4jClient
+    from ptb_database.backup import restore_database_snapshot
+
+    snapshot_file = Path(args.snapshot)
+    if not snapshot_file.is_file():
+        print(f"  [-] File snapshot không tồn tại: {snapshot_file}")
+        return 1
+
+    client = Neo4jClient()
+    try:
+        if not await client.verify_connectivity():
+            print("  [!] Không thể kết nối tới Neo4j để khôi phục.")
+            return 1
+        print(f">>> Đang khôi phục dữ liệu từ: {snapshot_file}...")
+        res = await restore_database_snapshot(snapshot_path=snapshot_file, client=client)
+        print(f"  [+] Khôi phục thành công: {res.get('restored_nodes', 0)} nodes, {res.get('restored_relationships', 0)} relationships.")
+        return 0
+    except Exception as e:
+        logger.error("Lỗi khôi phục database: %s", e)
+        print(f"  [-] Lỗi khôi phục: {e}")
+        return 1
+    finally:
+        await client.close()
+
+
 async def cmd_acceptance_report(args: argparse.Namespace) -> int:
     """Tạo báo cáo nghiệm thu phát hành theo chuẩn docs/RELEASE_ACCEPTANCE_HANDOFF.md."""
     from scripts.generate_acceptance_report import (
@@ -2887,6 +2937,8 @@ async def cmd_acceptance_report(args: argparse.Namespace) -> int:
         task_commands=task_commands,
         task_evidences=task_evidences,
         output_path=Path(args.output) if getattr(args, "output", None) else None,
+        tested_source_sha=target_sha,
+        report_commit_sha=getattr(args, "report_commit_sha", None),
     )
     print(f"[+] Báo cáo nghiệm thu phát hành được tạo thành công tại: {out_file}")
     return 0
@@ -3000,9 +3052,18 @@ def main():
     graph_sub = parser_graph.add_subparsers(dest="graph_action", help="Hành động trên Graph")
     parser_graph_rebuild = graph_sub.add_parser("rebuild", help="Rebuild semantic memory từ authoritative Neo4j domain data")
 
+    # Command: backup
+    parser_backup = subparsers.add_parser("backup", help="Sao lưu authoritative domain state trong Neo4j ra JSON snapshot")
+    parser_backup.add_argument("--output", "-o", type=str, default=None, help="Đường dẫn file snapshot đích")
+
+    # Command: restore
+    parser_restore = subparsers.add_parser("restore", help="Khôi phục authoritative domain state trong Neo4j từ JSON snapshot")
+    parser_restore.add_argument("snapshot", type=str, help="Đường dẫn file JSON snapshot cần khôi phục")
+
     # Command: acceptance-report
     parser_report = subparsers.add_parser("acceptance-report", help="Tạo báo cáo nghiệm thu phát hành theo chuẩn docs/RELEASE_ACCEPTANCE_HANDOFF.md")
-    parser_report.add_argument("--sha", type=str, default=None, help="Commit SHA 40 ký tự")
+    parser_report.add_argument("--sha", "--tested-source-sha", dest="sha", type=str, default=None, help="Commit SHA 40 ký tự nguồn được kiểm thử")
+    parser_report.add_argument("--report-commit-sha", type=str, default=None, help="Commit SHA chứa file báo cáo DEV_REPORT")
     parser_report.add_argument("--author", type=str, default=None, help="Tên tác giả / reviewer")
     parser_report.add_argument("--verdict", choices=["GO", "NO-GO", "PENDING"], default="PENDING", help="Đánh giá phát hành")
     parser_report.add_argument("--output", type=str, default=None, help="Đường dẫn file báo cáo")
@@ -3026,6 +3087,8 @@ def main():
         "status": cmd_status,
         "serve": cmd_serve,
         "graph": cmd_graph,
+        "backup": cmd_backup,
+        "restore": cmd_restore,
         "acceptance-report": cmd_acceptance_report,
     }
 

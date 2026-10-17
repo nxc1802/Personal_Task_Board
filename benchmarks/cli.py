@@ -61,9 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--mode",
-        choices=["fixture", "live"],
+        choices=["fixture", "live", "fixture_regression", "cold_llm_eval", "production_e2e_eval"],
         default=None,
-        help="Explicit execution mode (fixture or live). Overrides --live if specified.",
+        help="Explicit benchmark mode: fixture_regression (Mode A), cold_llm_eval (Mode B), production_e2e_eval (Mode C), fixture, or live.",
     )
     run_parser.add_argument(
         "--output-report",
@@ -141,12 +141,24 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 async def _run_benchmark_async(args: argparse.Namespace) -> int:
     dataset_dir = Path(args.dataset_dir)
-    mode = args.mode or ("live" if args.live else "fixture")
+    raw_mode = args.mode or ("live" if args.live else "fixture")
+    is_cold = args.cold_cache
+
+    if raw_mode == "fixture_regression":
+        mode = "fixture"
+    elif raw_mode == "cold_llm_eval":
+        mode = "live"
+        is_cold = True
+    elif raw_mode == "production_e2e_eval":
+        mode = "live"
+        is_cold = True
+    else:
+        mode = raw_mode
 
     print(f"[*] Starting benchmark execution:")
     print(f"    - Dataset:    {dataset_dir}")
-    print(f"    - Mode:       {mode}")
-    print(f"    - Cold Cache: {'YES (Isolated, zero fixture reuse)' if args.cold_cache else 'NO (Warm cache enabled)'}")
+    print(f"    - Mode:       {mode} (requested: {raw_mode})")
+    print(f"    - Cold Cache: {'YES (Isolated, zero fixture reuse)' if is_cold else 'NO (Warm cache enabled)'}")
     if args.case_id:
         print(f"    - Filter:     Case ID '{args.case_id}'")
 
@@ -159,7 +171,7 @@ async def _run_benchmark_async(args: argparse.Namespace) -> int:
         return 1
 
     # 2. Setup isolated environment
-    env = EnvironmentManager.create_environment(dataset=dataset, mode=mode, cold_cache=args.cold_cache)
+    env = EnvironmentManager.create_environment(dataset=dataset, mode=mode, cold_cache=is_cold)
     if mode == "live" and not env.live_infrastructure_available:
         print(f"[!] Warning: Live infrastructure unavailable: {env.infrastructure_error}. Cases will be marked PENDING.")
 

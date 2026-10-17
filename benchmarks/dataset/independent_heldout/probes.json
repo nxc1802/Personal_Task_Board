@@ -1,0 +1,22 @@
+[
+  {
+    "probe_id": "probe-ih-01-malformed-json",
+    "probe_group": "robustness",
+    "name": "Malformed JSON payload recovery",
+    "target_module": "L1.Acquisition",
+    "fault_injection": "Set raw_payload to unparseable corrupted string",
+    "expected_behavior": "Pipeline assigns normalized_text without unhandled crash",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "independent://probes/01"
+  },
+  {
+    "probe_id": "probe-ih-02-future-timestamp",
+    "probe_group": "temporal",
+    "name": "Clock skew tolerance",
+    "target_module": "L2.Processing",
+    "fault_injection": "Set event_timestamp 24 hours into the future",
+    "expected_behavior": "Processing accepts event without discarding",
+    "expected_state_or_status": "PROCESSED",
+    "origin_reference": "independent://probes/02"
+  }
+]

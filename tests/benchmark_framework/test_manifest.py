@@ -87,3 +87,12 @@ def test_load_dataset_loads_all_samples_and_probes():
     assert len(dataset.probes) == 2
     assert any(s.sample_id == "smoke-01-teams-clear-deadline" for s in dataset.samples)
     assert any(p.probe_id == "probe-smoke-01-missing-timestamp" for p in dataset.probes)
+
+
+def test_validate_manifest_independent_heldout_passes():
+    ds_dir = Path("benchmarks/dataset/independent_heldout")
+    report = validate_manifest(ds_dir)
+    assert report.valid is True
+    assert report.dataset_name == "PTB-INDEPENDENT-HELDOUT-30"
+    assert "samples.json" in report.checked_files
+    assert "probes.json" in report.checked_files

@@ -117,3 +117,60 @@ async def test_graphiti_adapters_fallback_isolation():
     assert metrics["embedding"]["requests_total"] == 0
     assert metrics["kev"]["requests_total"] == 0
     assert metrics["graphiti"]["tokens_total"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_graphiti_kev_cross_encoder_bypass_telemetry():
+    tracker = get_cost_audit_tracker()
+    tracker.reset()
+
+    class BypassKevService:
+        def __init__(self):
+            self.last_call_status = "bypass"
+            self.last_usage_tokens = 0
+        def rerank(self, query, documents, top_k=None):
+            return [{"index": 0, "document": documents[0], "score": 1.0}]
+
+    reranker = GraphitiKevCrossEncoder(reranker_service=BypassKevService())
+    await reranker.rank("Single document query", ["Single document"])
+
+    metrics = tracker.get_metrics()
+    assert metrics["kev"]["bypass_calls"] == 1
+    assert metrics["kev"]["requests_total"] == 0
+    assert metrics["graphiti"]["tokens_total"] == 0
+
+
+@pytest.mark.unit
+def test_six_request_states_and_token_distinction():
+    from ptb_contracts.telemetry import RequestAuditState
+    tracker = get_cost_audit_tracker()
+    tracker.reset()
+
+    # 1. SUCCESS with measured tokens
+    tracker.record_llm_call(provider="openai", model="gpt-4o-mini", input_tokens=100, output_tokens=50, measured=True)
+    # 2. CACHE_HIT
+    tracker.record_cache_hit()
+    # 3. BYPASS
+    tracker.record_bypass("kev_rerank", count=1)
+    # 4. FALLBACK
+    tracker.record_fallback("embedding", count=1)
+    # 5. SKIPPED
+    tracker.record_embedding_call(count=1, skipped=True)
+    # 6. FAILURE
+    tracker.record_request_state(RequestAuditState.FAILURE)
+    # Estimated tokens
+    tracker.record_tokens(measured=0, estimated=200)
+
+    metrics = tracker.get_metrics()
+    states = metrics["request_states"]
+    assert states["SUCCESS"] == 1
+    assert states["CACHE_HIT"] == 1
+    assert states["BYPASS"] == 1
+    assert states["FALLBACK"] == 1
+    assert states["SKIPPED"] == 1
+    assert states["FAILURE"] == 1
+
+    tokens = metrics["tokens"]
+    assert tokens["measured_tokens"] == 150
+    assert tokens["estimated_tokens"] == 200

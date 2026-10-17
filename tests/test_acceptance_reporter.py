@@ -123,3 +123,153 @@ def test_verify_github_ci_status_failure_and_mismatch(monkeypatch):
     )
     assert not passed
     assert "failure" in msg
+
+    # Case 3: Incomplete workflow (in_progress)
+    def fake_urlopen_inprogress(req, timeout=None):
+        data = {
+            "head_sha": "1111111111111111111111111111111111111111",
+            "status": "in_progress",
+            "conclusion": None,
+        }
+        return io.BytesIO(json.dumps(data).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_inprogress)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="12345",
+    )
+    assert not passed
+    assert "in_progress" in msg
+
+    # Case 4: Network timeout / connection error
+    def fake_urlopen_timeout(req, timeout=None):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_timeout)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="12345",
+    )
+    assert not passed
+    assert "timed out" in msg
+
+
+@pytest.mark.unit
+def test_verify_github_ci_status_jobs_and_steps_scenarios(monkeypatch):
+    import io
+    import json
+    import urllib.request
+    from scripts.generate_acceptance_report import verify_github_ci_status, MANDATORY_CI_JOBS
+
+    matrix_steps = [
+        {"name": "Run Anti-Fallback & Contract Tests", "conclusion": "success"},
+        {"name": "Run Unit Tests", "conclusion": "success"},
+        {"name": "Run Release Readiness Gates", "conclusion": "success"},
+        {"name": "Validate Benchmark Dataset Manifests", "conclusion": "success"},
+    ]
+    neo4j_steps = [
+        {"name": "Run Live E2E Vertical Slice Test", "conclusion": "success"},
+    ]
+
+    def build_jobs_response(jobs_list):
+        return io.BytesIO(json.dumps({"total_count": len(jobs_list), "jobs": jobs_list}).encode("utf-8"))
+
+    run_meta = {
+        "head_sha": "1111111111111111111111111111111111111111",
+        "status": "completed",
+        "conclusion": "success",
+    }
+
+    # Scenario A: All 10 jobs and mandatory steps PASS -> PASS
+    all_10_jobs = []
+    for name in MANDATORY_CI_JOBS:
+        steps = neo4j_steps if "Neo4j" in name else matrix_steps
+        all_10_jobs.append({"name": name, "status": "completed", "conclusion": "success", "steps": steps})
+
+    def fake_urlopen_perfect(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/jobs" in url:
+            return build_jobs_response(all_10_jobs)
+        return io.BytesIO(json.dumps(run_meta).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_perfect)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="999",
+    )
+    assert passed
+    assert "10/10 mandatory jobs" in msg
+
+    # Scenario B: 9 matrix jobs pass, but missing Live Neo4j job -> FAIL/PENDING
+    jobs_missing_neo4j = [j for j in all_10_jobs if "Neo4j" not in j["name"]]
+
+    def fake_urlopen_missing_neo4j(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/jobs" in url:
+            return build_jobs_response(jobs_missing_neo4j)
+        return io.BytesIO(json.dumps(run_meta).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_missing_neo4j)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="999",
+    )
+    assert not passed
+    assert "missing mandatory job" in msg
+    assert "Live E2E Integration (Neo4j Service)" in msg
+
+    # Scenario C: A job is cancelled or skipped -> FAIL
+    jobs_with_cancelled = [dict(j) for j in all_10_jobs]
+    jobs_with_cancelled[0]["conclusion"] = "cancelled"
+
+    def fake_urlopen_cancelled(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/jobs" in url:
+            return build_jobs_response(jobs_with_cancelled)
+        return io.BytesIO(json.dumps(run_meta).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_cancelled)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="999",
+    )
+    assert not passed
+    assert "non-success job" in msg
+
+    # Scenario D: Missing mandatory step (e.g. Run Release Readiness Gates) -> FAIL
+    jobs_missing_step = []
+    for j in all_10_jobs:
+        copied = dict(j)
+        if "ubuntu-latest / Python 3.12" in copied["name"]:
+            copied["steps"] = [s for s in copied["steps"] if s["name"] != "Run Release Readiness Gates"]
+        jobs_missing_step.append(copied)
+
+    def fake_urlopen_missing_step(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "/jobs" in url:
+            return build_jobs_response(jobs_missing_step)
+        return io.BytesIO(json.dumps(run_meta).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_missing_step)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="999",
+    )
+    assert not passed
+    assert "missing step 'Run Release Readiness Gates'" in msg
+
+
+@pytest.mark.unit
+def test_acceptance_report_tested_and_report_shas(tmp_path: Path):
+    target = tmp_path / "DEV_REPORT_DUAL_SHA.md"
+    generate_dev_report(
+        tested_source_sha="aaaa111122223333444455556666777788889999",
+        report_commit_sha="bbbb111122223333444455556666777788889999",
+        author="lead-dev",
+        output_path=target,
+    )
+    content = target.read_text(encoding="utf-8")
+    assert "Tested Source SHA:** `aaaa111122223333444455556666777788889999`" in content
+    assert "Report Commit SHA:** `bbbb111122223333444455556666777788889999`" in content
+    assert "Commit SHA:** `aaaa111122223333444455556666777788889999`" in content
+

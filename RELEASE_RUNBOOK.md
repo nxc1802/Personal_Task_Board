@@ -122,13 +122,31 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ### 5.2 Neo4j Database Backup & Restore
-- **Backup**:
+
+#### 5.2.1 Application-Level JSON Domain Snapshot (DEV-P0-04)
+PTB provides a zero-data-loss domain snapshot utility with cryptographic SHA-256 integrity verification across all 9 domain labels (`Task`, `DomainEvent`, `RawEvent`, `Checkpoint`, `Decision`, `LessonLearned`, `SyncHistory`, `SourceCredential`, `AuditLog`) and graph relationships:
+
+- **Create Domain Snapshot**:
+  ```bash
+  # Inside production container or locally against Neo4j:
+  python scripts/ptb_cli.py backup --output backups/ptb_snapshot_$(date +%Y%m%d_%H%M%S).json
+  ```
+  *Outputs snapshot file containing node/edge counts, tenant metadata, and SHA-256 tamper hash.*
+
+- **Restore Domain Snapshot**:
+  ```bash
+  # Restore snapshot with integrity verification (use --drop-existing for clean restore):
+  python scripts/ptb_cli.py restore backups/<SNAPSHOT_FILE>.json --drop-existing
+  ```
+
+#### 5.2.2 Container Volume Archive (Cold Storage)
+- **Backup Volume Archive**:
   ```bash
   docker compose -f docker-compose.prod.yml stop neo4j
   docker run --rm -v ptb_neo4j_prod_data:/data -v $(pwd)/backups:/backup alpine tar czvf /backup/neo4j_$(date +%Y%m%d_%H%M%S).tar.gz /data
   docker compose -f docker-compose.prod.yml start neo4j
   ```
-- **Restore**:
+- **Restore Volume Archive**:
   ```bash
   docker compose -f docker-compose.prod.yml stop neo4j
   docker run --rm -v ptb_neo4j_prod_data:/data -v $(pwd)/backups:/backup alpine sh -c "rm -rf /data/* && tar xzvf /backup/<BACKUP_FILE>.tar.gz -C /"

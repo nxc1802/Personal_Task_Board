@@ -1,0 +1,1422 @@
+[
+  {
+    "sample_id": "ih-01-teams-review-pr",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_teams/01",
+    "raw_event": {
+      "id": "raw-ih-01-teams-review-pr",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-01-teams-review-pr",
+      "conversation_or_project_id": "conv-ms_teams-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "content": "Vâng anh Lead, để em review PR-201 trước 17:00 ngày 2026-10-25 nhé."
+      },
+      "normalized_text": "Em sẽ review PR-201 trước 17:00 ngày 2026-10-25.",
+      "idempotency_key": "idemp-ih-01-teams-review-pr"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "review",
+        "PR-201"
+      ],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "lead.tran",
+      "expected_due_date": "2026-10-25T17:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "review",
+          "PR-201"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-01-teams-review-pr",
+        "expected_snippet_substrings": [
+          "review"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-02-outlook-db-migration",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_outlook/02",
+    "raw_event": {
+      "id": "raw-ih-02-outlook-db-migration",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-ih-02-outlook-db-migration",
+      "conversation_or_project_id": "conv-ms_outlook-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "content": "Tôi sẽ hoàn thành script migration cơ sở dữ liệu Neo4j trước 12:00 ngày 2026-10-26."
+      },
+      "normalized_text": "Sẽ hoàn thành migration Neo4j trước 12:00 ngày 2026-10-26.",
+      "idempotency_key": "idemp-ih-02-outlook-db-migration"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "migration",
+        "Neo4j"
+      ],
+      "expected_owner_id": "huy.nguyen",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-10-26T12:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "migration",
+          "Neo4j"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-02-outlook-db-migration",
+        "expected_snippet_substrings": [
+          "migration"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-03-slack-hotfix-deploy",
+    "case_category": "direct_task",
+    "origin_reference": "independent://slack/03",
+    "raw_event": {
+      "id": "raw-ih-03-slack-hotfix-deploy",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-03-slack-hotfix-deploy",
+      "conversation_or_project_id": "conv-slack-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "mai.le@company.com",
+      "author_display_name": "Mai Le",
+      "raw_payload": {
+        "content": "Mình sẽ deploy hotfix v1.3.1 lên staging vào lúc 16:00 ngày 2026-10-27."
+      },
+      "normalized_text": "Deploy hotfix v1.3.1 lên staging lúc 16:00 ngày 2026-10-27.",
+      "idempotency_key": "idemp-ih-03-slack-hotfix-deploy"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "deploy",
+        "hotfix"
+      ],
+      "expected_owner_id": "mai.le",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-10-27T16:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "deploy",
+          "hotfix"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-03-slack-hotfix-deploy",
+        "expected_snippet_substrings": [
+          "deploy"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-04-jira-security-patch",
+    "case_category": "direct_task",
+    "origin_reference": "independent://jira/04",
+    "raw_event": {
+      "id": "raw-ih-04-jira-security-patch",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "jira",
+      "external_id": "ext-ih-04-jira-security-patch",
+      "conversation_or_project_id": "conv-jira-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
+      "raw_payload": {
+        "content": "[SEC-402] Patch authentication vulnerability in FastMCP server endpoint"
+      },
+      "normalized_text": "[SEC-402] Patch authentication vulnerability in FastMCP",
+      "idempotency_key": "idemp-ih-04-jira-security-patch"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "SEC-402",
+        "FastMCP"
+      ],
+      "expected_owner_id": "lead.tran",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-10-28T18:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "SEC-402",
+          "FastMCP"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-04-jira-security-patch",
+        "expected_snippet_substrings": [
+          "SEC-402"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-05-github-issue-triage",
+    "case_category": "direct_task",
+    "origin_reference": "independent://github/05",
+    "raw_event": {
+      "id": "raw-ih-05-github-issue-triage",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "github",
+      "external_id": "ext-ih-05-github-issue-triage",
+      "conversation_or_project_id": "conv-github-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "content": "Em sẽ kiểm tra issue #88 và viết test case bổ sung trước 10:00 ngày 2026-10-29."
+      },
+      "normalized_text": "Kiểm tra issue #88 và viết test bổ sung trước 10:00.",
+      "idempotency_key": "idemp-ih-05-github-issue-triage"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "issue",
+        "#88"
+      ],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": null,
+      "expected_due_date": "2026-10-29T10:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "issue",
+          "#88"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-05-github-issue-triage",
+        "expected_snippet_substrings": [
+          "issue"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-06-teams-benchmark-ci",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_teams/06",
+    "raw_event": {
+      "id": "raw-ih-06-teams-benchmark-ci",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-06-teams-benchmark-ci",
+      "conversation_or_project_id": "conv-ms_teams-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "mai.le@company.com",
+      "author_display_name": "Mai Le",
+      "raw_payload": {
+        "content": "Để em tối ưu benchmark CI execution time trước 15:00 ngày 2026-10-30."
+      },
+      "normalized_text": "Tối ưu benchmark CI execution time trước 15:00.",
+      "idempotency_key": "idemp-ih-06-teams-benchmark-ci"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "benchmark",
+        "CI"
+      ],
+      "expected_owner_id": "mai.le",
+      "expected_owner_name": null,
+      "expected_requester_id": "lead.tran",
+      "expected_due_date": "2026-10-30T15:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "benchmark",
+          "CI"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-06-teams-benchmark-ci",
+        "expected_snippet_substrings": [
+          "benchmark"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-07-outlook-client-sync",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_outlook/07",
+    "raw_event": {
+      "id": "raw-ih-07-outlook-client-sync",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-ih-07-outlook-client-sync",
+      "conversation_or_project_id": "conv-ms_outlook-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
+      "raw_payload": {
+        "content": "Anh sẽ cập nhật tài liệu API integration cho phía khách hàng trước 17:00 ngày 2026-10-31."
+      },
+      "normalized_text": "Cập nhật tài liệu API integration trước 17:00 ngày 2026-10-31.",
+      "idempotency_key": "idemp-ih-07-outlook-client-sync"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "tài liệu",
+        "API"
+      ],
+      "expected_owner_id": "lead.tran",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-10-31T17:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "tài liệu",
+          "API"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-07-outlook-client-sync",
+        "expected_snippet_substrings": [
+          "tài liệu"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-08-slack-graphiti-audit",
+    "case_category": "direct_task",
+    "origin_reference": "independent://slack/08",
+    "raw_event": {
+      "id": "raw-ih-08-slack-graphiti-audit",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-08-slack-graphiti-audit",
+      "conversation_or_project_id": "conv-slack-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "content": "Mình sẽ kiểm tra toàn bộ telemetry log của Graphiti trước 11:00 ngày 2026-11-01."
+      },
+      "normalized_text": "Kiểm tra telemetry log Graphiti trước 11:00 ngày 2026-11-01.",
+      "idempotency_key": "idemp-ih-08-slack-graphiti-audit"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "telemetry",
+        "Graphiti"
+      ],
+      "expected_owner_id": "huy.nguyen",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-01T11:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "telemetry",
+          "Graphiti"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-08-slack-graphiti-audit",
+        "expected_snippet_substrings": [
+          "telemetry"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-09-teams-openwebui-sync",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_teams/09",
+    "raw_event": {
+      "id": "raw-ih-09-teams-openwebui-sync",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-09-teams-openwebui-sync",
+      "conversation_or_project_id": "conv-ms_teams-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "content": "Em sẽ tích hợp tool OpenWebUI mới vào hệ thống trước 16:30 ngày 2026-11-02."
+      },
+      "normalized_text": "Tích hợp tool OpenWebUI mới trước 16:30 ngày 2026-11-02.",
+      "idempotency_key": "idemp-ih-09-teams-openwebui-sync"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "OpenWebUI",
+        "tool"
+      ],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "lead.tran",
+      "expected_due_date": "2026-11-02T16:30:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "OpenWebUI",
+          "tool"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-09-teams-openwebui-sync",
+        "expected_snippet_substrings": [
+          "OpenWebUI"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-10-jira-memory-leak",
+    "case_category": "direct_task",
+    "origin_reference": "independent://jira/10",
+    "raw_event": {
+      "id": "raw-ih-10-jira-memory-leak",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "jira",
+      "external_id": "ext-ih-10-jira-memory-leak",
+      "conversation_or_project_id": "conv-jira-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "content": "[PERF-105] Resolve memory consumption spike during batch extraction sweep"
+      },
+      "normalized_text": "[PERF-105] Resolve memory consumption spike",
+      "idempotency_key": "idemp-ih-10-jira-memory-leak"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "PERF-105",
+        "memory"
+      ],
+      "expected_owner_id": "huy.nguyen",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-03T17:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "PERF-105",
+          "memory"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-10-jira-memory-leak",
+        "expected_snippet_substrings": [
+          "PERF-105"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-11-github-pr-review",
+    "case_category": "direct_task",
+    "origin_reference": "independent://github/11",
+    "raw_event": {
+      "id": "raw-ih-11-github-pr-review",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "github",
+      "external_id": "ext-ih-11-github-pr-review",
+      "conversation_or_project_id": "conv-github-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "mai.le@company.com",
+      "author_display_name": "Mai Le",
+      "raw_payload": {
+        "content": "Mình sẽ approve và merge PR-205 sau khi CI xanh trước 14:00 ngày 2026-11-04."
+      },
+      "normalized_text": "Merge PR-205 sau khi CI xanh trước 14:00.",
+      "idempotency_key": "idemp-ih-11-github-pr-review"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "merge",
+        "PR-205"
+      ],
+      "expected_owner_id": "mai.le",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-04T14:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "merge",
+          "PR-205"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-11-github-pr-review",
+        "expected_snippet_substrings": [
+          "merge"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-12-outlook-backup-policy",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_outlook/12",
+    "raw_event": {
+      "id": "raw-ih-12-outlook-backup-policy",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-ih-12-outlook-backup-policy",
+      "conversation_or_project_id": "conv-ms_outlook-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
+      "raw_payload": {
+        "content": "Tôi sẽ chạy bài test phục hồi từ snapshot sao lưu trước 18:00 ngày 2026-11-05."
+      },
+      "normalized_text": "Chạy bài test phục hồi từ snapshot trước 18:00 ngày 2026-11-05.",
+      "idempotency_key": "idemp-ih-12-outlook-backup-policy"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "test",
+        "snapshot"
+      ],
+      "expected_owner_id": "lead.tran",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-05T18:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "test",
+          "snapshot"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-12-outlook-backup-policy",
+        "expected_snippet_substrings": [
+          "test"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-13-slack-rate-limit-tune",
+    "case_category": "direct_task",
+    "origin_reference": "independent://slack/13",
+    "raw_event": {
+      "id": "raw-ih-13-slack-rate-limit-tune",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-13-slack-rate-limit-tune",
+      "conversation_or_project_id": "conv-slack-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "content": "Để em tinh chỉnh rate limit của Jira adapter trước 15:00 ngày 2026-11-06."
+      },
+      "normalized_text": "Tinh chỉnh rate limit Jira adapter trước 15:00 ngày 2026-11-06.",
+      "idempotency_key": "idemp-ih-13-slack-rate-limit-tune"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "rate limit",
+        "Jira"
+      ],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "lead.tran",
+      "expected_due_date": "2026-11-06T15:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "rate limit",
+          "Jira"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-13-slack-rate-limit-tune",
+        "expected_snippet_substrings": [
+          "rate limit"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-14-teams-e2e-suite",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_teams/14",
+    "raw_event": {
+      "id": "raw-ih-14-teams-e2e-suite",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-14-teams-e2e-suite",
+      "conversation_or_project_id": "conv-ms_teams-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "mai.le@company.com",
+      "author_display_name": "Mai Le",
+      "raw_payload": {
+        "content": "Em sẽ bổ sung 5 test case E2E cho luồng Microsoft 365 trước 17:00 ngày 2026-11-07."
+      },
+      "normalized_text": "Bổ sung 5 test case E2E trước 17:00 ngày 2026-11-07.",
+      "idempotency_key": "idemp-ih-14-teams-e2e-suite"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "test case",
+        "E2E"
+      ],
+      "expected_owner_id": "mai.le",
+      "expected_owner_name": null,
+      "expected_requester_id": "lead.tran",
+      "expected_due_date": "2026-11-07T17:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "test case",
+          "E2E"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-14-teams-e2e-suite",
+        "expected_snippet_substrings": [
+          "test case"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-15-jira-docker-hardening",
+    "case_category": "direct_task",
+    "origin_reference": "independent://jira/15",
+    "raw_event": {
+      "id": "raw-ih-15-jira-docker-hardening",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "jira",
+      "external_id": "ext-ih-15-jira-docker-hardening",
+      "conversation_or_project_id": "conv-jira-main",
+      "event_timestamp": "2026-10-17T08:00:00Z",
+      "captured_at": "2026-10-17T08:00:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "content": "[OPS-330] Enforce non-root execution and secret masking in docker-compose.prod.yml"
+      },
+      "normalized_text": "[OPS-330] Enforce non-root execution in production container",
+      "idempotency_key": "idemp-ih-15-jira-docker-hardening"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "OPS-330",
+        "production"
+      ],
+      "expected_owner_id": "huy.nguyen",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-08T18:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "OPS-330",
+          "production"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-15-jira-docker-hardening",
+        "expected_snippet_substrings": [
+          "OPS-330"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-16-teams-lunch-chat",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://ms_teams/16",
+    "raw_event": {
+      "id": "raw-ih-16-teams-lunch-chat",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-16-teams-lunch-chat",
+      "conversation_or_project_id": "conv-ms_teams-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Trưa nay mọi người ăn gì? Đi bún chả hay cơm tấm?"
+      },
+      "normalized_text": "Trưa nay mọi người ăn gì? Đi bún chả hay cơm tấm?",
+      "idempotency_key": "idemp-ih-16-teams-lunch-chat"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-16-teams-lunch-chat",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-17-slack-coffee-break",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://slack/17",
+    "raw_event": {
+      "id": "raw-ih-17-slack-coffee-break",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-17-slack-coffee-break",
+      "conversation_or_project_id": "conv-slack-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Ai order cà phê chiều không, mình đặt chung nhé."
+      },
+      "normalized_text": "Ai order cà phê chiều không, mình đặt chung nhé.",
+      "idempotency_key": "idemp-ih-17-slack-coffee-break"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-17-slack-coffee-break",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-18-outlook-birthday-wishes",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://ms_outlook/18",
+    "raw_event": {
+      "id": "raw-ih-18-outlook-birthday-wishes",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-ih-18-outlook-birthday-wishes",
+      "conversation_or_project_id": "conv-ms_outlook-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Chúc mừng sinh nhật Mai! Chúc bạn tuổi mới nhiều niềm vui."
+      },
+      "normalized_text": "Chúc mừng sinh nhật Mai! Chúc bạn tuổi mới nhiều niềm vui.",
+      "idempotency_key": "idemp-ih-18-outlook-birthday-wishes"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-18-outlook-birthday-wishes",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-19-teams-weather-smalltalk",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://ms_teams/19",
+    "raw_event": {
+      "id": "raw-ih-19-teams-weather-smalltalk",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-19-teams-weather-smalltalk",
+      "conversation_or_project_id": "conv-ms_teams-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Hà Nội hôm nay mưa to quá, mọi người đi làm cẩn thận."
+      },
+      "normalized_text": "Hà Nội hôm nay mưa to quá, mọi người đi làm cẩn thận.",
+      "idempotency_key": "idemp-ih-19-teams-weather-smalltalk"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-19-teams-weather-smalltalk",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-20-slack-random-meme",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://slack/20",
+    "raw_event": {
+      "id": "raw-ih-20-slack-random-meme",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-20-slack-random-meme",
+      "conversation_or_project_id": "conv-slack-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Xem cái meme này hài vãi mọi người ơi :joy:"
+      },
+      "normalized_text": "Xem cái meme này hài vãi mọi người ơi :joy:",
+      "idempotency_key": "idemp-ih-20-slack-random-meme"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-20-slack-random-meme",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-21-teams-traffic-warning",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://ms_teams/21",
+    "raw_event": {
+      "id": "raw-ih-21-teams-traffic-warning",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-21-teams-traffic-warning",
+      "conversation_or_project_id": "conv-ms_teams-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Đoạn đường Cầu Giấy đang tắc cứng, ai đi qua né ra nhé."
+      },
+      "normalized_text": "Đoạn đường Cầu Giấy đang tắc cứng, ai đi qua né ra nhé.",
+      "idempotency_key": "idemp-ih-21-teams-traffic-warning"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-21-teams-traffic-warning",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-22-outlook-out-of-office",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://ms_outlook/22",
+    "raw_event": {
+      "id": "raw-ih-22-outlook-out-of-office",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-ih-22-outlook-out-of-office",
+      "conversation_or_project_id": "conv-ms_outlook-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Tôi đang nghỉ phép từ 17/10 đến 20/10. Khẩn cấp xin liên hệ qua số điện thoại."
+      },
+      "normalized_text": "Tôi đang nghỉ phép từ 17/10 đến 20/10. Khẩn cấp xin liên hệ qua số điện thoại.",
+      "idempotency_key": "idemp-ih-22-outlook-out-of-office"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-22-outlook-out-of-office",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-23-slack-thank-you",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://slack/23",
+    "raw_event": {
+      "id": "raw-ih-23-slack-thank-you",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-23-slack-thank-you",
+      "conversation_or_project_id": "conv-slack-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Cảm ơn cả team vì đã phối hợp rất mượt mà trong sprint vừa rồi!"
+      },
+      "normalized_text": "Cảm ơn cả team vì đã phối hợp rất mượt mà trong sprint vừa rồi!",
+      "idempotency_key": "idemp-ih-23-slack-thank-you"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-23-slack-thank-you",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-24-teams-weekend-plans",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://ms_teams/24",
+    "raw_event": {
+      "id": "raw-ih-24-teams-weekend-plans",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-24-teams-weekend-plans",
+      "conversation_or_project_id": "conv-ms_teams-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Cuối tuần này có ai đi đá bóng không mọi người?"
+      },
+      "normalized_text": "Cuối tuần này có ai đi đá bóng không mọi người?",
+      "idempotency_key": "idemp-ih-24-teams-weekend-plans"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-24-teams-weekend-plans",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-25-slack-welcome-newbie",
+    "case_category": "chitchat_noise",
+    "origin_reference": "independent://slack/25",
+    "raw_event": {
+      "id": "raw-ih-25-slack-welcome-newbie",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-25-slack-welcome-newbie",
+      "conversation_or_project_id": "conv-slack-random",
+      "event_timestamp": "2026-10-17T08:30:00Z",
+      "captured_at": "2026-10-17T08:30:05Z",
+      "author_external_id": "user@company.com",
+      "author_display_name": "Teammate",
+      "raw_payload": {
+        "content": "Chào mừng bạn Huy gia nhập engineering team PTB!"
+      },
+      "normalized_text": "Chào mừng bạn Huy gia nhập engineering team PTB!",
+      "idempotency_key": "idemp-ih-25-slack-welcome-newbie"
+    },
+    "ground_truth": {
+      "expected_is_task": false,
+      "clarity": "CLEAR",
+      "control_type": "NONE",
+      "expected_title_keywords": [],
+      "expected_owner_id": null,
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": null,
+      "expected_review_status": "ignore",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": []
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-25-slack-welcome-newbie",
+        "expected_snippet_substrings": []
+      }
+    }
+  },
+  {
+    "sample_id": "ih-26-teams-quote-attribution",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_teams/26",
+    "raw_event": {
+      "id": "raw-ih-26-teams-quote-attribution",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-26-teams-quote-attribution",
+      "conversation_or_project_id": "conv-ms_teams-main",
+      "event_timestamp": "2026-10-17T09:00:00Z",
+      "captured_at": "2026-10-17T09:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "content": "<blockquote><span itemid=\"lead.tran\">Tran Van Lead</span>: Nhờ Cường fix bug timeout ở search engine trước 16:00 ngày 2026-11-09</blockquote>Vâng anh, em sẽ fix bug timeout này trước 16:00."
+      },
+      "normalized_text": "Em sẽ fix bug timeout này trước 16:00 ngày 2026-11-09.",
+      "idempotency_key": "idemp-ih-26-teams-quote-attribution"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "timeout",
+        "search engine"
+      ],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": "lead.tran",
+      "expected_due_date": "2026-11-09T16:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "timeout",
+          "search engine"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-26-teams-quote-attribution",
+        "expected_snippet_substrings": [
+          "timeout"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-27-slack-status-in-progress",
+    "case_category": "direct_task",
+    "origin_reference": "independent://slack/27",
+    "raw_event": {
+      "id": "raw-ih-27-slack-status-in-progress",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "slack",
+      "external_id": "ext-ih-27-slack-status-in-progress",
+      "conversation_or_project_id": "conv-slack-main",
+      "event_timestamp": "2026-10-17T09:00:00Z",
+      "captured_at": "2026-10-17T09:00:05Z",
+      "author_external_id": "mai.le@company.com",
+      "author_display_name": "Mai Le",
+      "raw_payload": {
+        "content": "Mình đang bắt tay vào refactor adapter Outlook Web, dự kiến xong trước 17:00 ngày 2026-11-10."
+      },
+      "normalized_text": "Đang xử lý refactor adapter Outlook Web trước 17:00.",
+      "idempotency_key": "idemp-ih-27-slack-status-in-progress"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "refactor",
+        "Outlook"
+      ],
+      "expected_owner_id": "mai.le",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-10T17:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "IN_PROGRESS",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "refactor",
+          "Outlook"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-27-slack-status-in-progress",
+        "expected_snippet_substrings": [
+          "refactor"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-28-github-pr-status-update",
+    "case_category": "direct_task",
+    "origin_reference": "independent://github/28",
+    "raw_event": {
+      "id": "raw-ih-28-github-pr-status-update",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "github",
+      "external_id": "ext-ih-28-github-pr-status-update",
+      "conversation_or_project_id": "conv-github-main",
+      "event_timestamp": "2026-10-17T09:00:00Z",
+      "captured_at": "2026-10-17T09:00:05Z",
+      "author_external_id": "huy.nguyen@company.com",
+      "author_display_name": "Nguyen Van Huy",
+      "raw_payload": {
+        "content": "Đã hoàn thành merge PR-220 và deploy lên cluster production ngày 2026-11-11."
+      },
+      "normalized_text": "Đã xong merge PR-220 và deploy production.",
+      "idempotency_key": "idemp-ih-28-github-pr-status-update"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "merge",
+        "PR-220"
+      ],
+      "expected_owner_id": "huy.nguyen",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-11T18:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "DONE",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "merge",
+          "PR-220"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-28-github-pr-status-update",
+        "expected_snippet_substrings": [
+          "merge"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-29-teams-relative-deadline",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_teams/29",
+    "raw_event": {
+      "id": "raw-ih-29-teams-relative-deadline",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_teams",
+      "external_id": "ext-ih-29-teams-relative-deadline",
+      "conversation_or_project_id": "conv-ms_teams-main",
+      "event_timestamp": "2026-10-17T09:00:00Z",
+      "captured_at": "2026-10-17T09:00:05Z",
+      "author_external_id": "lead.tran@company.com",
+      "author_display_name": "Tran Van Lead",
+      "raw_payload": {
+        "content": "Anh sẽ chuẩn bị slide báo cáo quý 4 trước 17:00 ngày 2026-11-12."
+      },
+      "normalized_text": "Chuẩn bị slide báo cáo quý 4 trước 17:00 ngày 2026-11-12.",
+      "idempotency_key": "idemp-ih-29-teams-relative-deadline"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "slide",
+        "báo cáo"
+      ],
+      "expected_owner_id": "lead.tran",
+      "expected_owner_name": null,
+      "expected_requester_id": null,
+      "expected_due_date": "2026-11-12T17:00:00Z",
+      "expected_explicit_deadline": true,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "slide",
+          "báo cáo"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-29-teams-relative-deadline",
+        "expected_snippet_substrings": [
+          "slide"
+        ]
+      }
+    }
+  },
+  {
+    "sample_id": "ih-30-outlook-decision-record",
+    "case_category": "direct_task",
+    "origin_reference": "independent://ms_outlook/30",
+    "raw_event": {
+      "id": "raw-ih-30-outlook-decision-record",
+      "tenant_id": "tenant-fpt-internal",
+      "source_type": "ms_outlook",
+      "external_id": "ext-ih-30-outlook-decision-record",
+      "conversation_or_project_id": "conv-ms_outlook-main",
+      "event_timestamp": "2026-10-17T09:00:00Z",
+      "captured_at": "2026-10-17T09:00:05Z",
+      "author_external_id": "cuong.dam@company.com",
+      "author_display_name": "Dam Quang Cuong",
+      "raw_payload": {
+        "content": "Quyết định chọn Neo4j 5.26 LTS làm nền tảng đồ thị chính thức cho PTB v1.3."
+      },
+      "normalized_text": "Quyết định chọn Neo4j 5.26 LTS làm nền tảng đồ thị chính thức.",
+      "idempotency_key": "idemp-ih-30-outlook-decision-record"
+    },
+    "ground_truth": {
+      "expected_is_task": true,
+      "clarity": "CLEAR",
+      "control_type": "COMMITMENT",
+      "expected_title_keywords": [
+        "Neo4j",
+        "đồ thị"
+      ],
+      "expected_owner_id": "cuong.dam",
+      "expected_owner_name": "Dam Quang Cuong",
+      "expected_requester_id": null,
+      "expected_due_date": null,
+      "expected_explicit_deadline": false,
+      "expected_status": "TODO",
+      "expected_review_status": "auto_approved",
+      "correlation": {
+        "expected_merge": false,
+        "expected_anchors": [
+          "Neo4j",
+          "đồ thị"
+        ]
+      },
+      "evidence": {
+        "source_event_id": "raw-ih-30-outlook-decision-record",
+        "expected_snippet_substrings": [
+          "Neo4j"
+        ]
+      }
+    }
+  }
+]

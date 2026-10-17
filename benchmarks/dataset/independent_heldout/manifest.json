@@ -1,0 +1,93 @@
+{
+  "dataset_name": "PTB-INDEPENDENT-HELDOUT-30",
+  "version": "1.0.0",
+  "commit_baseline": "893de9ad8bd4be53587301dd3d7455f9345ca6a7",
+  "created_at": "2026-10-17T12:00:00Z",
+  "evaluation_now": "2026-10-17T12:00:00Z",
+  "samples_sha256": "0b1d9aa8fea246c432f822a89b15dbaf36abb0868e4b8a759ce983d33456ebda",
+  "probes_sha256": "4d5054753851dbd72f876ee95fec4be367cb1f1b86a9f99ec2b1825e67b7de89",
+  "dataset_files": {
+    "samples.json": {
+      "sha256": "0b1d9aa8fea246c432f822a89b15dbaf36abb0868e4b8a759ce983d33456ebda",
+      "size_bytes": 48842,
+      "item_count": 30
+    },
+    "probes.json": {
+      "sha256": "4d5054753851dbd72f876ee95fec4be367cb1f1b86a9f99ec2b1825e67b7de89",
+      "size_bytes": 830,
+      "item_count": 2
+    }
+  },
+  "allowed_email_domains": [
+    "company.com",
+    "fpt.com"
+  ],
+  "supported_controls": [
+    "COMMITMENT",
+    "NONE",
+    "DECISION",
+    "LESSON"
+  ],
+  "personas": [
+    {
+      "canonical_id": "cuong.dam",
+      "canonical_name": "Dam Quang Cuong",
+      "email": "cuong.dam@company.com",
+      "account_ids": [
+        "cuong.dam",
+        "cuong.dam_jira"
+      ],
+      "aliases": [
+        "Cuong",
+        "anh Cường",
+        "anh Cuong"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": true
+    },
+    {
+      "canonical_id": "lead.tran",
+      "canonical_name": "Tran Van Lead",
+      "email": "lead.tran@company.com",
+      "account_ids": [
+        "lead.tran",
+        "lead.tran_jira"
+      ],
+      "aliases": [
+        "Lead",
+        "anh Lead",
+        "Tran Van Lead"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "huy.nguyen",
+      "canonical_name": "Nguyen Van Huy",
+      "email": "huy.nguyen@company.com",
+      "account_ids": [
+        "huy.nguyen"
+      ],
+      "aliases": [
+        "Huy",
+        "anh Huy"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    },
+    {
+      "canonical_id": "mai.le",
+      "canonical_name": "Mai Le",
+      "email": "mai.le@company.com",
+      "account_ids": [
+        "mai.le"
+      ],
+      "aliases": [
+        "Mai",
+        "chị Mai"
+      ],
+      "tenant_id": "tenant-fpt-internal",
+      "is_current_user": false
+    }
+  ]
+}

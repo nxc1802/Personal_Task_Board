@@ -134,8 +134,13 @@ class BenchmarkMetricEvaluator:
 
         macro_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
         tot_tp = sum(s["TP"] for s in channel_stats.values())
-        tot_events = sum(s["TP"] + s["FP"] + s["FN"] + s["TN"] for s in channel_stats.values())
-        ci1_low, ci1_high = wilson_score_interval(tot_tp, tot_events)
+        tot_task_cases = sum(s["TP"] + s["FN"] for s in channel_stats.values())
+        if tot_task_cases > 0:
+            ci1_low, ci1_high = wilson_score_interval(tot_tp, tot_task_cases)
+        else:
+            tot_events = sum(s["TP"] + s["FP"] + s["FN"] + s["TN"] for s in channel_stats.values())
+            tot_correct = sum(s["TP"] + s["TN"] for s in channel_stats.values())
+            ci1_low, ci1_high = wilson_score_interval(tot_correct, tot_events)
         d1_passed = macro_f1 >= 0.88
 
         dimensions.append(

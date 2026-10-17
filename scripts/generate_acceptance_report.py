@@ -133,9 +133,12 @@ def generate_dev_report(
     task_commands: Optional[Dict[str, str]] = None,
     task_evidences: Optional[Dict[str, str]] = None,
     output_path: Optional[Path] = None,
+    tested_source_sha: Optional[str] = None,
+    report_commit_sha: Optional[str] = None,
 ) -> Path:
     """Generate reports/release_acceptance/<SHA>/DEV_REPORT.md file."""
-    sha = commit_sha or get_git_commit_sha()
+    sha = tested_source_sha or commit_sha or get_git_commit_sha()
+    rep_sha = report_commit_sha or sha
     auth = author or get_git_author()
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -205,6 +208,8 @@ def generate_dev_report(
 
     report_lines = [
         "# PTB Release Acceptance Report",
+        f"- **Tested Source SHA:** `{sha}`",
+        f"- **Report Commit SHA:** `{rep_sha}`",
         f"- **Commit SHA:** `{sha}`",
         f"- **Date UTC:** {now_utc}",
         f"- **Author/reviewer:** `{auth}`",
@@ -279,6 +284,31 @@ def generate_dev_report(
     return target_file
 
 
+MANDATORY_CI_JOBS = [
+    "Live E2E Integration (Neo4j Service)",
+    "Test (ubuntu-latest / Python 3.11)",
+    "Test (ubuntu-latest / Python 3.12)",
+    "Test (ubuntu-latest / Python 3.13)",
+    "Test (windows-latest / Python 3.11)",
+    "Test (windows-latest / Python 3.12)",
+    "Test (windows-latest / Python 3.13)",
+    "Test (macos-latest / Python 3.11)",
+    "Test (macos-latest / Python 3.12)",
+    "Test (macos-latest / Python 3.13)",
+]
+
+MANDATORY_MATRIX_STEPS = [
+    "Run Anti-Fallback & Contract Tests",
+    "Run Unit Tests",
+    "Run Release Readiness Gates",
+    "Validate Benchmark Dataset Manifests",
+]
+
+MANDATORY_NEO4J_STEPS = [
+    "Run Live E2E Vertical Slice Test",
+]
+
+
 def verify_github_ci_status(
     commit_sha: str,
     run_id: Optional[str] = None,
@@ -287,10 +317,13 @@ def verify_github_ci_status(
 ) -> Tuple[bool, Optional[str], str]:
     """Verify GitHub Actions CI status for a target commit SHA and optional run ID.
 
-    Queries GitHub API to verify:
-    1. head_sha matches the target commit_sha (or prefixes if shortened)
-    2. status == "completed" and conclusion == "success"
-    3. all matrix/integration workflow jobs completed with conclusion == "success"
+    Queries GitHub API to strictly verify:
+    1. head_sha matches the target commit_sha with exact full SHA (when 40 chars provided).
+    2. status == "completed" and conclusion == "success".
+    3. Exactly all 10 mandatory matrix and live integration jobs are present and successful.
+    4. Mandatory test steps (Anti-Fallback, Unit, Release Readiness, Benchmark Manifests, E2E)
+       were actually executed and concluded with success.
+    5. Handles pagination across workflow jobs.
 
     Returns:
         (is_verified_pass, actual_run_id, status_message_or_evidence)
@@ -311,38 +344,56 @@ def verify_github_ci_status(
 
     target_run_id = str(run_id).strip() if run_id else None
 
+    def _fetch_github_json(url: str) -> Dict[str, Any]:
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401 and "Authorization" in headers:
+                # Token might be invalid/expired/placeholder; retry without Authorization for public repos
+                headers_no_auth = {k: v for k, v in headers.items() if k != "Authorization"}
+                req_no_auth = urllib.request.Request(url, headers=headers_no_auth)
+                with urllib.request.urlopen(req_no_auth, timeout=timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            raise
+
     try:
         # If run_id not provided, discover run for commit_sha
         if not target_run_id:
             if not normalized_sha or normalized_sha.startswith("unknown"):
                 return False, None, "Commit SHA not specified; cannot query GitHub Actions."
             runs_url = f"https://api.github.com/repos/{repo}/actions/runs?head_sha={normalized_sha}"
-            req = urllib.request.Request(runs_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                runs = data.get("workflow_runs", [])
-                if not runs:
-                    return False, None, f"No remote GitHub Actions runs found for commit {short_sha}."
-                target_run_id = str(runs[0].get("id"))
+            data = _fetch_github_json(runs_url)
+            runs = data.get("workflow_runs", [])
+            if not runs:
+                return False, None, f"No remote GitHub Actions runs found for commit {short_sha}."
+            target_run_id = str(runs[0].get("id"))
 
         # Verify run metadata
         run_url = f"https://api.github.com/repos/{repo}/actions/runs/{target_run_id}"
-        req = urllib.request.Request(run_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            run_data = json.loads(resp.read().decode("utf-8"))
+        run_data = _fetch_github_json(run_url)
 
         run_head_sha = str(run_data.get("head_sha", "")).strip().lower()
         run_status = run_data.get("status")
         run_conclusion = run_data.get("conclusion")
 
-        # Verify SHA match if target commit_sha was provided
+        # Verify full 40-character SHA matching
         if normalized_sha and not normalized_sha.startswith("unknown"):
-            if not (run_head_sha == normalized_sha or run_head_sha.startswith(normalized_sha) or normalized_sha.startswith(run_head_sha)):
-                return (
-                    False,
-                    target_run_id,
-                    f"GitHub Actions run #{target_run_id} head SHA mismatch: run has {run_head_sha[:10]}, expected {short_sha}.",
-                )
+            if len(normalized_sha) == 40:
+                if run_head_sha != normalized_sha:
+                    return (
+                        False,
+                        target_run_id,
+                        f"GitHub Actions run #{target_run_id} head SHA mismatch: run has {run_head_sha}, expected {normalized_sha}.",
+                    )
+            else:
+                if not (run_head_sha.startswith(normalized_sha) or normalized_sha.startswith(run_head_sha)):
+                    return (
+                        False,
+                        target_run_id,
+                        f"GitHub Actions run #{target_run_id} head SHA mismatch: run has {run_head_sha[:10]}, expected {short_sha}.",
+                    )
 
         if run_status != "completed":
             return (
@@ -358,13 +409,21 @@ def verify_github_ci_status(
                 f"GitHub Actions run #{target_run_id} finished with conclusion '{run_conclusion}' (expected success).",
             )
 
-        # Verify individual jobs
-        jobs_url = f"https://api.github.com/repos/{repo}/actions/runs/{target_run_id}/jobs"
-        req_jobs = urllib.request.Request(jobs_url, headers=headers)
-        with urllib.request.urlopen(req_jobs, timeout=timeout) as resp:
-            jobs_data = json.loads(resp.read().decode("utf-8"))
+        # Retrieve all jobs with pagination
+        jobs: List[Dict[str, Any]] = []
+        page = 1
+        while True:
+            jobs_url = f"https://api.github.com/repos/{repo}/actions/runs/{target_run_id}/jobs?per_page=100&page={page}"
+            jobs_data = _fetch_github_json(jobs_url)
+            batch = jobs_data.get("jobs", [])
+            if not batch:
+                break
+            jobs.extend(batch)
+            total_count = jobs_data.get("total_count", len(jobs))
+            if len(jobs) >= total_count or len(batch) < 100:
+                break
+            page += 1
 
-        jobs = jobs_data.get("jobs", [])
         if not jobs:
             return (
                 False,
@@ -372,18 +431,67 @@ def verify_github_ci_status(
                 f"GitHub Actions run #{target_run_id} reported no jobs.",
             )
 
-        failed_jobs = [j.get("name", "unknown") for j in jobs if j.get("conclusion") != "success"]
+        jobs_by_name = {j.get("name"): j for j in jobs}
+
+        # Verify presence of all 10 mandatory jobs
+        missing_jobs = [job_name for job_name in MANDATORY_CI_JOBS if job_name not in jobs_by_name]
+        if missing_jobs:
+            return (
+                False,
+                target_run_id,
+                f"GitHub Actions run #{target_run_id} missing mandatory job(s): {', '.join(missing_jobs)}.",
+            )
+
+        # Verify completion and conclusion of all jobs
+        incomplete_jobs = []
+        failed_jobs = []
+        for name, job in jobs_by_name.items():
+            if job.get("status") != "completed":
+                incomplete_jobs.append(f"{name} ({job.get('status')})")
+            elif job.get("conclusion") != "success":
+                failed_jobs.append(f"{name} ({job.get('conclusion')})")
+
+        if incomplete_jobs:
+            return (
+                False,
+                target_run_id,
+                f"GitHub Actions run #{target_run_id} has incomplete job(s): {', '.join(incomplete_jobs[:3])}.",
+            )
         if failed_jobs:
             return (
                 False,
                 target_run_id,
-                f"GitHub Actions run #{target_run_id} has {len(failed_jobs)} non-success job(s): {', '.join(failed_jobs[:3])}.",
+                f"GitHub Actions run #{target_run_id} has non-success job(s): {', '.join(failed_jobs[:3])}.",
+            )
+
+        # Verify mandatory steps inside each mandatory job
+        missing_steps_errors = []
+        for job_name in MANDATORY_CI_JOBS:
+            job = jobs_by_name[job_name]
+            steps = job.get("steps", [])
+            steps_by_name = {s.get("name"): s for s in steps}
+            required_steps = MANDATORY_NEO4J_STEPS if "Neo4j" in job_name else MANDATORY_MATRIX_STEPS
+            for step_name in required_steps:
+                if step_name not in steps_by_name:
+                    missing_steps_errors.append(f"{job_name}: missing step '{step_name}'")
+                else:
+                    step = steps_by_name[step_name]
+                    if step.get("conclusion") != "success":
+                        missing_steps_errors.append(
+                            f"{job_name}: step '{step_name}' has conclusion='{step.get('conclusion')}'"
+                        )
+
+        if missing_steps_errors:
+            return (
+                False,
+                target_run_id,
+                f"GitHub Actions run #{target_run_id} failed mandatory step verification: {'; '.join(missing_steps_errors[:2])}.",
             )
 
         return (
             True,
             target_run_id,
-            f"Green {len(jobs)}/{len(jobs)} jobs (matrix + integration) verified on GitHub Actions run #{target_run_id}.",
+            f"Green 10/10 mandatory jobs and required verification steps verified on GitHub Actions run #{target_run_id}.",
         )
 
     except urllib.error.HTTPError as exc:
@@ -460,7 +568,8 @@ def run_verification_checks(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate PTB Release Acceptance Report")
-    parser.add_argument("--sha", type=str, default=None, help="Explicit 40-character commit SHA (default: git rev-parse HEAD)")
+    parser.add_argument("--sha", "--tested-source-sha", dest="sha", type=str, default=None, help="Explicit 40-character commit SHA (default: git rev-parse HEAD)")
+    parser.add_argument("--report-commit-sha", type=str, default=None, help="Explicit commit SHA containing the DEV_REPORT")
     parser.add_argument("--author", type=str, default=None, help="Author/reviewer name")
     parser.add_argument("--verdict", choices=["GO", "NO-GO", "PENDING"], default="PENDING", help="Overall verdict")
     parser.add_argument("--output", type=str, default=None, help="Custom output path")
@@ -498,6 +607,8 @@ def main() -> int:
         task_commands=task_commands,
         task_evidences=task_evidences,
         output_path=Path(args.output) if args.output else None,
+        tested_source_sha=target_sha,
+        report_commit_sha=args.report_commit_sha,
     )
     print(f"[+] Acceptance report successfully generated at: {out_file}")
     return 0
