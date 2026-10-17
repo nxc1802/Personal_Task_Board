@@ -12,7 +12,14 @@ def test_acceptance_report_generation(tmp_path: Path):
         commit_sha="abcdef1234567890abcdef1234567890abcdef12",
         author="test-engineer",
         verdict="GO",
-        task_statuses={"DEV-P0-01": "PASS", "DEV-P1-01": "PASS"},
+        task_statuses={
+            "DEV-P0-01": "PASS",
+            "DEV-P0-02": "PASS",
+            "DEV-P0-03": "PASS",
+            "DEV-P1-01": "PASS",
+            "DEV-P1-02": "PASS",
+            "DEV-P1-05": "PASS",
+        },
         output_path=target,
     )
     assert generated_path == target
@@ -25,6 +32,20 @@ def test_acceptance_report_generation(tmp_path: Path):
     assert "DEV-P0-01" in content
     assert "DEV-P1-01" in content
     assert "**PASS**" in content
+
+
+@pytest.mark.unit
+def test_acceptance_report_verdict_coerced_to_pending_when_gates_incomplete(tmp_path: Path):
+    target = tmp_path / "DEV_REPORT_GUARD.md"
+    generate_dev_report(
+        commit_sha="abcdef1234567890abcdef1234567890abcdef12",
+        author="test-engineer",
+        verdict="GO",
+        task_statuses={"DEV-P0-01": "PASS"},  # Only Gate 1 is PASS
+        output_path=target,
+    )
+    content = target.read_text(encoding="utf-8")
+    assert "Overall Release Verdict:** **PENDING**" in content
 
 
 @pytest.mark.unit
@@ -45,8 +66,13 @@ def test_acceptance_report_with_commands(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_run_verification_checks_with_ci_run():
+def test_run_verification_checks_with_ci_run(monkeypatch):
     from scripts.generate_acceptance_report import run_verification_checks
+
+    def fake_verify_ci(commit_sha, run_id=None, repo=None, timeout=None):
+        return True, run_id or "38944067496", "Green 10/10 jobs verified on GitHub Actions run #38944067496."
+
+    monkeypatch.setattr("scripts.generate_acceptance_report.verify_github_ci_status", fake_verify_ci)
     statuses, commands, evidences = run_verification_checks(ci_run="38944067496")
     assert statuses.get("DEV-P0-01") == "PASS"
     assert "38944067496" in commands.get("DEV-P0-01", "")
@@ -55,3 +81,45 @@ def test_run_verification_checks_with_ci_run():
     assert statuses.get("DEV-P1-01") == "PENDING"
     assert statuses.get("DEV-P1-03") == "PENDING"
     assert statuses.get("DEV-P1-04") == "PENDING"
+
+
+@pytest.mark.unit
+def test_verify_github_ci_status_failure_and_mismatch(monkeypatch):
+    import io
+    import json
+    import urllib.request
+    from scripts.generate_acceptance_report import verify_github_ci_status
+
+    # Case 1: SHA mismatch
+    def fake_urlopen_mismatch(req, timeout=None):
+        data = {
+            "head_sha": "9999999999999999999999999999999999999999",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        return io.BytesIO(json.dumps(data).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_mismatch)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="12345",
+    )
+    assert not passed
+    assert "head SHA mismatch" in msg
+
+    # Case 2: Workflow failed
+    def fake_urlopen_failed(req, timeout=None):
+        data = {
+            "head_sha": "1111111111111111111111111111111111111111",
+            "status": "completed",
+            "conclusion": "failure",
+        }
+        return io.BytesIO(json.dumps(data).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen_failed)
+    passed, run_id, msg = verify_github_ci_status(
+        commit_sha="1111111111111111111111111111111111111111",
+        run_id="12345",
+    )
+    assert not passed
+    assert "failure" in msg

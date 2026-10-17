@@ -2851,19 +2851,36 @@ async def cmd_mcp(args: argparse.Namespace) -> int:
 
 async def cmd_acceptance_report(args: argparse.Namespace) -> int:
     """Tạo báo cáo nghiệm thu phát hành theo chuẩn docs/RELEASE_ACCEPTANCE_HANDOFF.md."""
-    from scripts.generate_acceptance_report import generate_dev_report, run_verification_checks
+    from scripts.generate_acceptance_report import (
+        generate_dev_report,
+        run_verification_checks,
+        verify_github_ci_status,
+        get_git_commit_sha,
+    )
     task_statuses: Dict[str, str] = {}
     task_commands: Dict[str, str] = {}
     task_evidences: Dict[str, str] = {}
     ci_run_val = getattr(args, "ci_run", None)
+    target_sha = getattr(args, "sha", None) or get_git_commit_sha()
+
     if getattr(args, "run_checks", False):
-        task_statuses, task_commands, task_evidences = run_verification_checks(ci_run=ci_run_val)
+        task_statuses, task_commands, task_evidences = run_verification_checks(
+            ci_run=ci_run_val,
+            commit_sha=target_sha,
+        )
     elif ci_run_val:
-        task_statuses["DEV-P0-01"] = "PASS"
-        task_commands["DEV-P0-01"] = f"GitHub Actions #{ci_run_val} (Exit 0)"
-        task_evidences["DEV-P0-01"] = f"Green 10/10 jobs (9 OS/Python matrix + 1 Live Neo4j E2E) on GitHub Actions run #{ci_run_val}."
+        ci_pass, verified_run_id, ci_msg = verify_github_ci_status(commit_sha=target_sha, run_id=ci_run_val)
+        if ci_pass and verified_run_id:
+            task_statuses["DEV-P0-01"] = "PASS"
+            task_commands["DEV-P0-01"] = f"GitHub Actions #{verified_run_id} (Exit 0)"
+            task_evidences["DEV-P0-01"] = ci_msg
+        else:
+            task_statuses["DEV-P0-01"] = "PENDING"
+            task_commands["DEV-P0-01"] = f"GitHub Actions #{ci_run_val} (Unverified)"
+            task_evidences["DEV-P0-01"] = f"{ci_msg} Remote CI verification PENDING."
+
     out_file = generate_dev_report(
-        commit_sha=getattr(args, "sha", None),
+        commit_sha=target_sha,
         author=getattr(args, "author", None),
         verdict=getattr(args, "verdict", "PENDING"),
         task_statuses=task_statuses,

@@ -236,6 +236,17 @@ def generate_dev_report(
         "5 — Release Package": "PASS" if t_statuses.get("DEV-P1-05") == "PASS" else "PENDING",
     }
 
+    # Release verdict guard: GO is strictly prohibited unless all 5 release gates are PASS
+    effective_verdict = verdict
+    if verdict == "GO":
+        unpassed_gates = [g for g, s in gate_statuses.items() if s != "PASS"]
+        if unpassed_gates:
+            logger.warning(
+                "Overall verdict GO requested, but gates are not all PASS (%s). Enforcing PENDING.",
+                ", ".join(unpassed_gates),
+            )
+            effective_verdict = "PENDING"
+
     report_lines.extend([
         "",
         "## 2. Raw Measurements & Telemetry Audit",
@@ -255,7 +266,7 @@ def generate_dev_report(
 
     report_lines.extend([
         "",
-        f"- **Overall Release Verdict:** **{verdict}**",
+        f"- **Overall Release Verdict:** **{effective_verdict}**",
         "- **Next audit review note:** Final GO sign-off requires all 5 gates to show PASS at the identical SHA on the remote CI matrix.",
         "",
     ])
@@ -268,11 +279,136 @@ def generate_dev_report(
     return target_file
 
 
-def run_verification_checks(ci_run: Optional[str] = None) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+def verify_github_ci_status(
+    commit_sha: str,
+    run_id: Optional[str] = None,
+    repo: str = "nxc1802/Personal_Task_Board",
+    timeout: float = 8.0,
+) -> Tuple[bool, Optional[str], str]:
+    """Verify GitHub Actions CI status for a target commit SHA and optional run ID.
+
+    Queries GitHub API to verify:
+    1. head_sha matches the target commit_sha (or prefixes if shortened)
+    2. status == "completed" and conclusion == "success"
+    3. all matrix/integration workflow jobs completed with conclusion == "success"
+
+    Returns:
+        (is_verified_pass, actual_run_id, status_message_or_evidence)
+    """
+    import urllib.request
+    import urllib.error
+
+    headers = {
+        "User-Agent": "PTB-Acceptance-Verifier",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    gh_token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    if gh_token:
+        headers["Authorization"] = f"Bearer {gh_token}"
+
+    normalized_sha = (commit_sha or "").strip().lower()
+    short_sha = normalized_sha[:10] if normalized_sha else "unknown"
+
+    target_run_id = str(run_id).strip() if run_id else None
+
+    try:
+        # If run_id not provided, discover run for commit_sha
+        if not target_run_id:
+            if not normalized_sha or normalized_sha.startswith("unknown"):
+                return False, None, "Commit SHA not specified; cannot query GitHub Actions."
+            runs_url = f"https://api.github.com/repos/{repo}/actions/runs?head_sha={normalized_sha}"
+            req = urllib.request.Request(runs_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                runs = data.get("workflow_runs", [])
+                if not runs:
+                    return False, None, f"No remote GitHub Actions runs found for commit {short_sha}."
+                target_run_id = str(runs[0].get("id"))
+
+        # Verify run metadata
+        run_url = f"https://api.github.com/repos/{repo}/actions/runs/{target_run_id}"
+        req = urllib.request.Request(run_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            run_data = json.loads(resp.read().decode("utf-8"))
+
+        run_head_sha = str(run_data.get("head_sha", "")).strip().lower()
+        run_status = run_data.get("status")
+        run_conclusion = run_data.get("conclusion")
+
+        # Verify SHA match if target commit_sha was provided
+        if normalized_sha and not normalized_sha.startswith("unknown"):
+            if not (run_head_sha == normalized_sha or run_head_sha.startswith(normalized_sha) or normalized_sha.startswith(run_head_sha)):
+                return (
+                    False,
+                    target_run_id,
+                    f"GitHub Actions run #{target_run_id} head SHA mismatch: run has {run_head_sha[:10]}, expected {short_sha}.",
+                )
+
+        if run_status != "completed":
+            return (
+                False,
+                target_run_id,
+                f"GitHub Actions run #{target_run_id} is in status '{run_status}' (not completed).",
+            )
+
+        if run_conclusion != "success":
+            return (
+                False,
+                target_run_id,
+                f"GitHub Actions run #{target_run_id} finished with conclusion '{run_conclusion}' (expected success).",
+            )
+
+        # Verify individual jobs
+        jobs_url = f"https://api.github.com/repos/{repo}/actions/runs/{target_run_id}/jobs"
+        req_jobs = urllib.request.Request(jobs_url, headers=headers)
+        with urllib.request.urlopen(req_jobs, timeout=timeout) as resp:
+            jobs_data = json.loads(resp.read().decode("utf-8"))
+
+        jobs = jobs_data.get("jobs", [])
+        if not jobs:
+            return (
+                False,
+                target_run_id,
+                f"GitHub Actions run #{target_run_id} reported no jobs.",
+            )
+
+        failed_jobs = [j.get("name", "unknown") for j in jobs if j.get("conclusion") != "success"]
+        if failed_jobs:
+            return (
+                False,
+                target_run_id,
+                f"GitHub Actions run #{target_run_id} has {len(failed_jobs)} non-success job(s): {', '.join(failed_jobs[:3])}.",
+            )
+
+        return (
+            True,
+            target_run_id,
+            f"Green {len(jobs)}/{len(jobs)} jobs (matrix + integration) verified on GitHub Actions run #{target_run_id}.",
+        )
+
+    except urllib.error.HTTPError as exc:
+        msg = f"GitHub API HTTP {exc.code} for run #{target_run_id or 'query'}: {exc.reason}"
+        logger.warning(msg)
+        return False, target_run_id, msg
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        msg = f"GitHub API connection failed: {exc}"
+        logger.warning(msg)
+        return False, target_run_id, msg
+    except Exception as exc:
+        msg = f"Unexpected error verifying GitHub Actions: {exc}"
+        logger.warning(msg)
+        return False, target_run_id, msg
+
+
+def run_verification_checks(
+    ci_run: Optional[str] = None,
+    commit_sha: Optional[str] = None,
+) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
     """Run real automated verification suites and record truthful statuses, exit codes, and evidence."""
     statuses: Dict[str, str] = {}
     commands: Dict[str, str] = {}
     evidences: Dict[str, str] = {}
+    target_sha = commit_sha or get_git_commit_sha()
 
     checks = [
         ("DEV-P0-01", ["uv", "run", "pytest", "tests/test_anti_fallback_guard.py", "-q"],
@@ -306,10 +442,18 @@ def run_verification_checks(ci_run: Optional[str] = None) -> Tuple[Dict[str, str
             statuses[task_id] = "FAIL"
             evidences[task_id] = f"Verification FAILED (Exit {res.returncode}): {(res.stderr or res.stdout).strip()[:180]}"
 
-    if ci_run:
+    ci_pass, verified_run_id, ci_msg = verify_github_ci_status(
+        commit_sha=target_sha,
+        run_id=ci_run,
+    )
+    if ci_pass and verified_run_id:
         statuses["DEV-P0-01"] = "PASS"
-        commands["DEV-P0-01"] = f"GitHub Actions #{ci_run} (Exit 0)"
-        evidences["DEV-P0-01"] = f"Green 10/10 jobs (9 OS/Python matrix + 1 Live Neo4j E2E) on GitHub Actions run #{ci_run}."
+        commands["DEV-P0-01"] = f"GitHub Actions #{verified_run_id} (Exit 0)"
+        evidences["DEV-P0-01"] = ci_msg
+    elif ci_run or (target_sha and not target_sha.startswith("UNKNOWN")):
+        statuses["DEV-P0-01"] = "PENDING"
+        commands["DEV-P0-01"] = f"GitHub Actions #{verified_run_id or ci_run or 'remote'} (Unverified)"
+        evidences["DEV-P0-01"] = f"{ci_msg} Remote CI verification PENDING."
 
     return statuses, commands, evidences
 
@@ -328,15 +472,26 @@ def main() -> int:
     task_commands: Dict[str, str] = {}
     task_evidences: Dict[str, str] = {}
 
+    target_sha = args.sha or get_git_commit_sha()
+
     if args.run_checks:
-        task_statuses, task_commands, task_evidences = run_verification_checks(ci_run=args.ci_run)
+        task_statuses, task_commands, task_evidences = run_verification_checks(
+            ci_run=args.ci_run,
+            commit_sha=target_sha,
+        )
     elif args.ci_run:
-        task_statuses["DEV-P0-01"] = "PASS"
-        task_commands["DEV-P0-01"] = f"GitHub Actions #{args.ci_run} (Exit 0)"
-        task_evidences["DEV-P0-01"] = f"Green 10/10 jobs (9 OS/Python matrix + 1 Live Neo4j E2E) on GitHub Actions run #{args.ci_run}."
+        ci_pass, verified_run_id, ci_msg = verify_github_ci_status(commit_sha=target_sha, run_id=args.ci_run)
+        if ci_pass and verified_run_id:
+            task_statuses["DEV-P0-01"] = "PASS"
+            task_commands["DEV-P0-01"] = f"GitHub Actions #{verified_run_id} (Exit 0)"
+            task_evidences["DEV-P0-01"] = ci_msg
+        else:
+            task_statuses["DEV-P0-01"] = "PENDING"
+            task_commands["DEV-P0-01"] = f"GitHub Actions #{args.ci_run} (Unverified)"
+            task_evidences["DEV-P0-01"] = f"{ci_msg} Remote CI verification PENDING."
 
     out_file = generate_dev_report(
-        commit_sha=args.sha,
+        commit_sha=target_sha,
         author=args.author,
         verdict=args.verdict,
         task_statuses=task_statuses,

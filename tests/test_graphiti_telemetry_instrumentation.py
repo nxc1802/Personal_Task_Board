@@ -77,3 +77,43 @@ async def test_graphiti_adapters_telemetry_recording(monkeypatch):
     assert metrics["graphiti"]["subcalls_by_type"]["embedding"] == 1
     assert metrics["graphiti"]["subcalls_by_type"]["embedding_batch"] == 1
     assert metrics["graphiti"]["tokens_total"] > 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_graphiti_adapters_fallback_isolation():
+    tracker = get_cost_audit_tracker()
+    tracker.reset()
+
+    class FallbackQwenService:
+        def __init__(self):
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
+        def embed_text(self, text):
+            return [0.0] * 1024
+        def embed_batch(self, texts):
+            return [[0.0] * 1024 for _ in texts]
+
+    class FallbackKevService:
+        def __init__(self):
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
+        def rerank(self, query, documents, top_k=None):
+            return [{"index": i, "document": d, "score": 0.5} for i, d in enumerate(documents)]
+
+    embedder = GraphitiQwen3Embedder(embedding_service=FallbackQwenService())
+    await embedder.create("Offline query")
+    await embedder.create_batch(["Offline 1", "Offline 2"])
+
+    reranker = GraphitiKevCrossEncoder(reranker_service=FallbackKevService())
+    await reranker.rank("Offline query", ["Passage 1", "Passage 2"])
+
+    metrics = tracker.get_metrics()
+    # Fallback calls must be tracked in fallback_calls counters
+    assert metrics["embedding"]["fallback_calls"] == 3
+    assert metrics["kev"]["fallback_calls"] == 1
+    # Normal upstream request / token counters must NOT be polluted
+    assert metrics["embedding"]["inputs_total"] == 0
+    assert metrics["embedding"]["requests_total"] == 0
+    assert metrics["kev"]["requests_total"] == 0
+    assert metrics["graphiti"]["tokens_total"] == 0

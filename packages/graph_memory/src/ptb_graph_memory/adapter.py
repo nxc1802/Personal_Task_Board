@@ -90,12 +90,17 @@ class GraphitiQwen3Embedder(EmbedderClient):
 
         try:
             from ptb_contracts.telemetry import get_cost_audit_tracker
-            actual_tok = getattr(service, "last_usage_tokens", None)
-            tokens = actual_tok if actual_tok is not None else (
-                len(input_data.split()) if isinstance(input_data, str) else sum(len(x.split()) for x in input_data if isinstance(x, str))
-            )
-            get_cost_audit_tracker().record_embedding_call(count=1, provider="graphiti_qwen3")
-            get_cost_audit_tracker().record_graphiti_subcall("embedding", tokens=tokens)
+            tracker = get_cost_audit_tracker()
+            call_status = getattr(service, "last_call_status", "success")
+            if call_status == "success":
+                actual_tok = getattr(service, "last_usage_tokens", None)
+                tokens = actual_tok if actual_tok is not None else (
+                    len(input_data.split()) if isinstance(input_data, str) else sum(len(x.split()) for x in input_data if isinstance(x, str))
+                )
+                tracker.record_embedding_call(count=1, provider="graphiti_qwen3")
+                tracker.record_graphiti_subcall("embedding", tokens=tokens)
+            else:
+                tracker.record_embedding_fallback(count=1, provider="graphiti_qwen3")
         except Exception as telem_exc:
             logger.debug("Telemetry recording error in embed create: %s", telem_exc)
 
@@ -106,10 +111,15 @@ class GraphitiQwen3Embedder(EmbedderClient):
         res = await asyncio.to_thread(service.embed_batch, input_data_list)
         try:
             from ptb_contracts.telemetry import get_cost_audit_tracker
-            actual_tok = getattr(service, "last_usage_tokens", None)
-            tokens = actual_tok if actual_tok is not None else sum(len(x.split()) for x in input_data_list)
-            get_cost_audit_tracker().record_embedding_call(count=len(input_data_list), is_batch=True, provider="graphiti_qwen3")
-            get_cost_audit_tracker().record_graphiti_subcall("embedding_batch", tokens=tokens)
+            tracker = get_cost_audit_tracker()
+            call_status = getattr(service, "last_call_status", "success")
+            if call_status == "success":
+                actual_tok = getattr(service, "last_usage_tokens", None)
+                tokens = actual_tok if actual_tok is not None else sum(len(x.split()) for x in input_data_list)
+                tracker.record_embedding_call(count=len(input_data_list), is_batch=True, provider="graphiti_qwen3")
+                tracker.record_graphiti_subcall("embedding_batch", tokens=tokens)
+            else:
+                tracker.record_embedding_fallback(count=len(input_data_list), provider="graphiti_qwen3")
         except Exception as telem_exc:
             logger.debug("Telemetry recording error in embed create_batch: %s", telem_exc)
         return res
@@ -147,10 +157,15 @@ class GraphitiKevCrossEncoder(CrossEncoderClient):
 
         try:
             from ptb_contracts.telemetry import get_cost_audit_tracker
-            actual_tok = getattr(service, "last_usage_tokens", None)
-            tokens = actual_tok if actual_tok is not None else (len(query.split()) + sum(len(p.split()) for p in passages))
-            get_cost_audit_tracker().record_kev_call("graphiti_cross_encode")
-            get_cost_audit_tracker().record_graphiti_subcall("cross_encoder", tokens=tokens)
+            tracker = get_cost_audit_tracker()
+            call_status = getattr(service, "last_call_status", "success")
+            if call_status == "success":
+                actual_tok = getattr(service, "last_usage_tokens", None)
+                tokens = actual_tok if actual_tok is not None else (len(query.split()) + sum(len(p.split()) for p in passages))
+                tracker.record_kev_call("graphiti_cross_encode")
+                tracker.record_graphiti_subcall("cross_encoder", tokens=tokens)
+            else:
+                tracker.record_kev_fallback("graphiti_cross_encode")
         except Exception as telem_exc:
             logger.debug("Telemetry recording error in rank: %s", telem_exc)
 

@@ -32,6 +32,8 @@ class Qwen3EmbeddingService:
         self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
         self._last_probe_time = 0.0
         self._last_available = False
+        self.last_call_status: str = "initialized"
+        self.last_usage_tokens: Optional[int] = None
 
     def _is_available(self) -> bool:
         """Fast check whether embedding endpoint is reachable with 30s cache."""
@@ -63,24 +65,48 @@ class Qwen3EmbeddingService:
     def embed_text(self, text: str) -> List[float]:
         """Tạo embedding cho một đoạn văn bản đơn lẻ."""
         if not self._is_available():
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
             if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
                 raise RuntimeError(f"Embedding service at {self.base_url} is unavailable.")
             return [0.0] * 1024
-        resp = self.client.embeddings.create(model=self.model, input=text)
-        self.last_usage_tokens = getattr(getattr(resp, "usage", None), "total_tokens", None)
-        return resp.data[0].embedding
+        try:
+            resp = self.client.embeddings.create(model=self.model, input=text)
+            self.last_usage_tokens = getattr(getattr(resp, "usage", None), "total_tokens", None)
+            self.last_call_status = "success"
+            return resp.data[0].embedding
+        except Exception as exc:
+            self.last_call_status = "failure"
+            logger.warning("Embedding service error during embed_text: %s", exc)
+            if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                raise RuntimeError(f"Embedding service at {self.base_url} failed: {exc}") from exc
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
+            return [0.0] * 1024
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Tạo embedding theo lô (batch) cho danh sách câu."""
         if not texts:
             return []
         if not self._is_available():
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
             if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
                 raise RuntimeError(f"Embedding service at {self.base_url} is unavailable.")
             return [[0.0] * 1024 for _ in texts]
-        resp = self.client.embeddings.create(model=self.model, input=texts)
-        self.last_usage_tokens = getattr(getattr(resp, "usage", None), "total_tokens", None)
-        return [item.embedding for item in resp.data]
+        try:
+            resp = self.client.embeddings.create(model=self.model, input=texts)
+            self.last_usage_tokens = getattr(getattr(resp, "usage", None), "total_tokens", None)
+            self.last_call_status = "success"
+            return [item.embedding for item in resp.data]
+        except Exception as exc:
+            self.last_call_status = "failure"
+            logger.warning("Embedding service error during embed_batch: %s", exc)
+            if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                raise RuntimeError(f"Embedding service at {self.base_url} failed: {exc}") from exc
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
+            return [[0.0] * 1024 for _ in texts]
 
     def compute_similarity(self, query_vec: List[float], doc_vecs: List[List[float]]) -> List[float]:
         """Tính cosine similarity giữa query và tập documents."""
@@ -112,6 +138,7 @@ class KevDecisionReranker:
         self.model = model or os.getenv("DECISION_MODEL", "kev-0.8b")
         self._last_probe_time = 0.0
         self._last_available = False
+        self.last_call_status: str = "initialized"
         self.last_usage_tokens: Optional[int] = None
 
     def _is_available(self) -> bool:
@@ -147,8 +174,11 @@ class KevDecisionReranker:
         if not documents:
             return []
         if len(documents) == 1:
+            self.last_call_status = "success"
             return [{"index": 0, "document": documents[0], "score": 1.0}]
         if not self._is_available():
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
             docs = documents[:top_k] if top_k else documents
             return [{"index": i, "document": d, "score": 0.5} for i, d in enumerate(docs)]
 
@@ -196,17 +226,22 @@ class KevDecisionReranker:
                 ranked.sort(key=lambda x: x["score"], reverse=True)
                 if top_k is not None:
                     ranked = ranked[:top_k]
+                self.last_call_status = "success"
                 return ranked
         except Exception as e:
             logger.warning("Kev rerank error: %s", e)
             if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                self.last_call_status = "failure"
                 raise RuntimeError(f"Kev Decision Reranker is unavailable: {e}") from e
+            self.last_call_status = "fallback"
+            self.last_usage_tokens = None
             docs = documents[:top_k] if top_k else documents
             return [{"index": i, "document": d, "score": 0.5} for i, d in enumerate(docs)]
 
     def classify_task_urgency(self, task_text: str) -> Dict[str, Any]:
         """Đánh giá mức độ ưu tiên & tính khả thi của task bằng Kev System 1."""
         if not self._is_available():
+            self.last_call_status = "fallback"
             return {
                 "is_task_probability": 0.5,
                 "urgency_score": 1.0,
@@ -247,6 +282,7 @@ class KevDecisionReranker:
                 else:
                     priority = "Low"
 
+                self.last_call_status = "success"
                 return {
                     "is_task_probability": is_task_prob,
                     "urgency_score": urgency_score,
@@ -255,7 +291,9 @@ class KevDecisionReranker:
         except Exception as e:
             logger.warning("Kev classification error: %s", e)
             if os.getenv("PTB_REQUIRE_LOCAL_AI", "false").lower() in ("true", "1", "yes"):
+                self.last_call_status = "failure"
                 raise RuntimeError(f"Kev Decision Classifier is unavailable: {e}") from e
+            self.last_call_status = "fallback"
             return {
                 "is_task_probability": 0.5,
                 "urgency_score": 1.0,

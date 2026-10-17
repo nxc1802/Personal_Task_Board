@@ -63,14 +63,17 @@ class CostAuditTracker:
         self.embedding_requests_total: int = 0
         self.embedding_inputs_total: int = 0
         self.embedding_skipped_unchanged: int = 0
+        self.embedding_fallback_calls: int = 0
 
         # Kev Metrics
         self.kev_requests_total: int = 0
+        self.kev_fallback_calls: int = 0
         self.kev_by_type: Dict[str, int] = {}
 
         # Graphiti Metrics
         self.graphiti_episodes_total: int = 0
         self.graphiti_calls_total: int = 0
+        self.graphiti_fallback_calls: int = 0
         self.graphiti_subcalls_by_type: Dict[str, int] = {}
         self.graphiti_tokens_total: int = 0
 
@@ -142,12 +145,33 @@ class CostAuditTracker:
             self.embedding_requests_total += 1
             self.embedding_inputs_total += count
 
+    def record_embedding_fallback(self, count: int = 1, provider: str = "qwen3") -> None:
+        """Record an embedding fallback when model endpoint is offline/unreachable."""
+        with self.lock:
+            self.embedding_fallback_calls += count
+
     def record_kev_call(self, query_type: str = "rerank") -> None:
         """Record a Kev System 1 / Reranking request."""
         with self.lock:
             self.kev_requests_total += 1
             q_key = query_type.lower().strip()
             self.kev_by_type[q_key] = self.kev_by_type.get(q_key, 0) + 1
+
+    def record_kev_fallback(self, query_type: str = "rerank") -> None:
+        """Record a Kev fallback when model endpoint is offline/unreachable."""
+        with self.lock:
+            self.kev_fallback_calls += 1
+
+    def record_fallback(self, component: str = "general", count: int = 1) -> None:
+        """Record a generic component fallback (e.g. embedding, kev, graphiti)."""
+        with self.lock:
+            comp = component.lower().strip()
+            if "embed" in comp:
+                self.embedding_fallback_calls += count
+            elif "kev" in comp or "rerank" in comp:
+                self.kev_fallback_calls += count
+            else:
+                self.graphiti_fallback_calls += count
 
     def record_graphiti_sync(self, episodes: int = 1, calls: Optional[int] = None) -> None:
         """Record Graphiti episodic memory synchronization."""
@@ -244,6 +268,7 @@ class CostAuditTracker:
                     "requests_total": self.embedding_requests_total,
                     "inputs_total": self.embedding_inputs_total,
                     "skipped_unchanged": self.embedding_skipped_unchanged,
+                    "fallback_calls": self.embedding_fallback_calls,
                     "avoided_ratio": round(
                         self.embedding_skipped_unchanged / max(1, self.embedding_skipped_unchanged + self.embedding_inputs_total),
                         4
@@ -251,11 +276,13 @@ class CostAuditTracker:
                 },
                 "kev": {
                     "requests_total": self.kev_requests_total,
+                    "fallback_calls": self.kev_fallback_calls,
                     "by_type": dict(self.kev_by_type),
                 },
                 "graphiti": {
                     "episodes_total": self.graphiti_episodes_total,
                     "calls_total": self.graphiti_calls_total,
+                    "fallback_calls": self.graphiti_fallback_calls,
                     "calls_per_episode": graphiti_calls_per_episode,
                     "subcalls_by_type": dict(self.graphiti_subcalls_by_type),
                     "tokens_total": self.graphiti_tokens_total,
